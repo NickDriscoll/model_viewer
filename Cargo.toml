@@ -1,0 +1,13 @@
+[package]
+name = "model_viewer"
+version = "0.1.0"
+authors = ["Nick Driscoll <nick.a.mavros@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+glfw = "0.23.0"
+gl = "0.10.0"
+glium = "*"
+image = "*"
+openvr = "0.5.2"
+nalgebra-glm = "0.3"
