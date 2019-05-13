@@ -28,8 +28,10 @@ use std::mem;
 use std::string::String;
 use std::os::raw::c_void;
 use crate::structs::Mesh;
+use crate::uniform::Uniform;
 
 mod structs;
+mod uniform;
 
 const NEAR_Z: f32 = 0.25;
 const FAR_Z: f32 = 200.0;
@@ -115,11 +117,22 @@ unsafe fn compile_program_from_files(vertex_path: &str, fragment_path: &str) -> 
 	shader_progam
 }
 
-unsafe fn render_geometry(vertex_array_object: GLuint, count: GLsizei, texture: Option<GLuint>, mvp_location: GLint, mvp: &glm::TMat4<f32>) {
+unsafe fn render_mesh(vertex_array_object: GLuint, count: GLsizei, texture: Option<GLuint>, uniform_locations: &[GLint], uniforms: &[Uniform]) {
 	if let Some(tex) = texture {
 		gl::BindTexture(gl::TEXTURE_2D, tex);
 	}
-	gl::UniformMatrix4fv(mvp_location, 1, gl::FALSE, &flatten_glm(mvp) as *const GLfloat);
+
+	for i in 0..uniform_locations.len() {
+		match uniforms[i] {
+			Uniform::Matrix4(m) => {
+				gl::UniformMatrix4fv(uniform_locations[i], 1, gl::FALSE, &flatten_glm(&m) as *const GLfloat);
+			}
+			_ => {
+				println!("Unimplemented uniform: {:?}", uniforms[i]);
+			}
+		}
+	}
+
 	gl::BindVertexArray(vertex_array_object);
 	gl::DrawElements(gl::TRIANGLES, count, gl::UNSIGNED_SHORT, ptr::null());
 }
@@ -129,8 +142,8 @@ unsafe fn render_scene(meshes: &[Mesh], v_matrix: glm::TMat4<f32>, p_matrix: glm
 
 	for mesh in meshes {
 		gl::UseProgram(mesh.program);
-		let mvp = p_matrix * v_matrix * mesh.model_matrix;
-		render_geometry(mesh.vao, mesh.indices_count, mesh.texture, mvp_location, &mvp);
+		let mvp = Uniform::Matrix4(p_matrix * v_matrix * mesh.model_matrix);
+		render_mesh(mesh.vao, mesh.indices_count, mesh.texture, &[mvp_location], &[mvp]);
 	}
 }
 
@@ -248,6 +261,11 @@ fn load_controller_meshes(openvr_system: &Option<System>, openvr_rendermodels: &
 		}
 	}
 	result
+}
+
+unsafe fn get_uniform_location(program: GLuint, name: &str) -> GLint {
+	let mvp_str = CString::new(name.as_bytes()).unwrap();
+	gl::GetUniformLocation(program, mvp_str.as_ptr())
 }
 
 fn main() {
@@ -425,6 +443,8 @@ fn main() {
 		meshes.len() - 1
 	};
 
+	let light_pos = glm::vec3(1.0, 1.0, 1.0);
+
 	//Controller related variables
 	let mut controller_indices = match openvr_system {
 		Some(ref sys) => {
@@ -440,8 +460,8 @@ fn main() {
 	let mut controller_mesh_indices = (None, None);
 
 	//Get uniform locations
-	let mvp_str = CString::new("mvp".as_bytes()).unwrap();
-	let mvp_location = unsafe { gl::GetUniformLocation(texture_program, mvp_str.as_ptr()) };
+	let mvp_location = unsafe { get_uniform_location(texture_program, "mvp") };
+	let light_pos_location = unsafe { get_uniform_location(texture_program, "light_pos") };
 
 	//Gameplay state
 	let mut ticks = 0.0;
