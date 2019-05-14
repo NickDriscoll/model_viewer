@@ -7,7 +7,6 @@ uniform sampler2D tex;
 uniform vec3 light_pos;
 
 void main() {
-	float ambient_strength = 0.1;
-	vec3 result = ambient_strength * texture(tex, v_tex_coords).rgb;
+	vec3 result = texture(tex, v_tex_coords).rgb;
 	color = vec4(result, 1.0);
 }

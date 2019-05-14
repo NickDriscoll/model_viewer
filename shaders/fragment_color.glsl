@@ -4,5 +4,7 @@ in vec3 f_color;
 out vec4 color;
 
 void main() {
-	color = vec4(f_color, 1.0);
+	float ambient_strength = 0.1;
+	vec3 result = ambient_strength * f_color;
+	color = vec4(result, 1.0);
 }

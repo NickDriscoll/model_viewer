@@ -392,7 +392,7 @@ fn main() {
 	let mut meshes = Vec::with_capacity(3);
 
 	//Create the floor
-	unsafe {
+	let floor_mesh_index = unsafe {
 		let vertices = [
 			//Positions					//Tex coords
 			-0.5f32, 0.0, -0.5,			0.0, 0.0,
@@ -408,7 +408,8 @@ fn main() {
 		let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(5.0, 5.0, 5.0)),
 							 texture_program, Some(load_texture("textures/checkerboard.jpg")), indices.len() as i32);
 		meshes.push(mesh);
-	}
+		meshes.len() - 1
+	};
 
 	//Create the cube
 	let cube_mesh_index = unsafe {
@@ -632,21 +633,35 @@ fn main() {
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
 			//Render left eye
-			render_scene(&meshes, v_matrices.0, p_matrices.0, mvp_location);
+			//render_scene(&meshes, v_matrices.0, p_matrices.0, mvp_location);
 
 			//Send to HMD
-			submit_to_hmd(Eye::Left, &openvr_compositor, &openvr_texture_handle);
+			//submit_to_hmd(Eye::Left, &openvr_compositor, &openvr_texture_handle);
 
 			//Render right eye
-			render_scene(&meshes, v_matrices.1, p_matrices.1, mvp_location);
+			//render_scene(&meshes, v_matrices.1, p_matrices.1, mvp_location);
 
 			//Send to HMD
-			submit_to_hmd(Eye::Right, &openvr_compositor, &openvr_texture_handle);
+			//submit_to_hmd(Eye::Right, &openvr_compositor, &openvr_texture_handle);
 
 			//Unbind the vr render target so that we can draw to the window
 			gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 			gl::Viewport(0, 0, window_size.0 as GLsizei, window_size.1 as GLsizei);
-			render_scene(&meshes, v_matrices.2, p_matrices.2, mvp_location);
+
+			gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+
+			gl::UseProgram(meshes[floor_mesh_index].program);
+			let mvp = p_matrices.2 * v_matrices.2 * meshes[floor_mesh_index].model_matrix;
+			gl::UniformMatrix4fv(mvp_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
+
+			if let Some(tex) = meshes[floor_mesh_index].texture {
+				gl::BindTexture(gl::TEXTURE_2D, tex);
+			}
+
+			gl::BindVertexArray(meshes[floor_mesh_index].vao);
+			gl::DrawElements(gl::TRIANGLES, meshes[floor_mesh_index].indices_count, gl::UNSIGNED_SHORT, ptr::null());
+
+			//render_scene(&meshes, v_matrices.2, p_matrices.2, mvp_location);
 		}
 
 		window.render_context().swap_buffers();
