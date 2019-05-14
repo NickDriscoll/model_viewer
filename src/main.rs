@@ -444,7 +444,7 @@ fn main() {
 		meshes.len() - 1
 	};
 
-	let light_pos = glm::vec3(1.0, 1.0, 1.0);
+	let light_pos = glm::vec3::<f32>(1.0, 1.0, 1.0);
 
 	//Controller related variables
 	let mut controller_indices = match openvr_system {
@@ -461,7 +461,8 @@ fn main() {
 	let mut controller_mesh_indices = (None, None);
 
 	//Get uniform locations
-	let mvp_location = unsafe { get_uniform_location(texture_program, "mvp") };
+	let mvp_tex_location = unsafe { get_uniform_location(texture_program, "mvp") };
+	let mvp_color_location = unsafe { get_uniform_location(color_program, "mvp") };
 	let light_pos_location = unsafe { get_uniform_location(texture_program, "light_pos") };
 
 	//Gameplay state
@@ -650,9 +651,10 @@ fn main() {
 
 			gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
+			//Bind program and uniforms
 			gl::UseProgram(meshes[floor_mesh_index].program);
 			let mvp = p_matrices.2 * v_matrices.2 * meshes[floor_mesh_index].model_matrix;
-			gl::UniformMatrix4fv(mvp_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
+			gl::UniformMatrix4fv(mvp_tex_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
 
 			if let Some(tex) = meshes[floor_mesh_index].texture {
 				gl::BindTexture(gl::TEXTURE_2D, tex);
@@ -660,6 +662,20 @@ fn main() {
 
 			gl::BindVertexArray(meshes[floor_mesh_index].vao);
 			gl::DrawElements(gl::TRIANGLES, meshes[floor_mesh_index].indices_count, gl::UNSIGNED_SHORT, ptr::null());
+
+			//Bind program and uniforms
+			gl::UseProgram(meshes[cube_mesh_index].program);
+			let mvp = p_matrices.2 * v_matrices.2 * meshes[cube_mesh_index].model_matrix;
+			gl::UniformMatrix4fv(mvp_color_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
+			let pos = [light_pos.x, light_pos.y, light_pos.z];
+			gl::Uniform3fv(light_pos_location, 1, &pos as *const GLfloat);
+
+			if let Some(tex) = meshes[cube_mesh_index].texture {
+				gl::BindTexture(gl::TEXTURE_2D, tex);
+			}
+
+			gl::BindVertexArray(meshes[cube_mesh_index].vao);
+			gl::DrawElements(gl::TRIANGLES, meshes[cube_mesh_index].indices_count, gl::UNSIGNED_SHORT, ptr::null());
 
 			//render_scene(&meshes, v_matrices.2, p_matrices.2, mvp_location);
 		}
