@@ -152,37 +152,17 @@ unsafe fn render_mesh(mesh: &Mesh) {
 	gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
 }
 
-/*
-unsafe fn render_mesh(vertex_array_object: GLuint, count: GLsizei, texture: Option<GLuint>, uniform_locations: &[GLint], uniforms: &[Uniform]) {
-	if let Some(tex) = texture {
-		gl::BindTexture(gl::TEXTURE_2D, tex);
-	}
-
-	for i in 0..uniform_locations.len() {
-		match uniforms[i] {
-			Uniform::Matrix4(m) => {
-				gl::UniformMatrix4fv(uniform_locations[i], 1, gl::FALSE, &flatten_glm(&m) as *const GLfloat);
-			}
-			_ => {
-				println!("Unimplemented uniform: {:?}", uniforms[i]);
-			}
-		}
-	}
-
-	gl::BindVertexArray(vertex_array_object);
-	gl::DrawElements(gl::TRIANGLES, count, gl::UNSIGNED_SHORT, ptr::null());
-}
-
-unsafe fn render_scene(meshes: &[Mesh], v_matrix: glm::TMat4<f32>, p_matrix: glm::TMat4<f32>, mvp_location: GLint) {
+unsafe fn render_scene(meshes: &mut [Mesh], p_matrix: glm::TMat4<f32>, v_matrix: glm::TMat4<f32>) {
 	gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-	for mesh in meshes {
-		gl::UseProgram(mesh.program);
-		let mvp = Uniform::Matrix4(p_matrix * v_matrix * mesh.model_matrix);
-		render_mesh(mesh.vao, mesh.indices_count, mesh.texture, &[mvp_location], &[mvp]);
+	for mesh in meshes.iter_mut() {
+		mesh.matrix_values[0] = p_matrix * v_matrix * mesh.model_matrix;
+	}
+
+	for mesh in meshes.iter() {
+		render_mesh(&mesh);
 	}
 }
-*/
 
 unsafe fn submit_to_hmd(eye: Eye, openvr_compositor: &Option<Compositor>, target_handle: &Texture) {
 	if let Some(ref comp) = openvr_compositor {
@@ -675,32 +655,13 @@ fn main() {
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
 			//Render left eye
-			//Update the mvps
-			for mesh in &mut meshes {
-				mesh.matrix_values[0] = p_matrices.0 * v_matrices.0 * mesh.model_matrix;
-			}
-
-			//Clear screen
-			gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-
-			for mesh in &meshes {
-				render_mesh(&mesh);
-			}
+			render_scene(&mut meshes, p_matrices.0, v_matrices.0);
 
 			//Send to HMD
 			submit_to_hmd(Eye::Left, &openvr_compositor, &openvr_texture_handle);
 
 			//Render right eye
-			for mesh in &mut meshes {
-				mesh.matrix_values[0] = p_matrices.1 * v_matrices.1 * mesh.model_matrix;
-			}
-
-			//Clear screen
-			gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-
-			for mesh in &meshes {
-				render_mesh(&mesh);
-			}
+			render_scene(&mut meshes, p_matrices.1, v_matrices.1);
 
 			//Send to HMD
 			submit_to_hmd(Eye::Right, &openvr_compositor, &openvr_texture_handle);
@@ -709,20 +670,7 @@ fn main() {
 			gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 			gl::Viewport(0, 0, window_size.0 as GLsizei, window_size.1 as GLsizei);
 
-			for mesh in &mut meshes {
-				mesh.matrix_values[0] = p_matrices.2 * v_matrices.2 * mesh.model_matrix;
-			}
-
-			gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-
-			for mesh in &meshes {
-				render_mesh(&mesh);
-			}
-
-			//render_mesh(&meshes[floor_mesh_index]);
-			//render_mesh(&meshes[cube_mesh_index]);
-
-			//render_scene(&meshes, v_matrices.2, p_matrices.2, mvp_location);
+			render_scene(&mut meshes, p_matrices.2, v_matrices.2);
 		}
 
 		window.render_context().swap_buffers();
