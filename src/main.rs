@@ -28,7 +28,7 @@ use std::mem;
 use std::string::String;
 use std::os::raw::c_void;
 use crate::structs::Mesh;
-use crate::uniform::Uniform;
+use crate::structs::GLProgram;
 
 mod structs;
 mod uniform;
@@ -117,6 +117,30 @@ unsafe fn compile_program_from_files(vertex_path: &str, fragment_path: &str) -> 
 	shader_progam
 }
 
+unsafe fn bind_program_and_uniforms(program: &GLProgram, matrix_values: &[glm::TMat4<f32>], vector_values: &[glm::TVec3<f32>]) {
+	//For now, assert that locations equal values
+	if program.matrix_locations.len() != matrix_values.len() || 
+		program.vector_locations.len() != vector_values.len() {
+			panic!("ERROR!\nmatrix_locations: {}\nmatrix_values: {}\nvector_locations: {}\nvector_values: {}",
+				program.matrix_locations.len(),
+				matrix_values.len(),
+				program.vector_locations.len(),
+				vector_values.len());
+	}
+
+	gl::UseProgram(program.name);
+
+	for i in 0..program.matrix_locations.len() {
+		gl::UniformMatrix4fv(program.matrix_locations[i], 1, gl::FALSE, &flatten_glm(&matrix_values[i]) as *const GLfloat);
+	}
+
+	for i in 0..program.vector_locations.len() {
+		let v = [vector_values[i].x, vector_values[i].y, vector_values[i].z];
+		gl::Uniform3fv(program.vector_locations[i], 1, &v as *const GLfloat);
+	}
+}
+
+/*
 unsafe fn render_mesh(vertex_array_object: GLuint, count: GLsizei, texture: Option<GLuint>, uniform_locations: &[GLint], uniforms: &[Uniform]) {
 	if let Some(tex) = texture {
 		gl::BindTexture(gl::TEXTURE_2D, tex);
@@ -146,6 +170,7 @@ unsafe fn render_scene(meshes: &[Mesh], v_matrix: glm::TMat4<f32>, p_matrix: glm
 		render_mesh(mesh.vao, mesh.indices_count, mesh.texture, &[mvp_location], &[mvp]);
 	}
 }
+*/
 
 unsafe fn submit_to_hmd(eye: Eye, openvr_compositor: &Option<Compositor>, target_handle: &Texture) {
 	if let Some(ref comp) = openvr_compositor {

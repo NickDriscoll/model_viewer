@@ -7,7 +7,9 @@ pub struct Mesh {
 	pub model_matrix: glm::TMat4<f32>, //Matrix that transforms points in model space to world space
 	pub program: GLuint, //GLSL program to be rendered with
 	pub texture: Option<GLuint>, //Texture
-	pub indices_count: GLsizei //Number of indices in index array
+	pub indices_count: GLsizei, //Number of indices in index array
+	pub matrix_values: Vec<glm::TMat4<f32>>,
+	pub vector_values: Vec<glm::TVec3<f32>>
 }
 
 impl Mesh {
@@ -17,7 +19,15 @@ impl Mesh {
 			model_matrix,
 			program,
 			texture,
-			indices_count
+			indices_count,
+			matrix_values: Vec::new(),
+			vector_values: Vec::new()
 		}
 	}
+}
+
+pub struct GLProgram {
+	pub name: GLuint,
+	pub matrix_locations: Vec<GLint>,
+	pub vector_locations: Vec<GLint>
 }
