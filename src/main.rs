@@ -29,12 +29,13 @@ use std::string::String;
 use std::os::raw::c_void;
 use crate::structs::Mesh;
 use crate::structs::GLProgram;
+use crate ::glutil::get_uniform_location;
 
 mod structs;
-mod uniform;
+mod glutil;
 
 const NEAR_Z: f32 = 0.25;
-const FAR_Z: f32 = 200.0;
+const FAR_Z: f32 = 100.0;
 
 fn openvr_to_mat4(mat: [[f32; 4]; 3]) -> glm::TMat4<f32> {
 	glm::mat4(
@@ -138,6 +139,17 @@ unsafe fn bind_program_and_uniforms(program: &GLProgram, matrix_values: &[glm::T
 		let v = [vector_values[i].x, vector_values[i].y, vector_values[i].z];
 		gl::Uniform3fv(program.vector_locations[i], 1, &v as *const GLfloat);
 	}
+}
+
+unsafe fn render_mesh(mesh: &Mesh) {
+	bind_program_and_uniforms(&mesh.program, &mesh.matrix_values, &mesh.vector_values);
+
+	if let Some(tex) = mesh.texture {
+		gl::BindTexture(gl::TEXTURE_2D, tex);
+	}
+
+	gl::BindVertexArray(mesh.vao);
+	gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
 }
 
 /*
@@ -252,7 +264,7 @@ fn attach_mesh_to_controller(meshes: &mut [Mesh], poses: &[TrackedDevicePose], c
 	}
 }
 
-fn load_controller_meshes(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, meshes: &mut Vec<Mesh>, index: u32, program: GLuint) -> (Option<usize>, Option<usize>) {
+fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, meshes: &mut Vec<Mesh<'a>>, index: u32, program: &'a GLProgram) -> (Option<usize>, Option<usize>) {
 	let mut result = (None, None);
 	if let (Some(ref sys), Some(ref ren_mod)) = (&openvr_system, &openvr_rendermodels) {
 		let name = sys.string_tracked_device_property(index, openvr::property::RenderModelName_String).unwrap();
@@ -269,7 +281,7 @@ fn load_controller_meshes(openvr_system: &Option<System>, openvr_rendermodels: &
 				vertices.push(0.0);
 			}
 
-			//Create vao
+			//Create vao			
 			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), ELEMENT_STRIDE as i32, &[3, 3]) };
 
 			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, None, model.indices().len() as i32);
@@ -283,14 +295,10 @@ fn load_controller_meshes(openvr_system: &Option<System>, openvr_rendermodels: &
 			println!("Loaded controller mesh");
 
 			result = (left_index, right_index);
+			
 		}
 	}
 	result
-}
-
-unsafe fn get_uniform_location(program: GLuint, name: &str) -> GLint {
-	let mvp_str = CString::new(name.as_bytes()).unwrap();
-	gl::GetUniformLocation(program, mvp_str.as_ptr())
 }
 
 fn main() {
@@ -353,8 +361,21 @@ fn main() {
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
 	//Compile shader programs
-	let texture_program = unsafe { compile_program_from_files("shaders/vertex_texture.glsl", "shaders/fragment_texture.glsl") };
-	let color_program = unsafe { compile_program_from_files("shaders/vertex_color.glsl", "shaders/fragment_color.glsl") };
+	let texture_program = unsafe { 
+		let mut program = GLProgram::new(compile_program_from_files("shaders/vertex_texture.glsl", "shaders/fragment_texture.glsl"));
+		let mvp = get_uniform_location(program.name, "mvp");
+		program.matrix_locations.push(mvp);
+		program
+	};
+
+	let color_program = unsafe { 
+		let mut program = GLProgram::new(compile_program_from_files("shaders/vertex_color.glsl", "shaders/fragment_color.glsl"));
+		let mvp = get_uniform_location(program.name, "mvp");
+		let light_pos = get_uniform_location(program.name, "light_pos");
+		program.matrix_locations.push(mvp);
+		program.vector_locations.push(light_pos);
+		program
+	};
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe {
@@ -431,7 +452,7 @@ fn main() {
 		];
 		let vao = create_vertex_array_object(&vertices, &indices, 5, &[3, 2]);
 		let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(5.0, 5.0, 5.0)),
-							 texture_program, Some(load_texture("textures/checkerboard.jpg")), indices.len() as i32);
+							 &texture_program, Some(load_texture("textures/checkerboard.jpg")), indices.len() as i32);
 		meshes.push(mesh);
 		meshes.len() - 1
 	};
@@ -464,7 +485,7 @@ fn main() {
 			0, 1, 5
 		];
 		let vao = create_vertex_array_object(&vertices, &indices, 6, &[3, 3]);
-		let mesh = Mesh::new(vao, glm::identity(), color_program, None, indices.len() as i32);
+		let mut mesh = Mesh::new(vao, glm::identity(), &color_program, None, indices.len() as i32);
 		meshes.push(mesh);
 		meshes.len() - 1
 	};
@@ -484,11 +505,6 @@ fn main() {
 		}
 	};
 	let mut controller_mesh_indices = (None, None);
-
-	//Get uniform locations
-	let mvp_tex_location = unsafe { get_uniform_location(texture_program, "mvp") };
-	let mvp_color_location = unsafe { get_uniform_location(color_program, "mvp") };
-	let light_pos_location = unsafe { get_uniform_location(texture_program, "light_pos") };
 
 	//Gameplay state
 	let mut ticks = 0.0;
@@ -513,19 +529,13 @@ fn main() {
 		if let (None, None) = controller_mesh_indices {
 			controller_mesh_indices = {
 				match controller_indices {
-					(Some(index), _) => {
-						load_controller_meshes(&openvr_system,
-											   &openvr_rendermodels,
-											   &mut meshes,
-											   index,
-											   color_program)
-					}
+					(Some(index), _) |
 					(_, Some(index)) => {
 						load_controller_meshes(&openvr_system,
 											   &openvr_rendermodels,
 											   &mut meshes,
 											   index,
-											   color_program)
+											   &color_program)
 					}
 					_ => {
 						(None, None)
@@ -602,16 +612,6 @@ fn main() {
 			attach_mesh_to_controller(&mut meshes, &poses, right, controller_mesh_indices.1);
 		}
 
-		//Update simulation
-		ticks += 0.02;
-		meshes[cube_mesh_index].model_matrix = glm::translation(&glm::vec3(0.0, 1.0, 0.0)) *
-								   glm::rotation(ticks*0.5, &glm::vec3(1.0, 0.0, 0.0)) *
-								   glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
-								   glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
-
-		camera_position += camera_velocity;
-		camera_fov += camera_fov_delta;
-
 		//Get view matrices for each eye
 		let v_matrices = match openvr_system {
 			Some(ref sys) => {
@@ -638,16 +638,32 @@ fn main() {
 		};
 
 		//Get projection matrices
+		let p_mat = glm::perspective(aspect_ratio, f32::to_radians(camera_fov), NEAR_Z, FAR_Z);
 		let p_matrices = match openvr_system {
 			Some(ref sys) => {
-				let p_mat = glm::perspective(aspect_ratio, f32::to_radians(camera_fov), NEAR_Z, FAR_Z);
 				(get_projection_matrix(sys, Eye::Left), get_projection_matrix(sys, Eye::Right), p_mat)
 			}
 			None => {
-				let projection_matrix = glm::perspective(aspect_ratio, f32::to_radians(camera_fov), NEAR_Z, FAR_Z);
-				(glm::identity(), glm::identity(), projection_matrix)
+				(glm::identity(), glm::identity(), p_mat)
 			}
 		};
+
+		//Update simulation
+		ticks += 0.02;
+
+		let mvp = p_matrices.2 * v_matrices.2 * meshes[floor_mesh_index].model_matrix;
+		meshes[floor_mesh_index].matrix_values[0] = mvp;
+
+		meshes[cube_mesh_index].model_matrix = glm::translation(&glm::vec3(0.0, 1.0, 0.0)) *
+								   glm::rotation(ticks*0.5, &glm::vec3(1.0, 0.0, 0.0)) *
+								   glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
+								   glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
+		let mvp = p_matrices.2 * v_matrices.2 * meshes[cube_mesh_index].model_matrix;
+		meshes[cube_mesh_index].matrix_values[0] = mvp;
+		meshes[cube_mesh_index].vector_values[0] = light_pos;
+
+		camera_position += camera_velocity;
+		camera_fov += camera_fov_delta;
 
 		//Rendering code
 		unsafe {
@@ -659,48 +675,52 @@ fn main() {
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
 			//Render left eye
-			//render_scene(&meshes, v_matrices.0, p_matrices.0, mvp_location);
+			//Update the mvps
+			for mesh in &mut meshes {
+				mesh.matrix_values[0] = p_matrices.0 * v_matrices.0 * mesh.model_matrix;
+			}
+
+			//Clear screen
+			gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+
+			for mesh in &meshes {
+				render_mesh(&mesh);
+			}
 
 			//Send to HMD
-			//submit_to_hmd(Eye::Left, &openvr_compositor, &openvr_texture_handle);
+			submit_to_hmd(Eye::Left, &openvr_compositor, &openvr_texture_handle);
 
 			//Render right eye
-			//render_scene(&meshes, v_matrices.1, p_matrices.1, mvp_location);
+			for mesh in &mut meshes {
+				mesh.matrix_values[0] = p_matrices.1 * v_matrices.1 * mesh.model_matrix;
+			}
+
+			//Clear screen
+			gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+
+			for mesh in &meshes {
+				render_mesh(&mesh);
+			}
 
 			//Send to HMD
-			//submit_to_hmd(Eye::Right, &openvr_compositor, &openvr_texture_handle);
+			submit_to_hmd(Eye::Right, &openvr_compositor, &openvr_texture_handle);
 
 			//Unbind the vr render target so that we can draw to the window
 			gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 			gl::Viewport(0, 0, window_size.0 as GLsizei, window_size.1 as GLsizei);
 
+			for mesh in &mut meshes {
+				mesh.matrix_values[0] = p_matrices.2 * v_matrices.2 * mesh.model_matrix;
+			}
+
 			gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-			//Bind program and uniforms
-			gl::UseProgram(meshes[floor_mesh_index].program);
-			let mvp = p_matrices.2 * v_matrices.2 * meshes[floor_mesh_index].model_matrix;
-			gl::UniformMatrix4fv(mvp_tex_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
-
-			if let Some(tex) = meshes[floor_mesh_index].texture {
-				gl::BindTexture(gl::TEXTURE_2D, tex);
+			for mesh in &meshes {
+				render_mesh(&mesh);
 			}
 
-			gl::BindVertexArray(meshes[floor_mesh_index].vao);
-			gl::DrawElements(gl::TRIANGLES, meshes[floor_mesh_index].indices_count, gl::UNSIGNED_SHORT, ptr::null());
-
-			//Bind program and uniforms
-			gl::UseProgram(meshes[cube_mesh_index].program);
-			let mvp = p_matrices.2 * v_matrices.2 * meshes[cube_mesh_index].model_matrix;
-			gl::UniformMatrix4fv(mvp_color_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
-			let pos = [light_pos.x, light_pos.y, light_pos.z];
-			gl::Uniform3fv(light_pos_location, 1, &pos as *const GLfloat);
-
-			if let Some(tex) = meshes[cube_mesh_index].texture {
-				gl::BindTexture(gl::TEXTURE_2D, tex);
-			}
-
-			gl::BindVertexArray(meshes[cube_mesh_index].vao);
-			gl::DrawElements(gl::TRIANGLES, meshes[cube_mesh_index].indices_count, gl::UNSIGNED_SHORT, ptr::null());
+			//render_mesh(&meshes[floor_mesh_index]);
+			//render_mesh(&meshes[cube_mesh_index]);
 
 			//render_scene(&meshes, v_matrices.2, p_matrices.2, mvp_location);
 		}
