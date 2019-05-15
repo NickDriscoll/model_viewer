@@ -20,7 +20,6 @@ use image::GenericImageView;
 use std::ffi::CString;
 use std::fs::File;
 use std::io::Read;
-use std::io::BufRead;
 use std::str;
 use std::path::Path;
 use std::ptr;
@@ -35,7 +34,7 @@ mod structs;
 mod glutil;
 
 const NEAR_Z: f32 = 0.25;
-const FAR_Z: f32 = 100.0;
+const FAR_Z: f32 = 50.0;
 
 fn openvr_to_mat4(mat: [[f32; 4]; 3]) -> glm::TMat4<f32> {
 	glm::mat4(
@@ -120,7 +119,7 @@ unsafe fn compile_program_from_files(vertex_path: &str, fragment_path: &str) -> 
 
 unsafe fn bind_program_and_uniforms(program: &GLProgram, matrix_values: &[glm::TMat4<f32>], vector_values: &[glm::TVec3<f32>]) {
 	//For now, assert that locations equal values
-	if program.matrix_locations.len() != matrix_values.len() || 
+	if program.matrix_locations.len() != matrix_values.len() ||
 		program.vector_locations.len() != vector_values.len() {
 			panic!("ERROR!\nmatrix_locations: {}\nmatrix_values: {}\nvector_locations: {}\nvector_values: {}",
 				program.matrix_locations.len(),
@@ -261,7 +260,7 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 				vertices.push(0.0);
 			}
 
-			//Create vao			
+			//Create vao
 			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), ELEMENT_STRIDE as i32, &[3, 3]) };
 
 			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, None, model.indices().len() as i32);
@@ -275,7 +274,7 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 			println!("Loaded controller mesh");
 
 			result = (left_index, right_index);
-			
+
 		}
 	}
 	result
@@ -341,14 +340,14 @@ fn main() {
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
 	//Compile shader programs
-	let texture_program = unsafe { 
+	let texture_program = unsafe {
 		let mut program = GLProgram::new(compile_program_from_files("shaders/vertex_texture.glsl", "shaders/fragment_texture.glsl"));
 		let mvp = get_uniform_location(program.name, "mvp");
 		program.matrix_locations.push(mvp);
 		program
 	};
 
-	let color_program = unsafe { 
+	let color_program = unsafe {
 		let mut program = GLProgram::new(compile_program_from_files("shaders/vertex_color.glsl", "shaders/fragment_color.glsl"));
 		let mvp = get_uniform_location(program.name, "mvp");
 		let light_pos = get_uniform_location(program.name, "light_pos");
@@ -465,7 +464,7 @@ fn main() {
 			0, 1, 5
 		];
 		let vao = create_vertex_array_object(&vertices, &indices, 6, &[3, 3]);
-		let mut mesh = Mesh::new(vao, glm::identity(), &color_program, None, indices.len() as i32);
+		let mesh = Mesh::new(vao, glm::identity(), &color_program, None, indices.len() as i32);
 		meshes.push(mesh);
 		meshes.len() - 1
 	};

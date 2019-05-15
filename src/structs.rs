@@ -1,5 +1,4 @@
 use gl::types::*;
-use crate::glutil::get_uniform_location;
 
 //A renderable 3D thing
 #[derive(Clone)]
@@ -18,11 +17,11 @@ impl<'a> Mesh<'a> {
 		let mut matrix_values = Vec::new();
 		let mut vector_values = Vec::new();
 
-		for i in 0..glprogram.matrix_locations.len() {
+		for _ in 0..glprogram.matrix_locations.len() {
 			matrix_values.push(glm::identity());
 		}
 
-		for i in 0..glprogram.vector_locations.len() {
+		for _ in 0..glprogram.vector_locations.len() {
 			vector_values.push(glm::vec3(0.0, 0.0, 0.0));
 		}
 
