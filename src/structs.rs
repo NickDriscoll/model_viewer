@@ -1,4 +1,6 @@
 use gl::types::*;
+use crate::glutil::get_uniform_location;
+use crate::compile_program_from_files;
 
 //A renderable 3D thing
 #[derive(Clone)]
@@ -50,5 +52,22 @@ impl GLProgram {
 			matrix_locations: Vec::new(),
 			vector_locations: Vec::new()
 		}
+	}
+
+	pub unsafe fn from_files(vertex_file: &str, fragment_file: &str, matrices: &[&str], vectors: &[&str]) -> Self {
+		let name = compile_program_from_files(vertex_file, fragment_file);
+		let mut program = GLProgram::new(name);
+
+		for uniform in matrices {
+			let loc = get_uniform_location(name, uniform);
+			program.matrix_locations.push(loc);
+		}
+
+		for uniform in vectors {
+			let loc = get_uniform_location(name, uniform);
+			program.vector_locations.push(loc);
+		}
+
+		program
 	}
 }

@@ -28,7 +28,6 @@ use std::string::String;
 use std::os::raw::c_void;
 use crate::structs::Mesh;
 use crate::structs::GLProgram;
-use crate ::glutil::get_uniform_location;
 
 mod structs;
 mod glutil;
@@ -340,21 +339,8 @@ fn main() {
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
 	//Compile shader programs
-	let texture_program = unsafe {
-		let mut program = GLProgram::new(compile_program_from_files("shaders/vertex_texture.glsl", "shaders/fragment_texture.glsl"));
-		let mvp = get_uniform_location(program.name, "mvp");
-		program.matrix_locations.push(mvp);
-		program
-	};
-
-	let color_program = unsafe {
-		let mut program = GLProgram::new(compile_program_from_files("shaders/vertex_color.glsl", "shaders/fragment_color.glsl"));
-		let mvp = get_uniform_location(program.name, "mvp");
-		let light_pos = get_uniform_location(program.name, "light_pos");
-		program.matrix_locations.push(mvp);
-		program.vector_locations.push(light_pos);
-		program
-	};
+	let texture_program = unsafe { GLProgram::from_files("shaders/vertex_texture.glsl", "shaders/fragment_texture.glsl", &["mvp"], &[]) };
+	let color_program = unsafe { GLProgram::from_files("shaders/vertex_color.glsl", "shaders/fragment_color.glsl", &["mvp"], &["light_pos"]) };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe {
