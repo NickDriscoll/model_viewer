@@ -273,7 +273,6 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 			println!("Loaded controller mesh");
 
 			result = (left_index, right_index);
-
 		}
 	}
 	result
@@ -340,7 +339,7 @@ fn main() {
 
 	//Compile shader programs
 	let texture_program = unsafe { GLProgram::from_files("shaders/vertex_texture.glsl", "shaders/fragment_texture.glsl", &["mvp"], &[]) };
-	let color_program = unsafe { GLProgram::from_files("shaders/vertex_color.glsl", "shaders/fragment_color.glsl", &["mvp"], &["light_pos"]) };
+	let color_program = unsafe { GLProgram::from_files("shaders/vertex_color.glsl", "shaders/fragment_color.glsl", &["mvp", "model_matrix"], &["light_pos"]) };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe {
@@ -616,15 +615,11 @@ fn main() {
 		//Update simulation
 		ticks += 0.02;
 
-		let mvp = p_matrices.2 * v_matrices.2 * meshes[floor_mesh_index].model_matrix;
-		meshes[floor_mesh_index].matrix_values[0] = mvp;
-
 		meshes[cube_mesh_index].model_matrix = glm::translation(&glm::vec3(0.0, 1.0, 0.0)) *
 								   glm::rotation(ticks*0.5, &glm::vec3(1.0, 0.0, 0.0)) *
 								   glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
 								   glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
-		let mvp = p_matrices.2 * v_matrices.2 * meshes[cube_mesh_index].model_matrix;
-		meshes[cube_mesh_index].matrix_values[0] = mvp;
+		meshes[cube_mesh_index].matrix_values[1] = meshes[cube_mesh_index].model_matrix;
 		meshes[cube_mesh_index].vector_values[0] = light_pos;
 
 		camera_position += camera_velocity;
