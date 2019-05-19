@@ -1,6 +1,6 @@
 use gl::types::*;
 use crate::glutil::get_uniform_location;
-use crate::compile_program_from_files;
+use crate::glutil::compile_program_from_files;
 
 //A renderable 3D thing
 #[derive(Clone)]
