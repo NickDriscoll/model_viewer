@@ -7,7 +7,7 @@ out vec4 color;
 uniform vec3 light_pos;
 
 void main() {
-	float ambient_strength = 0.15;
+	float ambient_strength = 1.0;
 
 	vec3 light_ray = light_pos - frag_pos;
 

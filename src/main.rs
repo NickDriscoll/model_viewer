@@ -112,7 +112,7 @@ unsafe fn submit_to_hmd(eye: Eye, openvr_compositor: &Option<Compositor>, target
 	}
 }
 
-unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16], vertex_stride: i32, attribute_sizes: &[usize]) -> GLuint {
+unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16], attribute_sizes: &[usize]) -> GLuint {
 	let (mut vbo, mut vao, mut ebo) = (0, 0, 0);
 	gl::GenVertexArrays(1, &mut vao);
 	gl::GenBuffers(1, &mut vbo);
@@ -132,7 +132,12 @@ unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16], vertex_s
 				   &indices[0] as *const u16 as *const c_void,
 				   gl::STATIC_DRAW);
 
-	let byte_stride = vertex_stride * mem::size_of::<GLfloat>() as GLsizei;
+	let mut vertex_stride = 0;
+	for size in attribute_sizes {
+		vertex_stride += size;
+	}
+
+	let byte_stride = vertex_stride as i32 * mem::size_of::<GLfloat>() as i32;
 
 	//Configure and enable the vertex attributes
 	let mut accumulated_size = 0;
@@ -198,13 +203,13 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 				vertices.push(vertex.position[0]);
 				vertices.push(vertex.position[1]);
 				vertices.push(vertex.position[2]);
-				vertices.push(0.0);
-				vertices.push(0.0);
-				vertices.push(0.0);
+				vertices.push(rand::random::<f32>());
+				vertices.push(rand::random::<f32>());
+				vertices.push(rand::random::<f32>());
 			}
 
 			//Create vao
-			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), ELEMENT_STRIDE as i32, &[3, 3]) };
+			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3]) };
 
 			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, None, model.indices().len() as i32);
 			meshes.push(mesh);
@@ -362,7 +367,7 @@ fn main() {
 			0u16, 1, 2,
 			1, 3, 2
 		];
-		let vao = create_vertex_array_object(&vertices, &indices, 5, &[3, 2]);
+		let vao = create_vertex_array_object(&vertices, &indices, &[3, 2]);
 		let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(5.0, 5.0, 5.0)),
 							 &texture_program, Some(load_texture("textures/checkerboard.jpg")), indices.len() as i32);
 		meshes.push(mesh);
@@ -396,7 +401,7 @@ fn main() {
 			5, 4, 0,
 			0, 1, 5
 		];
-		let vao = create_vertex_array_object(&vertices, &indices, 6, &[3, 3]);
+		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3]);
 		let mesh = Mesh::new(vao, glm::identity(), &color_program, None, indices.len() as i32);
 		meshes.push(mesh);
 		meshes.len() - 1
@@ -563,10 +568,11 @@ fn main() {
 		//Update simulation
 		ticks += 0.02;
 
+		//Update the cube
 		meshes[cube_mesh_index].model_matrix = glm::translation(&glm::vec3(0.0, 1.0, 0.0)) *
-								   glm::rotation(ticks*0.5, &glm::vec3(1.0, 0.0, 0.0)) *
-								   glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
-								   glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
+								   			   glm::rotation(ticks*0.5, &glm::vec3(1.0, 0.0, 0.0)) *
+								   			   glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
+								   			   glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
 		meshes[cube_mesh_index].matrix_values[1] = meshes[cube_mesh_index].model_matrix;
 		meshes[cube_mesh_index].vector_values[0] = light_pos;
 
@@ -598,6 +604,7 @@ fn main() {
 			gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 			gl::Viewport(0, 0, window_size.0 as GLsizei, window_size.1 as GLsizei);
 
+			//Draw companion view
 			render_scene(&mut meshes, p_matrices.2, v_matrices.2);
 		}
 
