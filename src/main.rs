@@ -203,13 +203,12 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 				vertices.push(vertex.position[0]);
 				vertices.push(vertex.position[1]);
 				vertices.push(vertex.position[2]);
-				vertices.push(rand::random::<f32>());
-				vertices.push(rand::random::<f32>());
-				vertices.push(rand::random::<f32>());
+				vertices.push(vertex.texture_coord[0]);
+				vertices.push(vertex.texture_coord[1]);
 			}
 
 			//Create vao
-			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3]) };
+			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 2]) };
 
 			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, None, model.indices().len() as i32);
 			meshes.push(mesh);
@@ -374,7 +373,7 @@ fn main() {
 		meshes.len() - 1
 	};
 
-	//Create the cube
+	//Create the cube's mesh
 	let cube_mesh_index = unsafe {
 		let vertices = [
 			//Position data 				//Color values
@@ -407,6 +406,9 @@ fn main() {
 		meshes.len() - 1
 	};
 
+	//Create the cube's bounding sphere
+	let cube_sphere_radius = 0.125;
+
 	let light_pos = glm::vec3::<f32>(1.0, 1.0, 1.0);
 
 	//Controller related variables
@@ -431,7 +433,9 @@ fn main() {
 	let mut camera_fov_delta = 0.0;
 
 	//Main loop
+	let mut frame_count: u64 = 0;
 	while !window.should_close() {
+		frame_count += 1;
 		//Find controllers if we haven't already
 		if let Some(ref sys) = openvr_system {
 			if let (any, None)  = controller_indices {
@@ -442,7 +446,7 @@ fn main() {
 			}
 		}
 
-		//Load controller model if we haven't already
+		//Load controller meshes if we haven't already
 		if let (None, None) = controller_mesh_indices {
 			controller_mesh_indices = {
 				match controller_indices {
@@ -452,7 +456,7 @@ fn main() {
 											   &openvr_rendermodels,
 											   &mut meshes,
 											   index,
-											   &color_program)
+											   &texture_program)
 					}
 					_ => {
 						(None, None)
@@ -522,13 +526,6 @@ fn main() {
 			}
 		};
 
-		//Attach a mesh to the controllers
-		if let Some(poses) = render_poses {
-			let (ref left, ref right) = controller_indices;
-			attach_mesh_to_controller(&mut meshes, &poses, left, controller_mesh_indices.0);
-			attach_mesh_to_controller(&mut meshes, &poses, right, controller_mesh_indices.1);
-		}
-
 		//Get view matrices for each eye
 		let v_matrices = match openvr_system {
 			Some(ref sys) => {
@@ -568,6 +565,13 @@ fn main() {
 		//Update simulation
 		ticks += 0.02;
 
+		//Attach a mesh to the controllers
+		if let Some(poses) = render_poses {
+			let (ref left, ref right) = controller_indices;
+			attach_mesh_to_controller(&mut meshes, &poses, left, controller_mesh_indices.0);
+			attach_mesh_to_controller(&mut meshes, &poses, right, controller_mesh_indices.1);
+		}
+
 		//Update the cube
 		meshes[cube_mesh_index].model_matrix = glm::translation(&glm::vec3(0.0, 1.0, 0.0)) *
 								   			   glm::rotation(ticks*0.5, &glm::vec3(1.0, 0.0, 0.0)) *
@@ -575,6 +579,23 @@ fn main() {
 								   			   glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
 		meshes[cube_mesh_index].matrix_values[1] = meshes[cube_mesh_index].model_matrix;
 		meshes[cube_mesh_index].vector_values[0] = light_pos;
+
+		//Check for collision with controller
+		if let Some(index) = controller_mesh_indices.0 {
+			let controller_point = meshes[index].model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
+			let cube_center = meshes[cube_mesh_index].model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
+
+			//Check for collision with cube
+			let dist = f32::sqrt(f32::powi(controller_point.x - cube_center.x, 2) +
+								 f32::powi(controller_point.y - cube_center.y, 2) +
+								 f32::powi(controller_point.z - cube_center.z, 2));
+
+			println!("{}", dist);
+
+			if dist < cube_sphere_radius {
+
+			}
+		}
 
 		camera_position += camera_velocity;
 		camera_fov += camera_fov_delta;
