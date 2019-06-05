@@ -17,6 +17,10 @@ use openvr::TrackedControllerRole;
 use openvr::TrackedDevicePose;
 use nfd::Response;
 use std::os::raw::c_void;
+use std::fs::File;
+use std::io::BufReader;
+use obj::*;
+use rand::random;
 use crate::structs::Mesh;
 use crate::structs::GLProgram;
 use crate::glutil::create_vertex_array_object;
@@ -370,20 +374,51 @@ fn main() {
 							camera_fov_delta = 1.0;
 						}
 						Key::L => {
-							//Invoke file selection dialogue
-							match nfd::open_file_dialog(None, None).unwrap() {
-								Response::Okay(filename) => {
-									println!("Loading model: {}", filename);
-
-									//Actually load obj file
-
+							//Get file path
+							let path = {
+								//Invoke file selection dialogue
+								match nfd::open_file_dialog(None, None).unwrap() {
+									Response::Okay(filename) => {
+										filename
+									}
+									Response::OkayMultiple(_) => {
+										println!("ERROR: Can't load multiple files.");
+										continue;
+									}
+									Response::Cancel => { continue; }
 								}
-								Response::OkayMultiple(_) => {
-									println!("ERROR: Can't load multiple files.");
+							};
+
+							//Actually load obj file
+							println!("Loading model: {}", path);
+							let reader = BufReader::new(File::open(path).unwrap());
+							let model: Option<Obj> = match load_obj(reader) {
+								Ok(m) => {
+									Some(m)
 								}
-								Response::Cancel => {}
+								Err(e) => {
+									println!("{:?}", e);
+									None
+								}
+							};
+
+							//Take loaded model and create a Mesh
+							if let Some(m) = model {
+								const ELEMENT_STRIDE: usize = 6;
+								let mut vert_data = Vec::with_capacity(ELEMENT_STRIDE * m.vertices.len());
+								for v in m.vertices {
+									vert_data.push(v.position[0]);
+									vert_data.push(v.position[1]);
+									vert_data.push(v.position[2]);
+									vert_data.push(random::<f32>());
+									vert_data.push(random::<f32>());
+									vert_data.push(random::<f32>());
+								}
+
+								let vao = unsafe { create_vertex_array_object(&vert_data, &m.indices, &[3, 3]) };
+								let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), &color_program, None, m.indices.len() as i32);
+								meshes.push(mesh);
 							}
-
 						}
 						Key::Escape => {
 							window.set_should_close(true);
