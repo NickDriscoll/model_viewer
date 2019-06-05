@@ -15,6 +15,7 @@ use openvr::compositor::texture::Texture;
 use openvr::RenderModels;
 use openvr::TrackedControllerRole;
 use openvr::TrackedDevicePose;
+use nfd::Response;
 use std::os::raw::c_void;
 use crate::structs::Mesh;
 use crate::structs::GLProgram;
@@ -368,10 +369,25 @@ fn main() {
 						Key::P => {
 							camera_fov_delta = 1.0;
 						}
+						Key::L => {
+							//Invoke file selection dialogue
+							match nfd::open_file_dialog(None, None).unwrap() {
+								Response::Okay(filename) => {
+									println!("Loading model: {}", filename);
+								}
+								Response::OkayMultiple(_) => {
+									println!("ERROR: Can't load multiple files.");
+								}
+								Response::Cancel => {}
+							}
+
+						}
 						Key::Escape => {
 							window.set_should_close(true);
 						}
-						_ => {}
+						_ => {
+							println!("You pressed the unbound key: {:?}", key);
+						}
 					}
 				}
 				WindowEvent::Key(key, _, Action::Release, ..) => {
