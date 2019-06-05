@@ -15,7 +15,12 @@ use openvr::compositor::texture::Texture;
 use openvr::RenderModels;
 use openvr::TrackedControllerRole;
 use openvr::TrackedDevicePose;
+use nfd::Response;
 use std::os::raw::c_void;
+use std::fs::File;
+use std::io::BufReader;
+use obj::*;
+use rand::random;
 use crate::structs::Mesh;
 use crate::structs::GLProgram;
 use crate::glutil::create_vertex_array_object;
@@ -228,7 +233,7 @@ fn main() {
 	}
 
 	//Vec of meshes
-	let mut meshes = Vec::with_capacity(3);
+	let mut meshes: Vec<Mesh> = Vec::with_capacity(3);
 
 	//Create the floor
 	let floor_mesh_index = unsafe {
@@ -309,6 +314,8 @@ fn main() {
 	let mut camera_fov = 65.0;
 	let mut camera_fov_delta = 0.0;
 
+	let mut loaded_mesh_index = None;
+
 	//Main loop
 	let mut frame_count: u64 = 0;
 	while !window.should_close() {
@@ -351,16 +358,16 @@ fn main() {
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
 						Key::W => {
-							camera_velocity.z = 0.1;
+							camera_velocity.z = 0.05;
 						}
 						Key::S => {
-							camera_velocity.z = -0.1;
+							camera_velocity.z = -0.05;
 						}
 						Key::A => {
-							camera_velocity.x = 0.1;
+							camera_velocity.x = 0.05;
 						}
 						Key::D => {
-							camera_velocity.x = -0.1;
+							camera_velocity.x = -0.05;
 						}
 						Key::O => {
 							camera_fov_delta = -1.0;
@@ -368,10 +375,60 @@ fn main() {
 						Key::P => {
 							camera_fov_delta = 1.0;
 						}
+						Key::L => {
+							//Get file path
+							let path = {
+								//Invoke file selection dialogue
+								match nfd::open_file_dialog(None, None).unwrap() {
+									Response::Okay(filename) => {
+										filename
+									}
+									Response::OkayMultiple(_) => {
+										println!("ERROR: Can't load multiple files.");
+										continue;
+									}
+									Response::Cancel => { continue; }
+								}
+							};
+
+							//Actually load obj file
+							println!("Loading model: {}", path);
+							let reader = BufReader::new(File::open(path).unwrap());
+							let model: Option<Obj> = match load_obj(reader) {
+								Ok(m) => {
+									Some(m)
+								}
+								Err(e) => {
+									println!("{:?}", e);
+									None
+								}
+							};
+
+							//Take loaded model and create a Mesh
+							if let Some(m) = model {
+								const ELEMENT_STRIDE: usize = 6;
+								let mut vert_data = Vec::with_capacity(ELEMENT_STRIDE * m.vertices.len());
+								for v in m.vertices {
+									vert_data.push(v.position[0]);
+									vert_data.push(v.position[1]);
+									vert_data.push(v.position[2]);
+									vert_data.push(random::<f32>());
+									vert_data.push(random::<f32>());
+									vert_data.push(random::<f32>());
+								}
+
+								let vao = unsafe { create_vertex_array_object(&vert_data, &m.indices, &[3, 3]) };
+								let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), &color_program, None, m.indices.len() as i32);
+								meshes.push(mesh);
+								loaded_mesh_index = Some(meshes.len() - 1);
+							}
+						}
 						Key::Escape => {
 							window.set_should_close(true);
 						}
-						_ => {}
+						_ => {
+							println!("You pressed the unbound key: {:?}", key);
+						}
 					}
 				}
 				WindowEvent::Key(key, _, Action::Release, ..) => {
@@ -457,6 +514,12 @@ fn main() {
 		meshes[cube_mesh_index].matrix_values[1] = meshes[cube_mesh_index].model_matrix;
 		meshes[cube_mesh_index].vector_values[0] = light_pos;
 
+		//Update the loaded mesh
+		if let Some(index) = loaded_mesh_index {
+			meshes[index].model_matrix = glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
+										 glm::scaling(&glm::vec3(0.2, 0.2, 0.2));
+		}
+
 		//Check for collision with controller
 		if let Some(index) = controller_mesh_indices.0 {
 			let controller_point = meshes[index].model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
@@ -466,8 +529,6 @@ fn main() {
 			let dist = f32::sqrt(f32::powi(controller_point.x - cube_center.x, 2) +
 								 f32::powi(controller_point.y - cube_center.y, 2) +
 								 f32::powi(controller_point.z - cube_center.z, 2));
-
-			println!("{}", dist);
 
 			//If they actually are colliding
 			if dist < cube_sphere_radius {
