@@ -352,16 +352,16 @@ fn main() {
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
 						Key::W => {
-							camera_velocity.z = 0.1;
+							camera_velocity.z = 0.05;
 						}
 						Key::S => {
-							camera_velocity.z = -0.1;
+							camera_velocity.z = -0.05;
 						}
 						Key::A => {
-							camera_velocity.x = 0.1;
+							camera_velocity.x = 0.05;
 						}
 						Key::D => {
-							camera_velocity.x = -0.1;
+							camera_velocity.x = -0.05;
 						}
 						Key::O => {
 							camera_fov_delta = -1.0;
@@ -374,6 +374,9 @@ fn main() {
 							match nfd::open_file_dialog(None, None).unwrap() {
 								Response::Okay(filename) => {
 									println!("Loading model: {}", filename);
+
+									//Actually load obj file
+
 								}
 								Response::OkayMultiple(_) => {
 									println!("ERROR: Can't load multiple files.");
