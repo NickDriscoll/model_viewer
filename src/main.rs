@@ -314,11 +314,13 @@ fn main() {
 	let mut camera_velocity = glm::vec3(0.0, 0.0, 0.0);
 	let mut camera_fov = 90.0;
 	let mut camera_fov_delta = 0.0;
+	let camera_speed = 0.05;
 
 	let mut loaded_mesh_index: Option<usize> = None;
 	let mut loading_model_flag = false;
-	let mut loader_thread_handle = None;
-	let (load_tx, load_rx): (Sender<(Vec<f32>, Vec<u16>)>, Receiver<(Vec<f32>, Vec<u16>)>) = mpsc::channel();
+
+	type ModelLoadPacket = (Vec<f32>, Vec<u16>);
+	let (load_tx, load_rx): (Sender<ModelLoadPacket>, Receiver<ModelLoadPacket>) = mpsc::channel();
 
 	//Main loop
 	while !window.should_close() {
@@ -371,16 +373,16 @@ fn main() {
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
 						Key::W => {
-							camera_velocity.z = 0.05;
+							camera_velocity.z = camera_speed;
 						}
 						Key::S => {
-							camera_velocity.z = -0.05;
+							camera_velocity.z = -camera_speed;
 						}
 						Key::A => {
-							camera_velocity.x = 0.05;
+							camera_velocity.x = camera_speed;
 						}
 						Key::D => {
-							camera_velocity.x = -0.05;
+							camera_velocity.x = -camera_speed;
 						}
 						Key::O => {
 							camera_fov_delta = -1.0;
@@ -390,7 +392,7 @@ fn main() {
 						}
 						Key::L => {
 							let tx = load_tx.clone();
-							loader_thread_handle = Some(thread::spawn( move || {
+							thread::spawn( move || {
 								let path = {
 									//Invoke file selection dialogue
 									match nfd::open_file_dialog(None, None).unwrap() {
@@ -428,8 +430,8 @@ fn main() {
 								}
 
 								let pack = (vert_data, model.indices);
-								tx.send(pack);
-							}));
+								tx.send(pack).unwrap();
+							});
 							loading_model_flag = true;
 						}
 						Key::Escape => {
