@@ -7,6 +7,7 @@ use glfw::WindowMode;
 use glfw::WindowEvent;
 use self::gl::types::*;
 use openvr::ApplicationType;
+use openvr::ControllerState;
 use openvr::Eye;
 use openvr::System;
 use openvr::compositor::texture::{ColorSpace, Handle, Texture};
@@ -19,7 +20,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::thread;
 use std::sync::mpsc;
-use std::sync::mpsc::{Sender, Receiver};
 use obj::*;
 use rand::random;
 use crate::structs::Mesh;
@@ -306,6 +306,7 @@ fn main() {
 		}
 	};
 	let mut controller_mesh_indices = (None, None);
+	let mut controller_states: (Option<ControllerState>, Option<ControllerState>) = (None, None);
 
 	//Gameplay state
 	let mut ticks = 0.0;
@@ -319,7 +320,7 @@ fn main() {
 	let mut loading_model_flag = false;
 
 	type ModelLoadPacket = (Vec<f32>, Vec<u16>);
-	let (load_tx, load_rx): (Sender<ModelLoadPacket>, Receiver<ModelLoadPacket>) = mpsc::channel();
+	let (load_tx, load_rx) = mpsc::channel::<ModelLoadPacket>();
 
 	//Main loop
 	while !window.should_close() {
@@ -357,6 +358,11 @@ fn main() {
 			if let Ok(pack) = load_rx.try_recv() {
 				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1, &[3, 3]) };
 				let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), &color_program, None, pack.1.len() as i32);
+
+				//Delete old mesh if there is one
+				if let Some(i) = loaded_mesh_index {
+					meshes[i] = None;
+				}
 				loaded_mesh_index = Some(meshes.insert(mesh));
 			}
 		}
@@ -458,6 +464,30 @@ fn main() {
 			}
 		}
 
+		//Get controller state structs
+		if let (Some(index), any) = controller_indices {
+			controller_states = match openvr_system {
+				Some(ref sys) => {
+					match sys.controller_state(index) {
+						Some(state) => {
+							let mut s = controller_states;
+							s.0 = Some(state);
+							println!("{:?}", state);
+							s
+						}
+						None => {
+							let mut s = controller_states;
+							s.0 = None;
+							s
+						}
+					}
+				}
+				None => {
+					(None, None)
+				}
+			}			
+		}
+
 		//Get VR pose data
 		let render_poses = match openvr_compositor {
 			Some(ref comp) => {
@@ -471,19 +501,22 @@ fn main() {
 		//Get view matrices for each eye
 		let v_matrices = match openvr_system {
 			Some(ref sys) => {
-				if let Some(poses) = render_poses {
-					let hmd_to_absolute = openvr_to_mat4(*poses[0].device_to_absolute_tracking());
-					let left_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Left));
-					let right_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Right));
+				match render_poses {
+					Some(poses) => {
+						let hmd_to_absolute = openvr_to_mat4(*poses[0].device_to_absolute_tracking());
+						let left_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Left));
+						let right_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Right));
 
-					//Need to return inverse(hmd_to_absolute * eye_to_hmd)
-					(glm::affine_inverse(hmd_to_absolute * left_eye_to_hmd),
-					 glm::affine_inverse(hmd_to_absolute * right_eye_to_hmd),
-					 glm::affine_inverse(hmd_to_absolute))
-				} else {
-					//Create a matrix that gets a decent view of the scene
-					let view_matrix = glm::translation(&camera_position);
-					(glm::identity(), glm::identity(), view_matrix)
+						//Need to return inverse(hmd_to_absolute * eye_to_hmd)
+						(glm::affine_inverse(hmd_to_absolute * left_eye_to_hmd),
+						 glm::affine_inverse(hmd_to_absolute * right_eye_to_hmd),
+						 glm::affine_inverse(hmd_to_absolute))						
+					}
+					None => {						
+						//Create a matrix that gets a decent view of the scene
+						let view_matrix = glm::translation(&camera_position);
+						(glm::identity(), glm::identity(), view_matrix)
+					}
 				}
 			}
 			None => {
