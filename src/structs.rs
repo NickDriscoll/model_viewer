@@ -1,4 +1,6 @@
 use gl::types::*;
+use std::slice::{Iter, IterMut};
+use std::ops::{Index, IndexMut};
 use crate::glutil::get_uniform_location;
 use crate::glutil::compile_program_from_files;
 
@@ -36,6 +38,66 @@ impl<'a> Mesh<'a> {
 			matrix_values,
 			vector_values
 		}
+	}
+}
+
+pub struct OptionVec<T> {
+	optionvec: Vec<Option<T>>
+}
+
+impl<T> OptionVec<T> {
+	pub fn with_capacity(size: usize) -> Self {
+		let optionvec = Vec::with_capacity(size);
+		OptionVec {
+			optionvec
+		}
+	}
+
+	pub fn insert(&mut self, element: T) -> usize {
+		let mut index = None;
+		for i in 0..self.optionvec.len() {
+			if let None = self.optionvec[i] {
+				index = Some(i);
+				break;
+			}
+		}
+
+		match index {
+			Some(i) => {
+				self.optionvec[i] = Some(element);
+				i
+			}
+			None => {
+				self.optionvec.push(Some(element));
+				self.optionvec.len() - 1
+			}
+		}
+	}
+
+	pub fn split_at_mut(&mut self, mid: usize) -> (&mut [Option<T>], &mut [Option<T>]) {
+		self.optionvec.split_at_mut(mid)
+	}
+
+	pub fn iter(&self) -> Iter<Option<T>> {
+		self.optionvec.iter()
+	}
+
+	pub fn iter_mut(&mut self) -> IterMut<Option<T>> {
+		self.optionvec.iter_mut()
+	}
+}
+
+impl<T> Index<usize> for OptionVec<T> {
+	type Output = Option<T>;
+
+	fn index(&self, index: usize) -> &Self::Output {
+		&self.optionvec[index]
+	}
+}
+
+impl<T> IndexMut<usize> for OptionVec<T> {
+	fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+		&mut self.optionvec[index]
 	}
 }
 

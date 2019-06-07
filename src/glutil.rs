@@ -12,6 +12,7 @@ use openvr::Eye;
 use openvr::Compositor;
 use crate::structs::Mesh;
 use crate::structs::GLProgram;
+use crate::structs::OptionVec;
 use crate::flatten_glm;
 
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
@@ -104,7 +105,7 @@ pub unsafe fn render_mesh(mesh: &Mesh) {
 	gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
 }
 
-pub unsafe fn render_scene(meshes: &mut Vec<Option<Mesh>>, p_matrix: glm::TMat4<f32>, v_matrix: glm::TMat4<f32>) {
+pub unsafe fn render_scene(meshes: &mut OptionVec<Mesh>, p_matrix: glm::TMat4<f32>, v_matrix: glm::TMat4<f32>) {
 	gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
 	for option_mesh in meshes.iter_mut() {

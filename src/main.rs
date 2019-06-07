@@ -24,6 +24,7 @@ use obj::*;
 use rand::random;
 use crate::structs::Mesh;
 use crate::structs::GLProgram;
+use crate::structs::OptionVec;
 use crate::glutil::create_vertex_array_object;
 use crate::glutil::render_scene;
 use crate::glutil::submit_to_hmd;
@@ -65,7 +66,7 @@ fn get_projection_matrix(sys: &System, eye: Eye) -> glm::TMat4<f32> {
 		)
 }
 
-fn attach_mesh_to_controller(meshes: &mut Vec<Option<Mesh>>, poses: &[TrackedDevicePose], controller_index: &Option<u32>, mesh_index: Option<usize>) {
+fn attach_mesh_to_controller(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevicePose], controller_index: &Option<u32>, mesh_index: Option<usize>) {
 	if let Some(index) = controller_index {
 		let controller_model_matrix = openvr_to_mat4(*poses[*index as usize].device_to_absolute_tracking());
 		if let Some(i) = mesh_index {
@@ -76,7 +77,7 @@ fn attach_mesh_to_controller(meshes: &mut Vec<Option<Mesh>>, poses: &[TrackedDev
 	}
 }
 
-fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, meshes: &mut Vec<Option<Mesh<'a>>>, index: u32, program: &'a GLProgram) -> (Option<usize>, Option<usize>) {
+fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, meshes: &mut OptionVec<Mesh<'a>>, index: u32, program: &'a GLProgram) -> (Option<usize>, Option<usize>) {
 	let mut result = (None, None);
 	if let (Some(ref sys), Some(ref ren_mod)) = (&openvr_system, &openvr_rendermodels) {
 		let name = sys.string_tracked_device_property(index, openvr::property::RenderModelName_String).unwrap();
@@ -96,12 +97,10 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 2]) };
 
 			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, None, model.indices().len() as i32);
-			meshes.push(Some(mesh));
-			let left_index = Some(meshes.len() - 1);
+			let left_index = Some(meshes.insert(mesh));
 
 			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, None, model.indices().len() as i32);
-			meshes.push(Some(mesh));
-			let right_index = Some(meshes.len() - 1);
+			let right_index = Some(meshes.insert(mesh));
 
 			println!("Loaded controller mesh");
 
@@ -236,7 +235,7 @@ fn main() {
 	}
 
 	//Vec of meshes
-	let mut meshes: Vec<Option<Mesh>> = Vec::with_capacity(3);
+	let mut meshes: OptionVec<Mesh> = OptionVec::with_capacity(3);
 
 	//Create the floor
 	let floor_mesh_index = unsafe {
@@ -254,8 +253,7 @@ fn main() {
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 2]);
 		let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(5.0, 5.0, 5.0)),
 							 &texture_program, Some(load_texture("textures/checkerboard.jpg")), indices.len() as i32);
-		meshes.push(Some(mesh));
-		meshes.len() - 1
+		meshes.insert(mesh)
 	};
 
 	//Create the cube's mesh
@@ -287,8 +285,7 @@ fn main() {
 		];
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3]);
 		let mesh = Mesh::new(vao, glm::identity(), &color_program, None, indices.len() as i32);
-		meshes.push(Some(mesh));
-		meshes.len() - 1
+		meshes.insert(mesh)
 	};
 
 	//Create the cube's bounding sphere
@@ -360,9 +357,8 @@ fn main() {
 			if let Ok(pack) = load_rx.try_recv() {
 				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1, &[3, 3]) };
 				let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), &color_program, None, pack.1.len() as i32);
-				meshes.push(Some(mesh));
-				loaded_mesh_index = Some(meshes.len() - 1);
-				loading_model_flag = false;
+
+				loaded_mesh_index = Some(meshes.insert(mesh));
 			}
 		}
 
