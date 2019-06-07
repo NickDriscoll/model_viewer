@@ -284,7 +284,7 @@ fn main() {
 			0, 1, 5
 		];
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3]);
-		let mesh = Mesh::new(vao, glm::identity(), &color_program, None, indices.len() as i32);
+		let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), &color_program, None, indices.len() as i32);
 		meshes.insert(mesh)
 	};
 
@@ -357,7 +357,6 @@ fn main() {
 			if let Ok(pack) = load_rx.try_recv() {
 				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1, &[3, 3]) };
 				let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), &color_program, None, pack.1.len() as i32);
-
 				loaded_mesh_index = Some(meshes.insert(mesh));
 			}
 		}
@@ -517,10 +516,6 @@ fn main() {
 
 		//Update the cube
 		if let Some(mesh) = &mut meshes[cube_mesh_index] {
-			mesh.model_matrix = glm::translation(&glm::vec3(0.0, 1.0, 0.0)) *
-									   			   glm::rotation(ticks*0.5, &glm::vec3(1.0, 0.0, 0.0)) *
-									   			   glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
-									   			   glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
 			mesh.matrix_values[1] = mesh.model_matrix;
 			mesh.vector_values[0] = light_pos;			
 		}
@@ -535,15 +530,23 @@ fn main() {
 
 		//Check for collision with controller
 		if let Some(index) = controller_mesh_indices.0 {
-			let mut controller_point = glm::vec4(0.0, 0.0, 0.0, 1.0);
-			if let Some(mesh) = &meshes[index] {
-				controller_point = mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
-			}
+			let controller_point = match &meshes[index] {
+				Some(mesh) => {
+					mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
+				}
+				_ => {
+					glm::vec4(0.0, 0.0, 0.0, 1.0)
+				}
+			};
 
-			let mut cube_center = glm::vec4(0.0, 0.0, 0.0, 1.0);
-			if let Some(mesh) = &meshes[cube_mesh_index] {
-				cube_center = mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
-			}
+			let cube_center = match &meshes[cube_mesh_index] {
+				Some(mesh) => {
+					mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
+				}
+				_ => {
+					glm::vec4(0.0, 0.0, 0.0, 1.0)
+				}
+			};
 
 			//Get distance from controller_point to cube_center
 			let dist = f32::sqrt(f32::powi(controller_point.x - cube_center.x, 2) +
@@ -552,12 +555,15 @@ fn main() {
 
 			//If they actually are colliding
 			if dist < cube_sphere_radius {
+				/*
 				let (first, second) = meshes.split_at_mut(cube_mesh_index + 1);
 				let first_len = first.len();
 
-				if let (Some(m1), Some(m2)) = (&mut first[first_len - 1], &second[index - first_len]) {
-					m1.model_matrix = m2.model_matrix * glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
+				if let (Some(cube), Some(controller)) = (&mut first[first_len - 1], &second[index - first_len]) {
+					cube.model_matrix = controller.model_matrix * glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
 				}
+				*/
+				println!("Colliding!");
 			}
 		}
 
