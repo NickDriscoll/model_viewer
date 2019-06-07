@@ -556,8 +556,11 @@ fn main() {
 
 			//If they actually are colliding
 			if dist < cube_sphere_radius {
-				if let (Some(m1), Some(m2)) = (&mut meshes[cube_mesh_index], &meshes[index]) {
-					m1.model_matrix = m2.model_matrix * glm::scaling(&glm::vec3(0.25, 0.25, 0.25));					
+				let (first, second) = meshes.split_at_mut(cube_mesh_index + 1);
+				let first_len = first.len();
+
+				if let (Some(m1), Some(m2)) = (&mut first[first_len - 1], &second[index - first_len]) {
+					m1.model_matrix = m2.model_matrix * glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
 				}
 			}
 		}
