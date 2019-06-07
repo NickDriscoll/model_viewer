@@ -9,9 +9,7 @@ use self::gl::types::*;
 use openvr::ApplicationType;
 use openvr::Eye;
 use openvr::System;
-use openvr::compositor::texture::Handle;
-use openvr::compositor::texture::ColorSpace;
-use openvr::compositor::texture::Texture;
+use openvr::compositor::texture::{ColorSpace, Handle, Texture};
 use openvr::RenderModels;
 use openvr::TrackedControllerRole;
 use openvr::TrackedDevicePose;
@@ -19,6 +17,9 @@ use nfd::Response;
 use std::os::raw::c_void;
 use std::fs::File;
 use std::io::BufReader;
+use std::thread;
+use std::sync::mpsc;
+use std::sync::mpsc::{Sender, Receiver};
 use obj::*;
 use rand::random;
 use crate::structs::Mesh;
@@ -311,15 +312,16 @@ fn main() {
 	let mut ticks = 0.0;
 	let mut camera_position = glm::vec3(0.0, -1.0, -1.0);
 	let mut camera_velocity = glm::vec3(0.0, 0.0, 0.0);
-	let mut camera_fov = 65.0;
+	let mut camera_fov = 90.0;
 	let mut camera_fov_delta = 0.0;
 
-	let mut loaded_mesh_index = None;
+	let mut loaded_mesh_index: Option<usize> = None;
+	let mut loading_model_flag = false;
+	let mut loader_thread_handle = None;
+	let (load_tx, load_rx): (Sender<(Vec<f32>, Vec<u16>)>, Receiver<(Vec<f32>, Vec<u16>)>) = mpsc::channel();
 
 	//Main loop
-	let mut frame_count: u64 = 0;
 	while !window.should_close() {
-		frame_count += 1;
 		//Find controllers if we haven't already
 		if let Some(ref sys) = openvr_system {
 			if let (any, None)  = controller_indices {
@@ -346,6 +348,17 @@ fn main() {
 						(None, None)
 					}
 				}
+			}
+		}
+
+		//Check if a new model has been loaded
+		if loading_model_flag {
+			if let Ok(pack) = load_rx.try_recv() {
+				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1, &[3, 3]) };
+				let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), &color_program, None, pack.1.len() as i32);
+				meshes.push(mesh);
+				loaded_mesh_index = Some(meshes.len() - 1);
+				loading_model_flag = false;
 			}
 		}
 
@@ -376,39 +389,36 @@ fn main() {
 							camera_fov_delta = 1.0;
 						}
 						Key::L => {
-							//Get file path
-							let path = {
-								//Invoke file selection dialogue
-								match nfd::open_file_dialog(None, None).unwrap() {
-									Response::Okay(filename) => {
-										filename
+							let tx = load_tx.clone();
+							loader_thread_handle = Some(thread::spawn( move || {
+								let path = {
+									//Invoke file selection dialogue
+									match nfd::open_file_dialog(None, None).unwrap() {
+										Response::Okay(filename) => {
+											filename
+										}
+										Response::OkayMultiple(_) => {
+											return
+										}
+										Response::Cancel => { return }
 									}
-									Response::OkayMultiple(_) => {
-										println!("ERROR: Can't load multiple files.");
-										continue;
+								};
+
+								println!("Loading model: {}", path);
+								let model: Obj = match load_obj(BufReader::new(File::open(path).unwrap())) {
+									Ok(m) => {
+										m
 									}
-									Response::Cancel => { continue; }
-								}
-							};
+									Err(e) => {
+										println!("{:?}", e);
+										return
+									}
+								};
 
-							//Actually load obj file
-							println!("Loading model: {}", path);
-							let reader = BufReader::new(File::open(path).unwrap());
-							let model: Option<Obj> = match load_obj(reader) {
-								Ok(m) => {
-									Some(m)
-								}
-								Err(e) => {
-									println!("{:?}", e);
-									None
-								}
-							};
-
-							//Take loaded model and create a Mesh
-							if let Some(m) = model {
+								//Take loaded model and create a Mesh
 								const ELEMENT_STRIDE: usize = 6;
-								let mut vert_data = Vec::with_capacity(ELEMENT_STRIDE * m.vertices.len());
-								for v in m.vertices {
+								let mut vert_data = Vec::with_capacity(ELEMENT_STRIDE * model.vertices.len());
+								for v in model.vertices {
 									vert_data.push(v.position[0]);
 									vert_data.push(v.position[1]);
 									vert_data.push(v.position[2]);
@@ -417,11 +427,10 @@ fn main() {
 									vert_data.push(random::<f32>());
 								}
 
-								let vao = unsafe { create_vertex_array_object(&vert_data, &m.indices, &[3, 3]) };
-								let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), &color_program, None, m.indices.len() as i32);
-								meshes.push(mesh);
-								loaded_mesh_index = Some(meshes.len() - 1);
-							}
+								let pack = (vert_data, model.indices);
+								tx.send(pack);
+							}));
+							loading_model_flag = true;
 						}
 						Key::Escape => {
 							window.set_should_close(true);
@@ -532,7 +541,8 @@ fn main() {
 
 			//If they actually are colliding
 			if dist < cube_sphere_radius {
-				println!("Yoooo");
+				meshes[cube_mesh_index].model_matrix = meshes[index].model_matrix *
+													   glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
 			}
 		}
 
