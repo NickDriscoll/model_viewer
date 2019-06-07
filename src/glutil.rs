@@ -104,15 +104,19 @@ pub unsafe fn render_mesh(mesh: &Mesh) {
 	gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
 }
 
-pub unsafe fn render_scene(meshes: &mut [Mesh], p_matrix: glm::TMat4<f32>, v_matrix: glm::TMat4<f32>) {
+pub unsafe fn render_scene(meshes: &mut Vec<Option<Mesh>>, p_matrix: glm::TMat4<f32>, v_matrix: glm::TMat4<f32>) {
 	gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-	for mesh in meshes.iter_mut() {
-		mesh.matrix_values[0] = p_matrix * v_matrix * mesh.model_matrix;
+	for option_mesh in meshes.iter_mut() {
+		if let Some(mesh) = option_mesh {
+			mesh.matrix_values[0] = p_matrix * v_matrix * mesh.model_matrix;
+		}
 	}
 
-	for mesh in meshes.iter() {
-		render_mesh(&mesh);
+	for option_mesh in meshes.iter() {
+		if let Some(mesh) = option_mesh {
+			render_mesh(&mesh);
+		}
 	}
 }
 

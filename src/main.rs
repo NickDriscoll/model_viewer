@@ -65,16 +65,18 @@ fn get_projection_matrix(sys: &System, eye: Eye) -> glm::TMat4<f32> {
 		)
 }
 
-fn attach_mesh_to_controller(meshes: &mut [Mesh], poses: &[TrackedDevicePose], controller_index: &Option<u32>, mesh_index: Option<usize>) {
+fn attach_mesh_to_controller(meshes: &mut Vec<Option<Mesh>>, poses: &[TrackedDevicePose], controller_index: &Option<u32>, mesh_index: Option<usize>) {
 	if let Some(index) = controller_index {
 		let controller_model_matrix = openvr_to_mat4(*poses[*index as usize].device_to_absolute_tracking());
 		if let Some(i) = mesh_index {
-			meshes[i].model_matrix = controller_model_matrix;
+			if let Some(mesh) = &mut meshes[i] {
+				mesh.model_matrix = controller_model_matrix;
+			}
 		}
 	}
 }
 
-fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, meshes: &mut Vec<Mesh<'a>>, index: u32, program: &'a GLProgram) -> (Option<usize>, Option<usize>) {
+fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, meshes: &mut Vec<Option<Mesh<'a>>>, index: u32, program: &'a GLProgram) -> (Option<usize>, Option<usize>) {
 	let mut result = (None, None);
 	if let (Some(ref sys), Some(ref ren_mod)) = (&openvr_system, &openvr_rendermodels) {
 		let name = sys.string_tracked_device_property(index, openvr::property::RenderModelName_String).unwrap();
@@ -94,11 +96,11 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 2]) };
 
 			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, None, model.indices().len() as i32);
-			meshes.push(mesh);
+			meshes.push(Some(mesh));
 			let left_index = Some(meshes.len() - 1);
 
 			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, None, model.indices().len() as i32);
-			meshes.push(mesh);
+			meshes.push(Some(mesh));
 			let right_index = Some(meshes.len() - 1);
 
 			println!("Loaded controller mesh");
@@ -234,7 +236,7 @@ fn main() {
 	}
 
 	//Vec of meshes
-	let mut meshes: Vec<Mesh> = Vec::with_capacity(3);
+	let mut meshes: Vec<Option<Mesh>> = Vec::with_capacity(3);
 
 	//Create the floor
 	let floor_mesh_index = unsafe {
@@ -252,7 +254,7 @@ fn main() {
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 2]);
 		let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(5.0, 5.0, 5.0)),
 							 &texture_program, Some(load_texture("textures/checkerboard.jpg")), indices.len() as i32);
-		meshes.push(mesh);
+		meshes.push(Some(mesh));
 		meshes.len() - 1
 	};
 
@@ -285,7 +287,7 @@ fn main() {
 		];
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3]);
 		let mesh = Mesh::new(vao, glm::identity(), &color_program, None, indices.len() as i32);
-		meshes.push(mesh);
+		meshes.push(Some(mesh));
 		meshes.len() - 1
 	};
 
@@ -358,7 +360,7 @@ fn main() {
 			if let Ok(pack) = load_rx.try_recv() {
 				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1, &[3, 3]) };
 				let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), &color_program, None, pack.1.len() as i32);
-				meshes.push(mesh);
+				meshes.push(Some(mesh));
 				loaded_mesh_index = Some(meshes.len() - 1);
 				loading_model_flag = false;
 			}
@@ -518,23 +520,34 @@ fn main() {
 		}
 
 		//Update the cube
-		meshes[cube_mesh_index].model_matrix = glm::translation(&glm::vec3(0.0, 1.0, 0.0)) *
-								   			   glm::rotation(ticks*0.5, &glm::vec3(1.0, 0.0, 0.0)) *
-								   			   glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
-								   			   glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
-		meshes[cube_mesh_index].matrix_values[1] = meshes[cube_mesh_index].model_matrix;
-		meshes[cube_mesh_index].vector_values[0] = light_pos;
+		if let Some(mesh) = &mut meshes[cube_mesh_index] {
+			mesh.model_matrix = glm::translation(&glm::vec3(0.0, 1.0, 0.0)) *
+									   			   glm::rotation(ticks*0.5, &glm::vec3(1.0, 0.0, 0.0)) *
+									   			   glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
+									   			   glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
+			mesh.matrix_values[1] = mesh.model_matrix;
+			mesh.vector_values[0] = light_pos;			
+		}
 
 		//Update the loaded mesh
 		if let Some(index) = loaded_mesh_index {
-			meshes[index].model_matrix = glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
-										 glm::scaling(&glm::vec3(0.2, 0.2, 0.2));
+			if let Some(mesh) = &mut meshes[index] {
+				mesh.model_matrix = glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
+											 glm::scaling(&glm::vec3(0.2, 0.2, 0.2));				
+			}
 		}
 
 		//Check for collision with controller
 		if let Some(index) = controller_mesh_indices.0 {
-			let controller_point = meshes[index].model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
-			let cube_center = meshes[cube_mesh_index].model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
+			let mut controller_point = glm::vec4(0.0, 0.0, 0.0, 1.0);
+			if let Some(mesh) = &meshes[index] {
+				controller_point = mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
+			}
+
+			let mut cube_center = glm::vec4(0.0, 0.0, 0.0, 1.0);
+			if let Some(mesh) = &meshes[cube_mesh_index] {
+				cube_center = mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
+			}
 
 			//Get distance from controller_point to cube_center
 			let dist = f32::sqrt(f32::powi(controller_point.x - cube_center.x, 2) +
@@ -543,8 +556,9 @@ fn main() {
 
 			//If they actually are colliding
 			if dist < cube_sphere_radius {
-				meshes[cube_mesh_index].model_matrix = meshes[index].model_matrix *
-													   glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
+				if let (Some(m1), Some(m2)) = (&mut meshes[cube_mesh_index], &meshes[index]) {
+					m1.model_matrix = m2.model_matrix * glm::scaling(&glm::vec3(0.25, 0.25, 0.25));					
+				}
 			}
 		}
 
