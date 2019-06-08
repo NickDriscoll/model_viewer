@@ -235,8 +235,8 @@ fn main() {
 		gl::Enable(gl::CULL_FACE);
 	}
 
-	//Vec of meshes
-	let mut meshes: OptionVec<Mesh> = OptionVec::with_capacity(3);
+	//OptionVec of meshes
+	let mut meshes: OptionVec<Mesh> = OptionVec::with_capacity(5);
 
 	//Create the floor
 	let floor_mesh_index = unsafe {
@@ -291,6 +291,7 @@ fn main() {
 
 	//Create the cube's bounding sphere
 	let cube_sphere_radius = 0.125;
+	let mut cube_bound_controller_mesh = None;
 
 	let light_pos = glm::vec3::<f32>(1.0, 1.0, 1.0);
 
@@ -299,6 +300,7 @@ fn main() {
 	let mut controller_indices = [None; NUMBER_OF_CONTROLLERS];
 	let mut controller_mesh_indices = [None; NUMBER_OF_CONTROLLERS];
 	let mut controller_states = [None; NUMBER_OF_CONTROLLERS];
+	let mut previous_controller_states: [Option<ControllerState>; NUMBER_OF_CONTROLLERS] = [None; NUMBER_OF_CONTROLLERS];
 
 	//Gameplay state
 	let mut ticks = 0.0;
@@ -342,6 +344,23 @@ fn main() {
 			}
 		}
 
+		//Get VR pose data
+		let render_poses = match openvr_compositor {
+			Some(ref comp) => {
+				Some(comp.wait_get_poses().unwrap().render)
+			}
+			None => {
+				None
+			}
+		};
+
+		//Get controller state structs
+		for i in 0..NUMBER_OF_CONTROLLERS {
+			if let (Some(index), Some(sys)) = (controller_indices[i], &openvr_system) {
+				controller_states[i] = sys.controller_state(index);
+			}
+		}
+
 		//Check if a new model has been loaded
 		if loading_model_flag {
 			if let Ok(pack) = load_rx.try_recv() {
@@ -353,6 +372,7 @@ fn main() {
 					meshes[i] = None;
 				}
 				loaded_mesh_index = Some(meshes.insert(mesh));
+				loading_model_flag = false;
 			}
 		}
 
@@ -450,34 +470,46 @@ fn main() {
 			}
 		}
 
-		//Get controller state structs
+		//Handle controller input
 		for i in 0..NUMBER_OF_CONTROLLERS {
-			if let (Some(index), Some(sys)) = (controller_indices[i], &openvr_system) {
-				controller_states[i] = sys.controller_state(index);
-			}
-		}
+			if let (Some(mesh_index), Some(state), Some(p_state)) = (controller_mesh_indices[i], controller_states[i], previous_controller_states[i]) {
+				if state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER != 0 &&
+				   p_state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER == 0 {
+					//Grab the object the controller is currently touching, if there is one
+					let controller_point = match &meshes[mesh_index as usize] {
+						Some(mesh) => {
+							mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
+						}
+						_ => {
+							glm::vec4(0.0, 0.0, 0.0, 1.0)
+						}
+					};
 
-		//Detect if the trigger is being held
-		for i in 0..NUMBER_OF_CONTROLLERS {
-			match controller_states[i] {
-				Some(state) => {
-					if state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER != 0 {
-						println!("Trigger {} is held", i);
+					let cube_center = match &meshes[cube_mesh_index] {
+						Some(mesh) => {
+							mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
+						}
+						_ => {
+							glm::vec4(0.0, 0.0, 0.0, 1.0)
+						}
+					};
+
+					//Get distance from controller_point to cube_center
+					let dist = f32::sqrt(f32::powi(controller_point.x - cube_center.x, 2) +
+										 f32::powi(controller_point.y - cube_center.y, 2) +
+										 f32::powi(controller_point.z - cube_center.z, 2));
+
+					if dist < cube_sphere_radius {
+						cube_bound_controller_mesh = Some(mesh_index);
 					}
 				}
-				None => {}
+
+				if state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER == 0 &&
+				   p_state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER != 0 {
+					cube_bound_controller_mesh = None;
+				}
 			}
 		}
-
-		//Get VR pose data
-		let render_poses = match openvr_compositor {
-			Some(ref comp) => {
-				Some(comp.wait_get_poses().unwrap().render)
-			}
-			None => {
-				None
-			}
-		};
 
 		//Get view matrices for each eye
 		let v_matrices = match openvr_system {
@@ -531,7 +563,16 @@ fn main() {
 		//Update the cube
 		if let Some(mesh) = &mut meshes[cube_mesh_index] {
 			mesh.matrix_values[1] = mesh.model_matrix;
-			mesh.vector_values[0] = light_pos;			
+			mesh.vector_values[0] = light_pos;
+		}
+
+		if let Some(mesh_index) = cube_bound_controller_mesh {			
+			let (first, second) = meshes.split_at_mut(cube_mesh_index + 1);
+			let first_len = first.len();
+
+			if let (Some(cube), Some(controller)) = (&mut first[first_len - 1], &second[mesh_index - first_len]) {
+				cube.model_matrix = controller.model_matrix * glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
+			}
 		}
 
 		//Update the loaded mesh
@@ -577,12 +618,14 @@ fn main() {
 					cube.model_matrix = controller.model_matrix * glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
 				}
 				*/
-				println!("Colliding!");
+				//println!("Colliding!");
 			}
 		}
 
 		camera_position += camera_velocity;
 		camera_fov += camera_fov_delta;
+
+		previous_controller_states = controller_states;
 
 		//Rendering code
 		unsafe {

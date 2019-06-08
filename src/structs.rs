@@ -55,6 +55,8 @@ impl<T> OptionVec<T> {
 
 	pub fn insert(&mut self, element: T) -> usize {
 		let mut index = None;
+
+		//Search for an empty space
 		for i in 0..self.optionvec.len() {
 			if let None = self.optionvec[i] {
 				index = Some(i);
@@ -62,6 +64,7 @@ impl<T> OptionVec<T> {
 			}
 		}
 
+		//Fill the empty space if an index was found, push otherwise
 		match index {
 			Some(i) => {
 				self.optionvec[i] = Some(element);
