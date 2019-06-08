@@ -396,7 +396,6 @@ fn main() {
 									Response::Cancel => { return }
 								};
 
-								println!("Loading model: {}", path);
 								let model: Obj = match load_obj(BufReader::new(File::open(path).unwrap())) {
 									Ok(m) => {
 										m
@@ -462,7 +461,7 @@ fn main() {
 		for i in 0..NUMBER_OF_CONTROLLERS {
 			match controller_states[i] {
 				Some(state) => {
-					if state.button_pressed == u64::pow(2, button_id::STEAM_VR_TRIGGER) {
+					if state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER != 0 {
 						println!("Trigger {} is held", i);
 					}
 				}
