@@ -295,19 +295,10 @@ fn main() {
 	let light_pos = glm::vec3::<f32>(1.0, 1.0, 1.0);
 
 	//Controller related variables
-	let mut controller_indices = match openvr_system {
-		Some(ref sys) => {
-			let left_index = sys.tracked_device_index_for_controller_role(TrackedControllerRole::LeftHand);
-			let right_index = sys.tracked_device_index_for_controller_role(TrackedControllerRole::RightHand);
-
-			[left_index, right_index]
-		}
-		None => {
-			[None, None]
-		}
-	};
-	let mut controller_mesh_indices = [None; 2];
-	let mut controller_states = [None; 2];
+	const NUMBER_OF_CONTROLLERS: usize = 2;
+	let mut controller_indices = [None; NUMBER_OF_CONTROLLERS];
+	let mut controller_mesh_indices = [None; NUMBER_OF_CONTROLLERS];
+	let mut controller_states = [None; NUMBER_OF_CONTROLLERS];
 
 	//Gameplay state
 	let mut ticks = 0.0;
@@ -461,14 +452,14 @@ fn main() {
 		}
 
 		//Get controller state structs
-		for i in 0..controller_indices.len() {
+		for i in 0..NUMBER_OF_CONTROLLERS {
 			if let (Some(index), Some(sys)) = (controller_indices[i], &openvr_system) {
 				controller_states[i] = sys.controller_state(index);
 			}
 		}
 
 		//Detect if the trigger is being held
-		for i in 0..controller_states.len() {
+		for i in 0..NUMBER_OF_CONTROLLERS {
 			match controller_states[i] {
 				Some(state) => {
 					if state.button_pressed == u64::pow(2, button_id::STEAM_VR_TRIGGER) {
@@ -533,7 +524,7 @@ fn main() {
 
 		//Attach a mesh to the controllers
 		if let Some(poses) = render_poses {
-			for i in 0..controller_indices.len() {
+			for i in 0..NUMBER_OF_CONTROLLERS {
 				attach_mesh_to_controller(&mut meshes, &poses, &controller_indices[i], controller_mesh_indices[i]);
 			}
 		}
