@@ -394,17 +394,15 @@ fn main() {
 						Key::L => {
 							let tx = load_tx.clone();
 							thread::spawn( move || {
-								let path = {
-									//Invoke file selection dialogue
-									match nfd::open_file_dialog(None, None).unwrap() {
-										Response::Okay(filename) => {
-											filename
-										}
-										Response::OkayMultiple(_) => {
-											return
-										}
-										Response::Cancel => { return }
+								//Invoke file selection dialogue
+								let path = match nfd::open_file_dialog(None, None).unwrap() {
+									Response::Okay(filename) => {
+										filename
 									}
+									Response::OkayMultiple(_) => {
+										return
+									}
+									Response::Cancel => { return }
 								};
 
 								println!("Loading model: {}", path);
