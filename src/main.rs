@@ -7,6 +7,7 @@ use glfw::WindowMode;
 use glfw::WindowEvent;
 use self::gl::types::*;
 use openvr::ApplicationType;
+use openvr::button_id;
 use openvr::ControllerState;
 use openvr::Eye;
 use openvr::System;
@@ -77,8 +78,8 @@ fn attach_mesh_to_controller(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevic
 	}
 }
 
-fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, meshes: &mut OptionVec<Mesh<'a>>, index: u32, program: &'a GLProgram) -> (Option<usize>, Option<usize>) {
-	let mut result = (None, None);
+fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, meshes: &mut OptionVec<Mesh<'a>>, index: u32, program: &'a GLProgram) -> [Option<usize>; 2] {
+	let mut result = [None; 2];
 	if let (Some(ref sys), Some(ref ren_mod)) = (&openvr_system, &openvr_rendermodels) {
 		let name = sys.string_tracked_device_property(index, openvr::property::RenderModelName_String).unwrap();
 		if let Some(model) = ren_mod.load_render_model(&name).unwrap() {
@@ -104,7 +105,7 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 
 			println!("Loaded controller mesh");
 
-			result = (left_index, right_index);
+			result = [left_index, right_index];
 		}
 	}
 	result
@@ -299,14 +300,14 @@ fn main() {
 			let left_index = sys.tracked_device_index_for_controller_role(TrackedControllerRole::LeftHand);
 			let right_index = sys.tracked_device_index_for_controller_role(TrackedControllerRole::RightHand);
 
-			(left_index, right_index)
+			[left_index, right_index]
 		}
 		None => {
-			(None, None)
+			[None, None]
 		}
 	};
-	let mut controller_mesh_indices = (None, None);
-	let mut controller_states: (Option<ControllerState>, Option<ControllerState>) = (None, None);
+	let mut controller_mesh_indices = [None; 2];
+	let mut controller_states = [None; 2];
 
 	//Gameplay state
 	let mut ticks = 0.0;
@@ -326,29 +327,26 @@ fn main() {
 	while !window.should_close() {
 		//Find controllers if we haven't already
 		if let Some(ref sys) = openvr_system {
-			if let (any, None)  = controller_indices {
-				controller_indices = (any, sys.tracked_device_index_for_controller_role(TrackedControllerRole::RightHand));
-			}
-			if let (None, any) = controller_indices {
-				controller_indices = (sys.tracked_device_index_for_controller_role(TrackedControllerRole::LeftHand), any);
+			for i in 0..controller_indices.len() {
+				if let None = controller_indices[i] {
+					const ROLES: [TrackedControllerRole; 2] = [TrackedControllerRole::LeftHand, TrackedControllerRole::RightHand];
+					controller_indices[i] = sys.tracked_device_index_for_controller_role(ROLES[i]);
+				}
 			}
 		}
 
 		//Load controller meshes if we haven't already
-		if let (None, None) = controller_mesh_indices {
-			controller_mesh_indices = {
-				match controller_indices {
-					(Some(index), _) |
-					(_, Some(index)) => {
-						load_controller_meshes(&openvr_system,
+		if let None = controller_mesh_indices[0] {
+			for i in 0..controller_indices.len() {
+				if let Some(index) = controller_indices[i] {
+					controller_mesh_indices = load_controller_meshes(&openvr_system,
 											   &openvr_rendermodels,
 											   &mut meshes,
 											   index,
-											   &texture_program)
-					}
-					_ => {
-						(None, None)
-					}
+											   &texture_program);
+
+					//We break here because the models only need to be loaded once, but we still want to check both controller indices if necessary
+					break;
 				}
 			}
 		}
@@ -465,27 +463,22 @@ fn main() {
 		}
 
 		//Get controller state structs
-		if let (Some(index), any) = controller_indices {
-			controller_states = match openvr_system {
-				Some(ref sys) => {
-					match sys.controller_state(index) {
-						Some(state) => {
-							let mut s = controller_states;
-							s.0 = Some(state);
-							println!("{:?}", state);
-							s
-						}
-						None => {
-							let mut s = controller_states;
-							s.0 = None;
-							s
-						}
+		for i in 0..controller_indices.len() {
+			if let (Some(index), Some(sys)) = (controller_indices[i], &openvr_system) {
+				controller_states[i] = sys.controller_state(index);
+			}
+		}
+
+		//Detect if the trigger is being held
+		for i in 0..controller_states.len() {
+			match controller_states[i] {
+				Some(state) => {
+					if state.button_pressed == u64::pow(2, button_id::STEAM_VR_TRIGGER) {
+						println!("Trigger {} is held", i);
 					}
 				}
-				None => {
-					(None, None)
-				}
-			}			
+				None => {}
+			}
 		}
 
 		//Get VR pose data
@@ -542,9 +535,9 @@ fn main() {
 
 		//Attach a mesh to the controllers
 		if let Some(poses) = render_poses {
-			let (ref left, ref right) = controller_indices;
-			attach_mesh_to_controller(&mut meshes, &poses, left, controller_mesh_indices.0);
-			attach_mesh_to_controller(&mut meshes, &poses, right, controller_mesh_indices.1);
+			for i in 0..controller_indices.len() {
+				attach_mesh_to_controller(&mut meshes, &poses, &controller_indices[i], controller_mesh_indices[i]);
+			}
 		}
 
 		//Update the cube
@@ -562,7 +555,7 @@ fn main() {
 		}
 
 		//Check for collision with controller
-		if let Some(index) = controller_mesh_indices.0 {
+		if let Some(index) = controller_mesh_indices[0] {
 			let controller_point = match &meshes[index] {
 				Some(mesh) => {
 					mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
