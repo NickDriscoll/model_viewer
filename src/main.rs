@@ -23,13 +23,8 @@ use std::thread;
 use std::sync::mpsc;
 use obj::*;
 use rand::random;
-use crate::structs::Mesh;
-use crate::structs::GLProgram;
-use crate::structs::OptionVec;
-use crate::glutil::create_vertex_array_object;
-use crate::glutil::render_scene;
-use crate::glutil::submit_to_hmd;
-use crate::glutil::load_texture;
+use crate::structs::*;
+use crate::glutil::*;
 
 mod structs;
 mod glutil;
@@ -109,6 +104,10 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 		}
 	}
 	result
+}
+
+fn was_pressed(state: &ControllerState, p_state: &ControllerState, flag: u32) -> bool {
+	state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
 }
 
 fn main() {
@@ -473,8 +472,7 @@ fn main() {
 		//Handle controller input
 		for i in 0..NUMBER_OF_CONTROLLERS {
 			if let (Some(mesh_index), Some(state), Some(p_state)) = (controller_mesh_indices[i], controller_states[i], previous_controller_states[i]) {
-				if state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER != 0 &&
-				   p_state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER == 0 {
+				if was_pressed(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
 					//Grab the object the controller is currently touching, if there is one
 					let controller_point = match &meshes[mesh_index as usize] {
 						Some(mesh) => {
@@ -489,7 +487,8 @@ fn main() {
 						Some(mesh) => {
 							mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
 						}
-						_ => {
+						None => {
+							println!("ERROR: Controller mesh not found despite controller being registered");
 							glm::vec4(0.0, 0.0, 0.0, 1.0)
 						}
 					};
@@ -580,45 +579,6 @@ fn main() {
 			if let Some(mesh) = &mut meshes[index] {
 				mesh.model_matrix = glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
 											 glm::scaling(&glm::vec3(0.2, 0.2, 0.2));				
-			}
-		}
-
-		//Check for collision with controller
-		if let Some(index) = controller_mesh_indices[0] {
-			let controller_point = match &meshes[index] {
-				Some(mesh) => {
-					mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
-				}
-				_ => {
-					glm::vec4(0.0, 0.0, 0.0, 1.0)
-				}
-			};
-
-			let cube_center = match &meshes[cube_mesh_index] {
-				Some(mesh) => {
-					mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
-				}
-				_ => {
-					glm::vec4(0.0, 0.0, 0.0, 1.0)
-				}
-			};
-
-			//Get distance from controller_point to cube_center
-			let dist = f32::sqrt(f32::powi(controller_point.x - cube_center.x, 2) +
-								 f32::powi(controller_point.y - cube_center.y, 2) +
-								 f32::powi(controller_point.z - cube_center.z, 2));
-
-			//If they actually are colliding
-			if dist < cube_sphere_radius {
-				/*
-				let (first, second) = meshes.split_at_mut(cube_mesh_index + 1);
-				let first_len = first.len();
-
-				if let (Some(cube), Some(controller)) = (&mut first[first_len - 1], &second[index - first_len]) {
-					cube.model_matrix = controller.model_matrix * glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
-				}
-				*/
-				//println!("Colliding!");
 			}
 		}
 

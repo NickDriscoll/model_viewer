@@ -10,9 +10,7 @@ use std::os::raw::c_void;
 use image::GenericImageView;
 use openvr::Eye;
 use openvr::Compositor;
-use crate::structs::Mesh;
-use crate::structs::GLProgram;
-use crate::structs::OptionVec;
+use crate::structs::*;
 use crate::flatten_glm;
 
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {

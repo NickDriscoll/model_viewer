@@ -1,8 +1,7 @@
 use gl::types::*;
 use std::slice::{Iter, IterMut};
 use std::ops::{Index, IndexMut};
-use crate::glutil::get_uniform_location;
-use crate::glutil::compile_program_from_files;
+use crate::glutil::*;
 
 //A renderable 3D thing
 #[derive(Clone)]
