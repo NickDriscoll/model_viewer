@@ -69,33 +69,7 @@ pub unsafe fn get_uniform_location(program: GLuint, name: &str) -> GLint {
 	gl::GetUniformLocation(program, cstring.as_ptr())
 }
 
-/*
-pub unsafe fn bind_program_and_uniforms(program: &GLProgram, matrix_values: &[glm::TMat4<f32>], vector_values: &[glm::TVec3<f32>]) {
-	//For now, assert that locations equal values
-	if program.matrix_locations.len() != matrix_values.len() ||
-		program.vector_locations.len() != vector_values.len() {
-			panic!("ERROR!\nmatrix_locations: {}\nmatrix_values: {}\nvector_locations: {}\nvector_values: {}",
-				program.matrix_locations.len(),
-				matrix_values.len(),
-				program.vector_locations.len(),
-				vector_values.len());
-	}
-
-	gl::UseProgram(program.name);
-
-	for i in 0..program.matrix_locations.len() {
-		gl::UniformMatrix4fv(program.matrix_locations[i], 1, gl::FALSE, &flatten_glm(&matrix_values[i]) as *const GLfloat);
-	}
-
-	for i in 0..program.vector_locations.len() {
-		let v = [vector_values[i].x, vector_values[i].y, vector_values[i].z];
-		gl::Uniform3fv(program.vector_locations[i], 1, &v as *const GLfloat);
-	}
-}
-*/
-
 pub unsafe fn render_mesh(mesh: &Mesh, p_matrix: &glm::TMat4<f32>, v_matrix: &glm::TMat4<f32>, mvp_location: GLint) {
-	//bind_program_and_uniforms(&mesh.program, &mesh.matrix_values, &mesh.vector_values);
 	gl::UseProgram(mesh.program);
 
 	let mvp = p_matrix * v_matrix * mesh.model_matrix;
@@ -155,7 +129,7 @@ pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16]) -> G
 	
 	gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, byte_stride, (3 * mem::size_of::<GLfloat>()) as *const c_void);
 	gl::EnableVertexAttribArray(1);
-	
+
 	vao
 }
 

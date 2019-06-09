@@ -547,13 +547,14 @@ fn main() {
 		//Update simulation
 		ticks += 0.02;
 
-		//Attach a mesh to the controllers
+		//Ensure controller meshes are drawn at each controller's position
 		if let Some(poses) = render_poses {
 			for i in 0..NUMBER_OF_CONTROLLERS {
 				attach_mesh_to_controller(&mut meshes, &poses, &controller_indices[i], controller_mesh_indices[i]);
 			}
 		}
 
+		//If the cube is currently being grabbed, draw it at the grabbing controller's position
 		if let Some(mesh_index) = cube_bound_controller_mesh {			
 			let (first, second) = meshes.split_at_mut(cube_mesh_index + 1);
 			let first_len = first.len();
