@@ -73,7 +73,7 @@ fn attach_mesh_to_controller(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevic
 	}
 }
 
-fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, meshes: &mut OptionVec<Mesh<'a>>, index: u32, program: &'a GLProgram) -> [Option<usize>; 2] {
+fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, meshes: &mut OptionVec<Mesh>, index: u32, program: GLuint) -> [Option<usize>; 2] {
 	let mut result = [None; 2];
 	if let (Some(ref sys), Some(ref ren_mod)) = (&openvr_system, &openvr_rendermodels) {
 		let name = sys.string_tracked_device_property(index, openvr::property::RenderModelName_String).unwrap();
@@ -170,12 +170,10 @@ fn main() {
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
 	//Compile shader programs
-	let texture_program = unsafe { GLProgram::from_files("shaders/vertex_texture.glsl", "shaders/fragment_texture.glsl",
-								   &["mvp"],
-								   &[]) };
-	let color_program = unsafe { GLProgram::from_files("shaders/vertex_color.glsl", "shaders/fragment_color.glsl",
-								 &["mvp", "model_matrix"],
-								 &["light_pos"]) };
+	let texture_program = unsafe { compile_program_from_files("shaders/vertex_texture.glsl", "shaders/fragment_texture.glsl") };
+
+	//Get mvp uniform location
+	let mvp_location = unsafe { get_uniform_location(texture_program, "mvp") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe {
@@ -252,7 +250,7 @@ fn main() {
 		];
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 2]);
 		let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(5.0, 5.0, 5.0)),
-							 &texture_program, Some(load_texture("textures/checkerboard.jpg")), indices.len() as i32);
+							 texture_program, Some(load_texture("textures/checkerboard.jpg")), indices.len() as i32);
 		meshes.insert(mesh)
 	};
 
@@ -284,7 +282,7 @@ fn main() {
 			0, 1, 5
 		];
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3]);
-		let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), &color_program, None, indices.len() as i32);
+		let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), texture_program, None, indices.len() as i32);
 		meshes.insert(mesh)
 	};
 
@@ -335,7 +333,7 @@ fn main() {
 											   &openvr_rendermodels,
 											   &mut meshes,
 											   index,
-											   &texture_program);
+											   texture_program);
 
 					//We break here because the models only need to be loaded once, but we still want to check both controller indices if necessary
 					break;
@@ -364,7 +362,7 @@ fn main() {
 		if loading_model_flag {
 			if let Ok(pack) = load_rx.try_recv() {
 				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1, &[3, 3]) };
-				let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), &color_program, None, pack.1.len() as i32);
+				let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), texture_program, None, pack.1.len() as i32);
 
 				//Delete old mesh if there is one
 				if let Some(i) = loaded_mesh_index {
@@ -559,12 +557,6 @@ fn main() {
 			}
 		}
 
-		//Update the cube
-		if let Some(mesh) = &mut meshes[cube_mesh_index] {
-			mesh.matrix_values[1] = mesh.model_matrix;
-			mesh.vector_values[0] = light_pos;
-		}
-
 		if let Some(mesh_index) = cube_bound_controller_mesh {			
 			let (first, second) = meshes.split_at_mut(cube_mesh_index + 1);
 			let first_len = first.len();
@@ -597,13 +589,13 @@ fn main() {
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
 			//Render left eye
-			render_scene(&mut meshes, p_matrices.0, v_matrices.0);
+			render_scene(&mut meshes, p_matrices.0, v_matrices.0, mvp_location);
 
 			//Send to HMD
 			submit_to_hmd(Eye::Left, &openvr_compositor, &openvr_texture_handle);
 
 			//Render right eye
-			render_scene(&mut meshes, p_matrices.1, v_matrices.1);
+			render_scene(&mut meshes, p_matrices.1, v_matrices.1, mvp_location);
 
 			//Send to HMD
 			submit_to_hmd(Eye::Right, &openvr_compositor, &openvr_texture_handle);
@@ -613,7 +605,7 @@ fn main() {
 			gl::Viewport(0, 0, window_size.0 as GLsizei, window_size.1 as GLsizei);
 
 			//Draw companion view
-			render_scene(&mut meshes, p_matrices.2, v_matrices.2);
+			render_scene(&mut meshes, p_matrices.2, v_matrices.2, mvp_location);
 		}
 
 		window.render_context().swap_buffers();

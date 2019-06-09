@@ -65,10 +65,11 @@ pub unsafe fn compile_program_from_files(vertex_path: &str, fragment_path: &str)
 }
 
 pub unsafe fn get_uniform_location(program: GLuint, name: &str) -> GLint {
-	let mvp_str = CString::new(name.as_bytes()).unwrap();
-	gl::GetUniformLocation(program, mvp_str.as_ptr())
+	let cstring = CString::new(name.as_bytes()).unwrap();
+	gl::GetUniformLocation(program, cstring.as_ptr())
 }
 
+/*
 pub unsafe fn bind_program_and_uniforms(program: &GLProgram, matrix_values: &[glm::TMat4<f32>], vector_values: &[glm::TVec3<f32>]) {
 	//For now, assert that locations equal values
 	if program.matrix_locations.len() != matrix_values.len() ||
@@ -91,9 +92,14 @@ pub unsafe fn bind_program_and_uniforms(program: &GLProgram, matrix_values: &[gl
 		gl::Uniform3fv(program.vector_locations[i], 1, &v as *const GLfloat);
 	}
 }
+*/
 
-pub unsafe fn render_mesh(mesh: &Mesh) {
-	bind_program_and_uniforms(&mesh.program, &mesh.matrix_values, &mesh.vector_values);
+pub unsafe fn render_mesh(mesh: &Mesh, p_matrix: &glm::TMat4<f32>, v_matrix: &glm::TMat4<f32>, mvp_location: GLint) {
+	//bind_program_and_uniforms(&mesh.program, &mesh.matrix_values, &mesh.vector_values);
+	gl::UseProgram(mesh.program);
+
+	let mvp = p_matrix * v_matrix * mesh.model_matrix;
+	gl::UniformMatrix4fv(mvp_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
 
 	if let Some(tex) = mesh.texture {
 		gl::BindTexture(gl::TEXTURE_2D, tex);
@@ -103,18 +109,12 @@ pub unsafe fn render_mesh(mesh: &Mesh) {
 	gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
 }
 
-pub unsafe fn render_scene(meshes: &mut OptionVec<Mesh>, p_matrix: glm::TMat4<f32>, v_matrix: glm::TMat4<f32>) {
+pub unsafe fn render_scene(meshes: &mut OptionVec<Mesh>, p_matrix: glm::TMat4<f32>, v_matrix: glm::TMat4<f32>, mvp_location: GLint) {
 	gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-
-	for option_mesh in meshes.iter_mut() {
-		if let Some(mesh) = option_mesh {
-			mesh.matrix_values[0] = p_matrix * v_matrix * mesh.model_matrix;
-		}
-	}
 
 	for option_mesh in meshes.iter() {
 		if let Some(mesh) = option_mesh {
-			render_mesh(&mesh);
+			render_mesh(&mesh, &p_matrix, &v_matrix, mvp_location);
 		}
 	}
 }
