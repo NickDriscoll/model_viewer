@@ -90,7 +90,7 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 			}
 
 			//Create vao
-			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 2]) };
+			let vao = unsafe { create_vertex_array_object(&vertices, model.indices()) };
 
 			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, None, model.indices().len() as i32);
 			let left_index = Some(meshes.insert(mesh));
@@ -248,7 +248,7 @@ fn main() {
 			0u16, 1, 2,
 			1, 3, 2
 		];
-		let vao = create_vertex_array_object(&vertices, &indices, &[3, 2]);
+		let vao = create_vertex_array_object(&vertices, &indices);
 		let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(5.0, 5.0, 5.0)),
 							 texture_program, Some(load_texture("textures/checkerboard.jpg")), indices.len() as i32);
 		meshes.insert(mesh)
@@ -257,15 +257,15 @@ fn main() {
 	//Create the cube's mesh
 	let cube_mesh_index = unsafe {
 		let vertices = [
-			//Position data 				//Color values
-			-0.5f32, -0.5, 0.5,				0.0, 0.0, 0.0,
-			-0.5, 0.5, 0.5,					1.0, 0.0, 0.0,
-			0.5, 0.5, 0.5,					1.0, 1.0, 0.0,
-			0.5, -0.5, 0.5,					0.0, 1.0, 0.0,
-			-0.5, -0.5, -0.5,				0.0, 0.0, 1.0,
-			-0.5, 0.5, -0.5,				1.0, 0.0, 1.0,
-			0.5, 0.5, -0.5,					1.0, 1.0, 1.0,
-			0.5, -0.5, -0.5,				0.0, 1.0, 1.0
+			//Position data 				//Tex coords
+			-0.5f32, -0.5, 0.5,				0.0, 1.0,
+			-0.5, 0.5, 0.5,					-1.0, 1.0,
+			0.5, 0.5, 0.5,					2.0, 1.0,
+			0.5, -0.5, 0.5,					1.0, 1.0,
+			-0.5, -0.5, -0.5,				0.0, 0.0,
+			-0.5, 0.5, -0.5,				-1.0, 0.0,
+			0.5, 0.5, -0.5,					1.0, -1.0,
+			0.5, -0.5, -0.5,				1.0, 0.0
 		];
 		let indices = [
 			1u16, 0, 3,
@@ -281,16 +281,14 @@ fn main() {
 			5, 4, 0,
 			0, 1, 5
 		];
-		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3]);
-		let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), texture_program, None, indices.len() as i32);
+		let vao = create_vertex_array_object(&vertices, &indices);
+		let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), texture_program, Some(load_texture("textures/bricks.jpg")), indices.len() as i32);
 		meshes.insert(mesh)
 	};
 
 	//Create the cube's bounding sphere
-	let cube_sphere_radius = 0.125;
+	let cube_sphere_radius = 0.20;
 	let mut cube_bound_controller_mesh = None;
-
-	let light_pos = glm::vec3::<f32>(1.0, 1.0, 1.0);
 
 	//Controller related variables
 	const NUMBER_OF_CONTROLLERS: usize = 2;
@@ -361,7 +359,7 @@ fn main() {
 		//Check if a new model has been loaded
 		if loading_model_flag {
 			if let Ok(pack) = load_rx.try_recv() {
-				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1, &[3, 3]) };
+				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1) };
 				let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), texture_program, None, pack.1.len() as i32);
 
 				//Delete old mesh if there is one
