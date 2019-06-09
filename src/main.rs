@@ -430,7 +430,6 @@ fn main() {
 									vert_data.push(v.position[2]);
 									vert_data.push(random::<f32>());
 									vert_data.push(random::<f32>());
-									vert_data.push(random::<f32>());
 								}
 
 								let pack = (vert_data, model.indices);
