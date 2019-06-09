@@ -125,7 +125,7 @@ pub unsafe fn submit_to_hmd(eye: Eye, openvr_compositor: &Option<Compositor>, ta
 	}
 }
 
-pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16], attribute_sizes: &[usize]) -> GLuint {
+pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16]) -> GLuint {
 	let (mut vbo, mut vao, mut ebo) = (0, 0, 0);
 	gl::GenVertexArrays(1, &mut vao);
 	gl::GenBuffers(1, &mut vbo);
@@ -144,22 +144,18 @@ pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16], attr
 				   (indices.len() * mem::size_of::<GLushort>()) as GLsizeiptr,
 				   &indices[0] as *const u16 as *const c_void,
 				   gl::STATIC_DRAW);
+	
 
-	let mut vertex_stride = 0;
-	for size in attribute_sizes {
-		vertex_stride += size;
-	}
+	const ATTRIBUTE_STRIDE: i32 = 5;
+	let byte_stride = ATTRIBUTE_STRIDE * mem::size_of::<GLfloat>() as i32;
 
-	let byte_stride = vertex_stride as i32 * mem::size_of::<GLfloat>() as i32;
-
-	//Configure and enable the vertex attributes
-	let mut accumulated_size = 0;
-	for i in 0..attribute_sizes.len() {
-		gl::VertexAttribPointer(i as u32, attribute_sizes[i] as i32, gl::FLOAT, gl::FALSE, byte_stride, (accumulated_size * mem::size_of::<GLfloat>()) as *const c_void);
-		gl::EnableVertexAttribArray(i as u32);
-		accumulated_size += attribute_sizes[i];
-	}
-
+	//Configure and enable the vertex attributes	
+	gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, byte_stride, 0 as *const c_void);
+	gl::EnableVertexAttribArray(0);
+	
+	gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, byte_stride, (3 * mem::size_of::<GLfloat>()) as *const c_void);
+	gl::EnableVertexAttribArray(1);
+	
 	vao
 }
 
