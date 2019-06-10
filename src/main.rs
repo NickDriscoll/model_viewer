@@ -106,7 +106,7 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 	result
 }
 
-fn was_pressed(state: &ControllerState, p_state: &ControllerState, flag: u32) -> bool {
+fn pressed_this_frame(state: &ControllerState, p_state: &ControllerState, flag: u32) -> bool {
 	state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
 }
 
@@ -169,7 +169,7 @@ fn main() {
 	//Load all OpenGL function pointers
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
-	//Compile shader programs
+	//Compile shader program
 	let texture_program = unsafe { compile_program_from_files("shaders/vertex_texture.glsl", "shaders/fragment_texture.glsl") };
 
 	//Get mvp uniform location
@@ -219,9 +219,8 @@ fn main() {
 		render_target
 	};
 	let openvr_texture_handle = {
-		let handle = Handle::OpenGLTexture(vr_render_target as usize);
 		Texture {
-			handle,
+			handle: Handle::OpenGLTexture(vr_render_target as usize),
 			color_space: ColorSpace::Auto
 		}
 	};
@@ -467,7 +466,7 @@ fn main() {
 		//Handle controller input
 		for i in 0..NUMBER_OF_CONTROLLERS {
 			if let (Some(mesh_index), Some(state), Some(p_state)) = (controller_mesh_indices[i], controller_states[i], previous_controller_states[i]) {
-				if was_pressed(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
+				if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
 					//Grab the object the controller is currently touching, if there is one
 					let controller_point = match &meshes[mesh_index as usize] {
 						Some(mesh) => {
@@ -555,11 +554,9 @@ fn main() {
 		}
 
 		//If the cube is currently being grabbed, draw it at the grabbing controller's position
-		if let Some(mesh_index) = cube_bound_controller_mesh {			
-			let (first, second) = meshes.split_at_mut(cube_mesh_index + 1);
-			let first_len = first.len();
-
-			if let (Some(cube), Some(controller)) = (&mut first[first_len - 1], &second[mesh_index - first_len]) {
+		if let Some(mesh_index) = cube_bound_controller_mesh {
+			let indices = meshes.two_mut_refs(cube_mesh_index, mesh_index);
+			if let (Some(cube), Some(controller)) = indices {
 				cube.model_matrix = controller.model_matrix * glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
 			}
 		}
