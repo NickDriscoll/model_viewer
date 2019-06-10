@@ -16,12 +16,16 @@ use openvr::RenderModels;
 use openvr::TrackedControllerRole;
 use openvr::TrackedDevicePose;
 use nfd::Response;
+use std::mem::size_of;
 use std::os::raw::c_void;
 use std::fs::File;
 use std::io::BufReader;
 use std::thread;
 use std::sync::mpsc;
+use std::path::Path;
 use obj::*;
+use image::DynamicImage;
+use image::GenericImageView;
 use rand::random;
 use crate::structs::*;
 use crate::glutil::*;
@@ -253,52 +257,36 @@ fn main() {
 		meshes.insert(mesh)
 	};
 
-	//Create the cube's mesh
-	let cube_mesh_index = unsafe {
-		let vertices = [
-			//Position data 				//Tex coords
-			-0.5f32, -0.5, 0.5,				0.0, 1.0,
-			-0.5, 0.5, 0.5,					-1.0, 1.0,
-			0.5, 0.5, 0.5,					2.0, 1.0,
-			0.5, -0.5, 0.5,					1.0, 1.0,
-			-0.5, -0.5, -0.5,				0.0, 0.0,
-			-0.5, 0.5, -0.5,				-1.0, 0.0,
-			0.5, 0.5, -0.5,					1.0, -1.0,
-			0.5, -0.5, -0.5,				1.0, 0.0
-		];
-		let indices = [
-			1u16, 0, 3,
-			3, 2, 1,
-			2, 3, 7,
-			7, 6, 2,
-			3, 0, 4,
-			4, 7, 3,
-			6, 5, 1,
-			1, 2, 6,
-			4, 5, 6,
-			6, 7, 4,
-			5, 4, 0,
-			0, 1, 5
-		];
-		let vao = create_vertex_array_object(&vertices, &indices);
-		let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), texture_program, Some(load_texture("textures/bricks.jpg")), indices.len() as i32);
-		meshes.insert(mesh)
-	};
+	//Texture loading channel	
+	type TextureLoadPacket = DynamicImage;
+	let (texture_tx, texture_rx) = mpsc::channel::<TextureLoadPacket>();
 
-	//Create the cube's bounding sphere
+	//Spawn thread to load cube's texture
+	{
+		let tx = texture_tx.clone();
+		thread::spawn( move || {
+			let path = "textures/bricks.jpg";
+			println!("Loading texture image...");
+			let image = match image::open(&Path::new(path)) {
+				Ok(im) => {
+					im
+				}
+				Err(_) => {
+					panic!("Unable to open {}", path);
+				}
+			};
+			println!("Done loading.");
+			tx.send(image).unwrap();
+		});
+	}
+
+	//Cube variables
 	let cube_sphere_radius = 0.20;
-	let mut cube_bound_controller_mesh = None;
+	let mut cube_mesh_index = None;
+	let mut cube_bound_controller_mesh = None;	
 
-	//Controller related variables
+	//Initialize the struct of arrays containting controller related state
 	let mut controllers = Controllers::new();
-
-	/*
-	const Controllers::NUMBER_OF_CONTROLLERS: usize = 2;
-	let mut controller_indices = [None; Controllers::NUMBER_OF_CONTROLLERS];
-	let mut controller_mesh_indices = [None; Controllers::NUMBER_OF_CONTROLLERS];
-	let mut controller_states = [None; Controllers::NUMBER_OF_CONTROLLERS];
-	let mut previous_controller_states: [Option<ControllerState>; Controllers::NUMBER_OF_CONTROLLERS] = [None; Controllers::NUMBER_OF_CONTROLLERS];
-	*/
 
 	//Gameplay state
 	let mut ticks = 0.0;
@@ -372,6 +360,61 @@ fn main() {
 				loaded_mesh_index = Some(meshes.insert(mesh));
 				loading_model_flag = false;
 			}
+		}
+
+		//Check if the cube's texture is loaded yet
+		if let Ok(im) = texture_rx.try_recv() {
+			let vertices = [
+				//Position data 				//Tex coords
+				-0.5f32, -0.5, 0.5,				0.0, 1.0,
+				-0.5, 0.5, 0.5,					-1.0, 1.0,
+				0.5, 0.5, 0.5,					2.0, 1.0,
+				0.5, -0.5, 0.5,					1.0, 1.0,
+				-0.5, -0.5, -0.5,				0.0, 0.0,
+				-0.5, 0.5, -0.5,				-1.0, 0.0,
+				0.5, 0.5, -0.5,					1.0, -1.0,
+				0.5, -0.5, -0.5,				1.0, 0.0
+			];
+			let indices = [
+				1u16, 0, 3,
+				3, 2, 1,
+				2, 3, 7,
+				7, 6, 2,
+				3, 0, 4,
+				4, 7, 3,
+				6, 5, 1,
+				1, 2, 6,
+				4, 5, 6,
+				6, 7, 4,
+				5, 4, 0,
+				0, 1, 5
+			];
+			let vao = unsafe { create_vertex_array_object(&vertices, &indices) };
+
+			let data = im.raw_pixels();
+			let mut tex = 0;
+			unsafe {
+				gl::GenTextures(1, &mut tex);
+				gl::BindTexture(gl::TEXTURE_2D, tex);
+				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
+				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
+				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+
+				gl::TexImage2D(gl::TEXTURE_2D,
+							   0,
+							   gl::RGB as i32,
+							   im.width() as i32,
+							   im.height() as i32,
+							   0,
+							   gl::RGB,
+							   gl::UNSIGNED_BYTE,
+							   &data[0] as *const u8 as *const c_void);
+				gl::GenerateMipmap(gl::TEXTURE_2D);
+			}
+
+			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), texture_program, Some(tex), indices.len() as i32);		
+			cube_mesh_index = Some(meshes.insert(mesh));
 		}
 
 		//Handle window events
@@ -469,7 +512,13 @@ fn main() {
 
 		//Handle controller input
 		for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
-			if let (Some(mesh_index), Some(state), Some(p_state)) = (controllers.controller_mesh_indices[i], controllers.controller_states[i], controllers.previous_controller_states[i]) {
+			if let (Some(mesh_index),
+					Some(cube_index),
+					Some(state),
+					Some(p_state)) = (controllers.controller_mesh_indices[i],
+									  cube_mesh_index, 
+									  controllers.controller_states[i],
+									  controllers.previous_controller_states[i]) {
 				if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
 					//Grab the object the controller is currently touching, if there is one
 					let controller_point = match &meshes[mesh_index as usize] {
@@ -481,7 +530,7 @@ fn main() {
 						}
 					};
 
-					let cube_center = match &meshes[cube_mesh_index] {
+					let cube_center = match &meshes[cube_index] {
 						Some(mesh) => {
 							mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
 						}
@@ -558,8 +607,8 @@ fn main() {
 		}
 
 		//If the cube is currently being grabbed, draw it at the grabbing controller's position
-		if let Some(mesh_index) = cube_bound_controller_mesh {
-			let indices = meshes.two_mut_refs(cube_mesh_index, mesh_index);
+		if let (Some(mesh_index), Some(cube_index)) = (cube_bound_controller_mesh, cube_mesh_index) {
+			let indices = meshes.two_mut_refs(cube_index, mesh_index);
 			if let (Some(cube), Some(controller)) = indices {
 				cube.model_matrix = controller.model_matrix * glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
 			}
