@@ -1,10 +1,8 @@
 use gl::types::*;
 use std::slice::{Iter, IterMut};
 use std::ops::{Index, IndexMut};
-use crate::glutil::*;
 
 //A renderable 3D thing
-#[derive(Clone)]
 pub struct Mesh {
 	pub vao: GLuint, //Vertex array object
 	pub model_matrix: glm::TMat4<f32>, //Matrix that transforms points in model space to world space
@@ -61,8 +59,11 @@ impl<T> OptionVec<T> {
 		}
 	}
 
-	pub fn split_at_mut(&mut self, mid: usize) -> (&mut [Option<T>], &mut [Option<T>]) {
-		self.optionvec.split_at_mut(mid)
+	pub fn two_mut_refs(&mut self, index1: usize, index2: usize) -> (&mut Option<T>, &mut Option<T>) {
+		let (first, second) = self.optionvec.split_at_mut(index1 + 1);
+		let first_len = first.len();
+
+		(&mut first[first_len - 1], &mut second[index2 - index1 - 1])
 	}
 
 	pub fn iter(&self) -> Iter<Option<T>> {
