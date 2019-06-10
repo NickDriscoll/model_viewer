@@ -290,11 +290,15 @@ fn main() {
 	let mut cube_bound_controller_mesh = None;
 
 	//Controller related variables
-	const NUMBER_OF_CONTROLLERS: usize = 2;
-	let mut controller_indices = [None; NUMBER_OF_CONTROLLERS];
-	let mut controller_mesh_indices = [None; NUMBER_OF_CONTROLLERS];
-	let mut controller_states = [None; NUMBER_OF_CONTROLLERS];
-	let mut previous_controller_states: [Option<ControllerState>; NUMBER_OF_CONTROLLERS] = [None; NUMBER_OF_CONTROLLERS];
+	let mut controllers = Controllers::new();
+
+	/*
+	const Controllers::NUMBER_OF_CONTROLLERS: usize = 2;
+	let mut controller_indices = [None; Controllers::NUMBER_OF_CONTROLLERS];
+	let mut controller_mesh_indices = [None; Controllers::NUMBER_OF_CONTROLLERS];
+	let mut controller_states = [None; Controllers::NUMBER_OF_CONTROLLERS];
+	let mut previous_controller_states: [Option<ControllerState>; Controllers::NUMBER_OF_CONTROLLERS] = [None; Controllers::NUMBER_OF_CONTROLLERS];
+	*/
 
 	//Gameplay state
 	let mut ticks = 0.0;
@@ -314,23 +318,23 @@ fn main() {
 	while !window.should_close() {
 		//Find controllers if we haven't already
 		if let Some(ref sys) = openvr_system {
-			for i in 0..controller_indices.len() {
-				if let None = controller_indices[i] {
+			for i in 0..controllers.controller_indices.len() {
+				if let None = controllers.controller_indices[i] {
 					const ROLES: [TrackedControllerRole; 2] = [TrackedControllerRole::LeftHand, TrackedControllerRole::RightHand];
-					controller_indices[i] = sys.tracked_device_index_for_controller_role(ROLES[i]);
+					controllers.controller_indices[i] = sys.tracked_device_index_for_controller_role(ROLES[i]);
 				}
 			}
 		}
 
 		//Load controller meshes if we haven't already
-		if let None = controller_mesh_indices[0] {
-			for i in 0..controller_indices.len() {
-				if let Some(index) = controller_indices[i] {
-					controller_mesh_indices = load_controller_meshes(&openvr_system,
-											   &openvr_rendermodels,
-											   &mut meshes,
-											   index,
-											   texture_program);
+		if let None = controllers.controller_mesh_indices[0] {
+			for i in 0..controllers.controller_indices.len() {
+				if let Some(index) = controllers.controller_indices[i] {
+					controllers.controller_mesh_indices = load_controller_meshes(&openvr_system,
+														  &openvr_rendermodels,
+														  &mut meshes,
+														  index,
+														  texture_program);
 
 					//We break here because the models only need to be loaded once, but we still want to check both controller indices if necessary
 					break;
@@ -349,9 +353,9 @@ fn main() {
 		};
 
 		//Get controller state structs
-		for i in 0..NUMBER_OF_CONTROLLERS {
-			if let (Some(index), Some(sys)) = (controller_indices[i], &openvr_system) {
-				controller_states[i] = sys.controller_state(index);
+		for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
+			if let (Some(index), Some(sys)) = (controllers.controller_indices[i], &openvr_system) {
+				controllers.controller_states[i] = sys.controller_state(index);
 			}
 		}
 
@@ -464,8 +468,8 @@ fn main() {
 		}
 
 		//Handle controller input
-		for i in 0..NUMBER_OF_CONTROLLERS {
-			if let (Some(mesh_index), Some(state), Some(p_state)) = (controller_mesh_indices[i], controller_states[i], previous_controller_states[i]) {
+		for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
+			if let (Some(mesh_index), Some(state), Some(p_state)) = (controllers.controller_mesh_indices[i], controllers.controller_states[i], controllers.previous_controller_states[i]) {
 				if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
 					//Grab the object the controller is currently touching, if there is one
 					let controller_point = match &meshes[mesh_index as usize] {
@@ -548,8 +552,8 @@ fn main() {
 
 		//Ensure controller meshes are drawn at each controller's position
 		if let Some(poses) = render_poses {
-			for i in 0..NUMBER_OF_CONTROLLERS {
-				attach_mesh_to_controller(&mut meshes, &poses, &controller_indices[i], controller_mesh_indices[i]);
+			for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
+				attach_mesh_to_controller(&mut meshes, &poses, &controllers.controller_indices[i], controllers.controller_mesh_indices[i]);
 			}
 		}
 
@@ -572,7 +576,7 @@ fn main() {
 		camera_position += camera_velocity;
 		camera_fov += camera_fov_delta;
 
-		previous_controller_states = controller_states;
+		controllers.previous_controller_states = controllers.controller_states;
 
 		//Rendering code
 		unsafe {

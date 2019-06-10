@@ -1,4 +1,5 @@
 use gl::types::*;
+use openvr::ControllerState;
 use std::slice::{Iter, IterMut};
 use std::ops::{Index, IndexMut};
 
@@ -23,6 +24,33 @@ impl Mesh {
 	}
 }
 
+//Struct of arrays that stores VR controller data.
+pub struct Controllers {
+	pub controller_indices: [Option<u32>; Self::NUMBER_OF_CONTROLLERS],
+	pub controller_mesh_indices: [Option<usize>; Self::NUMBER_OF_CONTROLLERS],
+	pub controller_states: [Option<ControllerState>; Self::NUMBER_OF_CONTROLLERS],
+	pub previous_controller_states: [Option<ControllerState>; Self::NUMBER_OF_CONTROLLERS]
+}
+
+impl Controllers {
+	pub const NUMBER_OF_CONTROLLERS: usize = 2;
+
+	pub fn new() -> Self {
+		let controller_indices = [None; Self::NUMBER_OF_CONTROLLERS];
+		let controller_mesh_indices = [None; Self::NUMBER_OF_CONTROLLERS];
+		let controller_states = [None; Self::NUMBER_OF_CONTROLLERS];
+		let previous_controller_states = [None; Self::NUMBER_OF_CONTROLLERS];
+
+		Controllers {
+			controller_indices,
+			controller_mesh_indices,
+			controller_states,
+			previous_controller_states
+		}
+	}
+}
+
+//A wrapper for the useful Vec<Option<T>> pattern
 pub struct OptionVec<T> {
 	optionvec: Vec<Option<T>>
 }
