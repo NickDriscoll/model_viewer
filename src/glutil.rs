@@ -144,7 +144,11 @@ pub unsafe fn load_texture(path: &str) -> GLuint {
 	};
 	let data = image.raw_pixels();
 
-	let mut tex = 0;
+	load_texture_from_data(&data, image.width(), image.height())
+}
+
+pub unsafe fn load_texture_from_data(data: &[u8], width: u32, height: u32) -> GLuint {
+	let mut tex = 0;	
 	gl::GenTextures(1, &mut tex);
 	gl::BindTexture(gl::TEXTURE_2D, tex);
 	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
@@ -155,8 +159,8 @@ pub unsafe fn load_texture(path: &str) -> GLuint {
 	gl::TexImage2D(gl::TEXTURE_2D,
 				   0,
 				   gl::RGB as i32,
-				   image.width() as i32,
-				   image.height() as i32,
+				   width as i32,
+				   height as i32,
 				   0,
 				   gl::RGB,
 				   gl::UNSIGNED_BYTE,
