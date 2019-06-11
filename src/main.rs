@@ -102,8 +102,6 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, None, model.indices().len() as i32);
 			let right_index = Some(meshes.insert(mesh));
 
-			println!("Loaded controller mesh");
-
 			result = [left_index, right_index];
 		}
 	}
@@ -262,22 +260,20 @@ fn main() {
 	let (texture_tx, texture_rx) = mpsc::channel::<TextureLoadPacket>();
 
 	//Spawn thread to load cube's texture
-	{
-		let tx = texture_tx.clone();
-		thread::spawn( move || {
-			let path = "textures/bricks.jpg";
-			let image = match image::open(&Path::new(path)) {
-				Ok(im) => {
-					im
-				}
-				Err(_) => {
-					panic!("Unable to open {}", path);
-				}
-			};
-			let data = image.raw_pixels();
-			tx.send((data, image.width(), image.height())).unwrap();
-		});
-	}
+	let tx = texture_tx.clone();
+	thread::spawn( move || {
+		let path = "textures/bricks.jpg";
+		let image = match image::open(&Path::new(path)) {
+			Ok(im) => {
+				im
+			}
+			Err(_) => {
+				panic!("Unable to open {}", path);
+			}
+		};
+		let data = image.raw_pixels();
+		tx.send((data, image.width(), image.height())).unwrap();
+	});
 
 	//Cube variables	
 	let cube_vertices = [
@@ -310,7 +306,6 @@ fn main() {
 	let cube_sphere_radius = 0.20;
 	let mut cube_bound_controller_mesh = None;
 	let mut loading_cube_mesh_flag = true;
-	//let mut cube_mesh_index = None;
 
 	let cube_mesh = Mesh::new(cube_vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), texture_program, None, cube_indices.len() as i32);
 	let cube_mesh_index = meshes.insert(cube_mesh);
@@ -395,26 +390,7 @@ fn main() {
 		if loading_cube_mesh_flag {
 			//Check if the cube's texture is loaded yet
 			if let Ok((data, width, height)) = texture_rx.try_recv() {
-				let mut tex = 0;
-				unsafe {
-					gl::GenTextures(1, &mut tex);
-					gl::BindTexture(gl::TEXTURE_2D, tex);
-					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
-					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
-					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-
-					gl::TexImage2D(gl::TEXTURE_2D,
-								   0,
-								   gl::RGB as i32,
-								   width as i32,
-								   height as i32,
-								   0,
-								   gl::RGB,
-								   gl::UNSIGNED_BYTE,
-								   &data[0] as *const u8 as *const c_void);
-					gl::GenerateMipmap(gl::TEXTURE_2D);
-				}
+				let mut tex = unsafe { load_texture_from_data(&data, width, height) };
 
 				if let Some(ref mut mesh) = &mut meshes[cube_mesh_index] {
 					mesh.texture = Some(tex);
