@@ -97,8 +97,8 @@ impl<T> OptionVec<T> {
 		} else {			
 			let (first, second) = self.optionvec.split_at_mut(index2 + 1);
 			let first_len = first.len();
-
-			(&mut first[first_len - 1], &mut second[index1 - index2 - 1])
+			
+			(&mut second[index1 - index2 - 1], &mut first[first_len - 1])
 		}
 	}
 
