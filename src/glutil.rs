@@ -14,6 +14,7 @@ use crate::structs::*;
 use crate::flatten_glm;
 
 pub type ImageData = (Vec<u8>, u32, u32);
+const INFO_LOG_SIZE: usize = 512;
 
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
 	let shader = gl::CreateShader(shadertype);
@@ -23,13 +24,12 @@ pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
 
 	//Check for errors
 	let mut success = gl::FALSE as GLint;
-	const INFO_LOG_SIZE: usize = 512;
 	let mut infolog = Vec::with_capacity(INFO_LOG_SIZE);
-	infolog.set_len(INFO_LOG_SIZE - 1);
+
 	gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut success);
 	if success != gl::TRUE as GLint {
 		gl::GetShaderInfoLog(shader, INFO_LOG_SIZE as i32, ptr::null_mut(), infolog.as_mut_ptr() as *mut GLchar);
-		panic!("\n{}\n", str::from_utf8(&infolog).unwrap());
+		shader_compilation_error(infolog);
 	}
 	shader
 }
@@ -45,7 +45,6 @@ pub unsafe fn compile_program_from_files(vertex_path: &str, fragment_path: &str)
 	let fragmentshader = compile_shader_from_file(gl::FRAGMENT_SHADER, fragment_path);
 
 	let mut success = gl::FALSE as GLint;
-	const INFO_LOG_SIZE: usize = 512;
 	let mut infolog = Vec::with_capacity(INFO_LOG_SIZE);
 
 	//Link shaders
@@ -58,12 +57,23 @@ pub unsafe fn compile_program_from_files(vertex_path: &str, fragment_path: &str)
 	gl::GetProgramiv(shader_progam, gl::LINK_STATUS, &mut success);
 	if success != gl::TRUE as GLint {
 		gl::GetProgramInfoLog(shader_progam, INFO_LOG_SIZE as i32, ptr::null_mut(), infolog.as_mut_ptr() as *mut GLchar);
-		panic!("\n--------SHADER COMPILATION ERROR--------\n{}", str::from_utf8(&infolog).unwrap());
+		shader_compilation_error(infolog);
 	}
 
 	gl::DeleteShader(vertexshader);
 	gl::DeleteShader(fragmentshader);
 	shader_progam
+}
+
+pub fn shader_compilation_error(infolog: Vec<u8>) {
+	let error_message = match str::from_utf8(&infolog) {
+		Ok(message) => { message }
+		Err(e) => {
+			let sized_log = &infolog[0..e.valid_up_to()];
+			str::from_utf8(sized_log).unwrap()
+		}
+	};
+	panic!("\n--------SHADER COMPILATION ERROR--------\n{}", error_message);
 }
 
 pub unsafe fn get_uniform_location(program: GLuint, name: &str) -> GLint {
@@ -78,12 +88,12 @@ pub unsafe fn render_mesh(mesh: &Mesh, p_matrix: &glm::TMat4<f32>, v_matrix: &gl
 	let mvp = p_matrix * v_matrix * mesh.model_matrix;
 	gl::UniformMatrix4fv(mvp_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
 
-	//Color every fragment black if there's no texture
 	let tex = match mesh.texture {
 		Some(t) => {
 			t
 		}
 		None => {
+			//Color every fragment black if there's no texture
 			0
 		}
 	};
@@ -130,17 +140,24 @@ pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16]) -> G
 				   gl::STATIC_DRAW);
 	
 
-	const ATTRIBUTE_STRIDE: i32 = 5;
+	const ATTRIBUTE_STRIDE: i32 = 8;
 	let byte_stride = ATTRIBUTE_STRIDE * mem::size_of::<GLfloat>() as i32;
 
 	//Configure and enable the vertex attributes	
 	gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, byte_stride, 0 as *const c_void);
 	gl::EnableVertexAttribArray(0);
-	
-	gl::VertexAttribPointer(1, 2, gl::FLOAT, gl::FALSE, byte_stride, (3 * mem::size_of::<GLfloat>()) as *const c_void);
+
+	gl::VertexAttribPointer(1, 3, gl::FLOAT, gl::FALSE, byte_stride, (3 * mem::size_of::<GLfloat>()) as *const c_void);
 	gl::EnableVertexAttribArray(1);
+	
+	gl::VertexAttribPointer(2, 2, gl::FLOAT, gl::FALSE, byte_stride, (6 * mem::size_of::<GLfloat>()) as *const c_void);
+	gl::EnableVertexAttribArray(2);
 
 	vao
+}
+
+pub unsafe fn load_texture(path: &str) -> GLuint {
+	load_texture_from_data(image_data_from_path(path))
 }
 
 pub fn image_data_from_path(path: &str) -> ImageData {
@@ -153,10 +170,6 @@ pub fn image_data_from_path(path: &str) -> ImageData {
 		}
 	};
 	(image.raw_pixels(), image.width(), image.height())
-}
-
-pub unsafe fn load_texture(path: &str) -> GLuint {
-	load_texture_from_data(image_data_from_path(path))
 }
 
 pub unsafe fn load_texture_from_data(image_data: ImageData) -> GLuint {

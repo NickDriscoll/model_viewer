@@ -217,11 +217,9 @@ fn main() {
 		gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 		render_target
 	};
-	let openvr_texture_handle = {
-		Texture {
-			handle: Handle::OpenGLTexture(vr_render_target as usize),
-			color_space: ColorSpace::Auto
-		}
+	let openvr_texture_handle = Texture {
+		handle: Handle::OpenGLTexture(vr_render_target as usize),
+		color_space: ColorSpace::Auto
 	};
 
 	//Enable and configure depth testing and enable backface culling
@@ -243,7 +241,6 @@ fn main() {
 	//Textures
 	let checkerboard_texture = unsafe { load_texture("textures/checkerboard.jpg") };
 	let mut brick_texture = None;
-	let mut loading_brick_texture_flag = true;
 
 	//OptionVec of meshes
 	let mut meshes: OptionVec<Mesh> = OptionVec::with_capacity(5);
@@ -251,11 +248,11 @@ fn main() {
 	//Create the floor
 	let floor_mesh_index = unsafe {
 		let vertices = [
-			//Positions					//Tex coords
-			-0.5f32, 0.0, -0.5,			0.0, 0.0,
-			-0.5, 0.0, 0.5,				0.0, 4.0,
-			0.5, 0.0, -0.5,				4.0, 0.0,
-			0.5, 0.0, 0.5,				4.0, 4.0
+			//Positions					//Normals							//Tex coords
+			-0.5f32, 0.0, -0.5,			0.0, 1.0, 0.0,						0.0, 0.0,
+			-0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						0.0, 4.0,
+			0.5, 0.0, -0.5,				0.0, 1.0, 0.0,						4.0, 0.0,
+			0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						4.0, 4.0
 		];
 		let indices = [
 			0u16, 1, 2,
@@ -269,15 +266,15 @@ fn main() {
 
 	//Cube variables	
 	let cube_vertices = [
-		//Position data 				//Tex coords
-		-0.5f32, -0.5, 0.5,				0.0, 1.0,
-		-0.5, 0.5, 0.5,					-1.0, 1.0,
-		0.5, 0.5, 0.5,					2.0, 1.0,
-		0.5, -0.5, 0.5,					1.0, 1.0,
-		-0.5, -0.5, -0.5,				0.0, 0.0,
-		-0.5, 0.5, -0.5,				-1.0, 0.0,
-		0.5, 0.5, -0.5,					1.0, -1.0,
-		0.5, -0.5, -0.5,				1.0, 0.0
+		//Position data 				//Normals						//Tex coords
+		-0.5f32, -0.5, 0.5,												0.0, 1.0,
+		-0.5, 0.5, 0.5,													-1.0, 1.0,
+		0.5, 0.5, 0.5,													2.0, 1.0,
+		0.5, -0.5, 0.5,													1.0, 1.0,
+		-0.5, -0.5, -0.5,												0.0, 0.0,
+		-0.5, 0.5, -0.5,												-1.0, 0.0,
+		0.5, 0.5, -0.5,													1.0, -1.0,
+		0.5, -0.5, -0.5,												1.0, 0.0
 	];
 	let cube_indices = [
 		1u16, 0, 3,
@@ -304,7 +301,10 @@ fn main() {
 
 	//Variables for the mesh loaded from a file
 	let mut loaded_mesh_index = None;
+
+	//Thread listening flags
 	let mut loading_model_flag = false;
+	let mut loading_brick_texture_flag = true;
 
 	//Initialize the struct of arrays containing controller related state
 	let mut controllers = Controllers::new();
@@ -449,12 +449,15 @@ fn main() {
 								};
 
 								//Take loaded model and create a Mesh
-								const ELEMENT_STRIDE: usize = 6;
+								const ELEMENT_STRIDE: usize = 8;
 								let mut vert_data = Vec::with_capacity(ELEMENT_STRIDE * model.vertices.len());
 								for v in model.vertices {
 									vert_data.push(v.position[0]);
 									vert_data.push(v.position[1]);
 									vert_data.push(v.position[2]);
+									vert_data.push(v.normal[0]);
+									vert_data.push(v.normal[1]);
+									vert_data.push(v.normal[2]);
 									vert_data.push(random::<f32>());
 									vert_data.push(random::<f32>());
 								}
