@@ -13,6 +13,8 @@ use openvr::Compositor;
 use crate::structs::*;
 use crate::flatten_glm;
 
+pub type ImageData = (Vec<u8>, u32, u32);
+
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
 	let shader = gl::CreateShader(shadertype);
 	let cstr_vert = CString::new(source.as_bytes()).unwrap();
@@ -141,7 +143,7 @@ pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16]) -> G
 	vao
 }
 
-pub unsafe fn load_texture(path: &str) -> GLuint {
+pub fn image_data_from_path(path: &str) -> ImageData {
 	let image = match image::open(&Path::new(path)) {
 		Ok(im) => {
 			im
@@ -150,12 +152,16 @@ pub unsafe fn load_texture(path: &str) -> GLuint {
 			panic!("Unable to open {}", path);
 		}
 	};
-	let data = image.raw_pixels();
-
-	load_texture_from_data(&data, image.width(), image.height())
+	(image.raw_pixels(), image.width(), image.height())
 }
 
-pub unsafe fn load_texture_from_data(data: &[u8], width: u32, height: u32) -> GLuint {
+pub unsafe fn load_texture(path: &str) -> GLuint {
+	let image_data = image_data_from_path(path);
+
+	load_texture_from_data(image_data)
+}
+
+pub unsafe fn load_texture_from_data(image_data: ImageData) -> GLuint {
 	let mut tex = 0;	
 	gl::GenTextures(1, &mut tex);
 	gl::BindTexture(gl::TEXTURE_2D, tex);
@@ -167,12 +173,12 @@ pub unsafe fn load_texture_from_data(data: &[u8], width: u32, height: u32) -> GL
 	gl::TexImage2D(gl::TEXTURE_2D,
 				   0,
 				   gl::RGB as i32,
-				   width as i32,
-				   height as i32,
+				   image_data.1 as i32,
+				   image_data.2 as i32,
 				   0,
 				   gl::RGB,
 				   gl::UNSIGNED_BYTE,
-				   &data[0] as *const u8 as *const c_void);
+				   &image_data.0[0] as *const u8 as *const c_void);
 	gl::GenerateMipmap(gl::TEXTURE_2D);
 	tex
 }
