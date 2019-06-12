@@ -112,6 +112,18 @@ fn pressed_this_frame(state: &ControllerState, p_state: &ControllerState, flag: 
 	state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
 }
 
+fn get_mesh_origin(mesh: &Option<Mesh>) -> glm::TVec4<f32> {
+	match mesh {
+		Some(mesh) => {
+			mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
+		}
+		None => {
+			println!("Couldn't return mesh origin cause it was \"None\"");
+			glm::vec4(0.0, 0.0, 0.0, 1.0)
+		}
+	}
+}
+
 fn main() {
 	//Init OpenVR
 	let openvr_context = unsafe {
@@ -309,6 +321,7 @@ fn main() {
 
 	let cube_mesh = Mesh::new(cube_vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), texture_program, None, cube_indices.len() as i32);
 	let cube_mesh_index = meshes.insert(cube_mesh);
+	let mut cube_space_to_controller_space = glm::identity();
 
 	//Initialize the struct of arrays containing controller related state
 	let mut controllers = Controllers::new();
@@ -504,34 +517,23 @@ fn main() {
 
 				if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
 					//Grab the object the controller is currently touching, if there is one
-					let controller_point = match &meshes[mesh_index as usize] {
-						Some(mesh) => {
-							mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
-						}
-						_ => {
-							glm::vec4(0.0, 0.0, 0.0, 1.0)
-						}
-					};
 
-					let cube_center = match &meshes[cube_mesh_index] {
-						Some(mesh) => {
-							mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
-						}
-						None => {
-							println!("ERROR: Controller mesh not found despite controller being registered");
-							glm::vec4(0.0, 0.0, 0.0, 1.0)
-						}
-					};
+					let controller_origin = get_mesh_origin(&meshes[mesh_index as usize]);
+					let cube_origin = get_mesh_origin(&meshes[cube_mesh_index]);
 
-					//Get distance from controller_point to cube_center
-					let dist = f32::sqrt(f32::powi(controller_point.x - cube_center.x, 2) +
-										 f32::powi(controller_point.y - cube_center.y, 2) +
-										 f32::powi(controller_point.z - cube_center.z, 2));
-
-					println!("{}\n{}\n{}\n\n", controller_point, cube_center, dist);
+					//Get distance from controller_origin to cube_origin
+					let dist = f32::sqrt(f32::powi(controller_origin.x - cube_origin.x, 2) +
+										 f32::powi(controller_origin.y - cube_origin.y, 2) +
+										 f32::powi(controller_origin.z - cube_origin.z, 2));
 
 					if dist < cube_sphere_radius {
+						//Set the controller's mesh as the mesh the cube mesh is "bound" to
 						cube_bound_controller_mesh = Some(mesh_index);
+
+						//Calculate the cube-space to controller-space matrix aka inverse(controller.model_matrix) * cube.model_matrix
+						if let (Some(cont_mesh), Some(cube_mesh)) = (&meshes[mesh_index], &meshes[cube_mesh_index]) {
+							cube_space_to_controller_space = glm::affine_inverse(cont_mesh.model_matrix) * cube_mesh.model_matrix;
+						}
 					}
 				}
 
@@ -595,7 +597,7 @@ fn main() {
 		if let Some(mesh_index) = cube_bound_controller_mesh {
 			let indices = meshes.two_mut_refs(cube_mesh_index, mesh_index);
 			if let (Some(cube), Some(controller)) = indices {
-				cube.model_matrix = controller.model_matrix * glm::scaling(&glm::vec3(0.25, 0.25, 0.25));
+				cube.model_matrix = controller.model_matrix * cube_space_to_controller_space;
 			}
 		}
 
