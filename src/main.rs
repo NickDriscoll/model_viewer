@@ -239,11 +239,26 @@ fn main() {
 		}
 	};
 
+	//Enable and configure depth testing and enable backface culling
 	unsafe {
 		gl::Enable(gl::DEPTH_TEST);
 		gl::DepthFunc(gl::LESS);
 		gl::Enable(gl::CULL_FACE);
 	}
+
+	//Texture loading channel
+	let (texture_tx, texture_rx) = mpsc::channel::<ImageData>();
+
+	//Spawn thread to load brick texture
+	let tx = texture_tx.clone();
+	thread::spawn( move || {
+		tx.send(image_data_from_path("textures/bricks.jpg")).unwrap();
+	});
+
+	//Textures
+	let checkerboard_texture = unsafe { load_texture("textures/checkerboard.jpg") };
+	let mut brick_texture = None;
+	let mut loading_brick_texture_flag = true;
 
 	//OptionVec of meshes
 	let mut meshes: OptionVec<Mesh> = OptionVec::with_capacity(5);
@@ -263,29 +278,9 @@ fn main() {
 		];
 		let vao = create_vertex_array_object(&vertices, &indices);
 		let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(5.0, 5.0, 5.0)),
-							 texture_program, Some(load_texture("textures/checkerboard.jpg")), indices.len() as i32);
+							 texture_program, Some(checkerboard_texture), indices.len() as i32);
 		meshes.insert(mesh)
 	};
-
-	//Texture loading channel	
-	type TextureLoadPacket = (Vec<u8>, u32, u32);
-	let (texture_tx, texture_rx) = mpsc::channel::<TextureLoadPacket>();
-
-	//Spawn thread to load cube's texture
-	let tx = texture_tx.clone();
-	thread::spawn( move || {
-		let path = "textures/bricks.jpg";
-		let image = match image::open(&Path::new(path)) {
-			Ok(im) => {
-				im
-			}
-			Err(_) => {
-				panic!("Unable to open {}", path);
-			}
-		};
-		let data = image.raw_pixels();
-		tx.send((data, image.width(), image.height())).unwrap();
-	});
 
 	//Cube variables	
 	let cube_vertices = [
@@ -317,11 +312,14 @@ fn main() {
 	
 	let cube_sphere_radius = 0.20;
 	let mut cube_bound_controller_mesh = None;
-	let mut loading_cube_texture_flag = true;
 
-	let cube_mesh = Mesh::new(cube_vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), texture_program, None, cube_indices.len() as i32);
+	let cube_mesh = Mesh::new(cube_vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), texture_program, brick_texture, cube_indices.len() as i32);
 	let cube_mesh_index = meshes.insert(cube_mesh);
 	let mut cube_space_to_controller_space = glm::identity();
+
+	//Variables for the mesh loaded from a file
+	let mut loaded_mesh_index = None;
+	let mut loading_model_flag = false;
 
 	//Initialize the struct of arrays containing controller related state
 	let mut controllers = Controllers::new();
@@ -333,9 +331,6 @@ fn main() {
 	let mut camera_fov = 90.0;
 	let mut camera_fov_delta = 0.0;
 	let camera_speed = 0.05;
-
-	let mut loaded_mesh_index: Option<usize> = None;
-	let mut loading_model_flag = false;
 
 	type ModelLoadPacket = (Vec<f32>, Vec<u16>);
 	let (load_tx, load_rx) = mpsc::channel::<ModelLoadPacket>();
@@ -389,7 +384,7 @@ fn main() {
 		if loading_model_flag {
 			if let Ok(pack) = load_rx.try_recv() {
 				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1) };
-				let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), texture_program, None, pack.1.len() as i32);
+				let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), texture_program, brick_texture, pack.1.len() as i32);
 
 				//Delete old mesh if there is one
 				if let Some(i) = loaded_mesh_index {
@@ -401,16 +396,23 @@ fn main() {
 		}
 
 		//Check if the cube's texture has been loaded
-		if loading_cube_texture_flag {
+		if loading_brick_texture_flag {
 			//Check if the cube's texture is loaded yet
 			if let Ok((data, width, height)) = texture_rx.try_recv() {
-				let tex = unsafe { load_texture_from_data(&data, width, height) };
+				let image_data = (data, width, height);
+				brick_texture = unsafe { Some(load_texture_from_data(image_data)) };
 
-				if let Some(ref mut mesh) = &mut meshes[cube_mesh_index] {
-					mesh.texture = Some(tex);
+				let mesh_indices = [Some(cube_mesh_index), loaded_mesh_index];
+
+				for index in &mesh_indices {
+					if let Some(i) = index {					
+						if let Some(ref mut mesh) = &mut meshes[*i] {
+							mesh.texture = brick_texture;
+						}						
+					}
 				}
 
-				loading_cube_texture_flag = false;
+				loading_brick_texture_flag = false;
 			}
 		}
 
@@ -448,10 +450,7 @@ fn main() {
 									Response::Okay(filename) => {
 										filename
 									}
-									Response::OkayMultiple(_) => {
-										return
-									}
-									Response::Cancel => { return }
+									_ => { return }
 								};
 
 								let model: obj::Obj = match obj::load_obj(BufReader::new(File::open(path).unwrap())) {
