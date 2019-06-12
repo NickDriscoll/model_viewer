@@ -501,9 +501,10 @@ fn main() {
 					Some(p_state)) = (controllers.controller_mesh_indices[i],
 									  controllers.controller_states[i],
 									  controllers.previous_controller_states[i]) {
+
 				if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
 					//Grab the object the controller is currently touching, if there is one
-					let controller_point = match &meshes[cube_mesh_index as usize] {
+					let controller_point = match &meshes[mesh_index as usize] {
 						Some(mesh) => {
 							mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
 						}
@@ -526,6 +527,8 @@ fn main() {
 					let dist = f32::sqrt(f32::powi(controller_point.x - cube_center.x, 2) +
 										 f32::powi(controller_point.y - cube_center.y, 2) +
 										 f32::powi(controller_point.z - cube_center.z, 2));
+
+					println!("{}\n{}\n{}\n\n", controller_point, cube_center, dist);
 
 					if dist < cube_sphere_radius {
 						cube_bound_controller_mesh = Some(mesh_index);
@@ -551,7 +554,7 @@ fn main() {
 						//Need to return inverse(hmd_to_absolute * eye_to_hmd)
 						(glm::affine_inverse(hmd_to_absolute * left_eye_to_hmd),
 						 glm::affine_inverse(hmd_to_absolute * right_eye_to_hmd),
-						 glm::affine_inverse(hmd_to_absolute))						
+						 glm::affine_inverse(hmd_to_absolute))
 					}
 					None => {						
 						//Create a matrix that gets a decent view of the scene
@@ -604,6 +607,7 @@ fn main() {
 			}
 		}
 
+		//Update the camera
 		camera_position += camera_velocity;
 		camera_fov += camera_fov_delta;
 
