@@ -23,7 +23,7 @@ use std::io::BufReader;
 use std::thread;
 use std::sync::mpsc;
 use std::path::Path;
-use obj::*;
+use obj;
 use image::DynamicImage;
 use image::GenericImageView;
 use rand::random;
@@ -305,7 +305,7 @@ fn main() {
 	
 	let cube_sphere_radius = 0.20;
 	let mut cube_bound_controller_mesh = None;
-	let mut loading_cube_mesh_flag = true;
+	let mut loading_cube_texture_flag = true;
 
 	let cube_mesh = Mesh::new(cube_vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), texture_program, None, cube_indices.len() as i32);
 	let cube_mesh_index = meshes.insert(cube_mesh);
@@ -387,16 +387,17 @@ fn main() {
 			}
 		}
 
-		if loading_cube_mesh_flag {
+		//Check if the cube's texture has been loaded
+		if loading_cube_texture_flag {
 			//Check if the cube's texture is loaded yet
 			if let Ok((data, width, height)) = texture_rx.try_recv() {
-				let mut tex = unsafe { load_texture_from_data(&data, width, height) };
+				let tex = unsafe { load_texture_from_data(&data, width, height) };
 
 				if let Some(ref mut mesh) = &mut meshes[cube_mesh_index] {
 					mesh.texture = Some(tex);
 				}
 
-				loading_cube_mesh_flag = false;
+				loading_cube_texture_flag = false;
 			}
 		}
 
@@ -440,7 +441,7 @@ fn main() {
 									Response::Cancel => { return }
 								};
 
-								let model: Obj = match load_obj(BufReader::new(File::open(path).unwrap())) {
+								let model: obj::Obj = match obj::load_obj(BufReader::new(File::open(path).unwrap())) {
 									Ok(m) => {
 										m
 									}
@@ -538,7 +539,7 @@ fn main() {
 			}
 		}
 
-		//Get view matrices for each eye
+		//Get view matrices
 		let v_matrices = match openvr_system {
 			Some(ref sys) => {
 				match render_poses {

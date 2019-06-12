@@ -72,12 +72,20 @@ pub unsafe fn get_uniform_location(program: GLuint, name: &str) -> GLint {
 pub unsafe fn render_mesh(mesh: &Mesh, p_matrix: &glm::TMat4<f32>, v_matrix: &glm::TMat4<f32>, mvp_location: GLint) {
 	gl::UseProgram(mesh.program);
 
+	//Send the model-view-projection matrix to the GPU
 	let mvp = p_matrix * v_matrix * mesh.model_matrix;
 	gl::UniformMatrix4fv(mvp_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
 
-	if let Some(tex) = mesh.texture {
-		gl::BindTexture(gl::TEXTURE_2D, tex);
-	}
+	//Color every fragment black if there's no texture
+	let tex = match mesh.texture {
+		Some(t) => {
+			t
+		}
+		None => {
+			0
+		}
+	};
+	gl::BindTexture(gl::TEXTURE_2D, tex);
 
 	gl::BindVertexArray(mesh.vao);
 	gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
