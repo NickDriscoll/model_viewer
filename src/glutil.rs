@@ -156,9 +156,7 @@ pub fn image_data_from_path(path: &str) -> ImageData {
 }
 
 pub unsafe fn load_texture(path: &str) -> GLuint {
-	let image_data = image_data_from_path(path);
-
-	load_texture_from_data(image_data)
+	load_texture_from_data(image_data_from_path(path))
 }
 
 pub unsafe fn load_texture_from_data(image_data: ImageData) -> GLuint {
