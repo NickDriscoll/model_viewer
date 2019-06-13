@@ -26,26 +26,26 @@ impl Mesh {
 
 //Struct of arrays that stores VR controller data.
 pub struct Controllers {
-	pub controller_indices: [Option<u32>; Self::NUMBER_OF_CONTROLLERS],
-	pub controller_mesh_indices: [Option<usize>; Self::NUMBER_OF_CONTROLLERS],
-	pub controller_states: [Option<ControllerState>; Self::NUMBER_OF_CONTROLLERS],
-	pub previous_controller_states: [Option<ControllerState>; Self::NUMBER_OF_CONTROLLERS]
+	pub indices: [Option<u32>; Self::NUMBER_OF_CONTROLLERS],
+	pub mesh_indices: [Option<usize>; Self::NUMBER_OF_CONTROLLERS],
+	pub states: [Option<ControllerState>; Self::NUMBER_OF_CONTROLLERS],
+	pub previous_states: [Option<ControllerState>; Self::NUMBER_OF_CONTROLLERS]
 }
 
 impl Controllers {
 	pub const NUMBER_OF_CONTROLLERS: usize = 2;
 
 	pub fn new() -> Self {
-		let controller_indices = [None; Self::NUMBER_OF_CONTROLLERS];
-		let controller_mesh_indices = [None; Self::NUMBER_OF_CONTROLLERS];
-		let controller_states = [None; Self::NUMBER_OF_CONTROLLERS];
-		let previous_controller_states = [None; Self::NUMBER_OF_CONTROLLERS];
+		let indices = [None; Self::NUMBER_OF_CONTROLLERS];
+		let mesh_indices = [None; Self::NUMBER_OF_CONTROLLERS];
+		let states = [None; Self::NUMBER_OF_CONTROLLERS];
+		let previous_states = [None; Self::NUMBER_OF_CONTROLLERS];
 
 		Controllers {
-			controller_indices,
-			controller_mesh_indices,
-			controller_states,
-			previous_controller_states
+			indices,
+			mesh_indices,
+			states,
+			previous_states
 		}
 	}
 }
