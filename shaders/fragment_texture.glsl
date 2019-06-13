@@ -1,12 +1,12 @@
 #version 330 core
 
 in vec2 v_tex_coords;
-in vec3 f_normal;
+in vec4 f_normal;
 out vec4 color;
 
 uniform sampler2D tex;
 
-const vec3 LIGHT_DIRECTION = vec3(0.0, -1.0, 0.0);
+const vec4 LIGHT_DIRECTION = vec4(0.0, -1.0, 0.0, 0.0);
 
 void main() {
 	vec3 tex_color = texture(tex, v_tex_coords).rgb;

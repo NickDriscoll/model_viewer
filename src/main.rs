@@ -176,6 +176,7 @@ fn main() {
 
 	//Get mvp uniform location
 	let mvp_location = unsafe { get_uniform_location(texture_program, "mvp") };
+	let model_matrix_location = unsafe { get_uniform_location(texture_program, "model_matrix") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe {
@@ -609,13 +610,13 @@ fn main() {
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
 			//Render left eye
-			render_scene(&mut meshes, p_matrices.0, v_matrices.0, mvp_location);
+			render_scene(&mut meshes, p_matrices.0, v_matrices.0, mvp_location, model_matrix_location);
 
 			//Send to HMD
 			submit_to_hmd(Eye::Left, &openvr_compositor, &openvr_texture_handle);
 
 			//Render right eye
-			render_scene(&mut meshes, p_matrices.1, v_matrices.1, mvp_location);
+			render_scene(&mut meshes, p_matrices.1, v_matrices.1, mvp_location, model_matrix_location);
 
 			//Send to HMD
 			submit_to_hmd(Eye::Right, &openvr_compositor, &openvr_texture_handle);
@@ -625,7 +626,7 @@ fn main() {
 			gl::Viewport(0, 0, window_size.0 as GLsizei, window_size.1 as GLsizei);
 
 			//Draw companion view
-			render_scene(&mut meshes, p_matrices.2, v_matrices.2, mvp_location);
+			render_scene(&mut meshes, p_matrices.2, v_matrices.2, mvp_location, model_matrix_location);
 		}
 
 		window.render_context().swap_buffers();

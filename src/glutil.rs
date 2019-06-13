@@ -14,7 +14,6 @@ use crate::structs::*;
 use crate::flatten_glm;
 
 pub type ImageData = (Vec<u8>, u32, u32);
-const INFO_LOG_SIZE: usize = 512;
 
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
 	let shader = gl::CreateShader(shadertype);
@@ -24,12 +23,13 @@ pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
 
 	//Check for errors
 	let mut success = gl::FALSE as GLint;
+	const INFO_LOG_SIZE: usize = 512;
 	let mut infolog = Vec::with_capacity(INFO_LOG_SIZE);
-
+	infolog.set_len(INFO_LOG_SIZE - 1);
 	gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut success);
 	if success != gl::TRUE as GLint {
 		gl::GetShaderInfoLog(shader, INFO_LOG_SIZE as i32, ptr::null_mut(), infolog.as_mut_ptr() as *mut GLchar);
-		shader_compilation_error(infolog);
+		shader_compilation_error(&infolog);
 	}
 	shader
 }
@@ -45,6 +45,7 @@ pub unsafe fn compile_program_from_files(vertex_path: &str, fragment_path: &str)
 	let fragmentshader = compile_shader_from_file(gl::FRAGMENT_SHADER, fragment_path);
 
 	let mut success = gl::FALSE as GLint;
+	const INFO_LOG_SIZE: usize = 512;
 	let mut infolog = Vec::with_capacity(INFO_LOG_SIZE);
 
 	//Link shaders
@@ -57,7 +58,7 @@ pub unsafe fn compile_program_from_files(vertex_path: &str, fragment_path: &str)
 	gl::GetProgramiv(shader_progam, gl::LINK_STATUS, &mut success);
 	if success != gl::TRUE as GLint {
 		gl::GetProgramInfoLog(shader_progam, INFO_LOG_SIZE as i32, ptr::null_mut(), infolog.as_mut_ptr() as *mut GLchar);
-		shader_compilation_error(infolog);
+		shader_compilation_error(&infolog);
 	}
 
 	gl::DeleteShader(vertexshader);
@@ -65,12 +66,12 @@ pub unsafe fn compile_program_from_files(vertex_path: &str, fragment_path: &str)
 	shader_progam
 }
 
-pub fn shader_compilation_error(infolog: Vec<u8>) {
-	let error_message = match str::from_utf8(&infolog) {
+pub fn shader_compilation_error(infolog: &[u8]) {
+	let error_message = match str::from_utf8(infolog) {
 		Ok(message) => { message }
 		Err(e) => {
 			let sized_log = &infolog[0..e.valid_up_to()];
-			str::from_utf8(sized_log).unwrap()
+			str::from_utf8(&sized_log).unwrap()
 		}
 	};
 	panic!("\n--------SHADER COMPILATION ERROR--------\n{}", error_message);
@@ -81,17 +82,22 @@ pub unsafe fn get_uniform_location(program: GLuint, name: &str) -> GLint {
 	gl::GetUniformLocation(program, cstring.as_ptr())
 }
 
-pub unsafe fn render_mesh(mesh: &Mesh, p_matrix: &glm::TMat4<f32>, v_matrix: &glm::TMat4<f32>, mvp_location: GLint) {
+pub unsafe fn render_mesh(mesh: &Mesh, p_matrix: &glm::TMat4<f32>, v_matrix: &glm::TMat4<f32>, mvp_location: GLint, model_location: GLint) {
 	gl::UseProgram(mesh.program);
 
-	//Send the model-view-projection matrix to the GPU
+	//Send the matrices to the GPU
 	let mvp = p_matrix * v_matrix * mesh.model_matrix;
 	gl::UniformMatrix4fv(mvp_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
+	gl::UniformMatrix4fv(model_location, 1, gl::FALSE, &flatten_glm(&mesh.model_matrix) as *const GLfloat);
 
 	let tex = match mesh.texture {
-		Some(t) => { t }
-		//Color every fragment black if there's no texture
-		None => { 0 }
+		Some(t) => {
+			t
+		}
+		None => {
+			//Color every fragment black if there's no texture
+			0
+		}
 	};
 	gl::BindTexture(gl::TEXTURE_2D, tex);
 
@@ -99,12 +105,12 @@ pub unsafe fn render_mesh(mesh: &Mesh, p_matrix: &glm::TMat4<f32>, v_matrix: &gl
 	gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
 }
 
-pub unsafe fn render_scene(meshes: &mut OptionVec<Mesh>, p_matrix: glm::TMat4<f32>, v_matrix: glm::TMat4<f32>, mvp_location: GLint) {
+pub unsafe fn render_scene(meshes: &mut OptionVec<Mesh>, p_matrix: glm::TMat4<f32>, v_matrix: glm::TMat4<f32>, mvp_location: GLint, model_location: GLint) {
 	gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
 	for option_mesh in meshes.iter() {
 		if let Some(mesh) = option_mesh {
-			render_mesh(&mesh, &p_matrix, &v_matrix, mvp_location);
+			render_mesh(&mesh, &p_matrix, &v_matrix, mvp_location, model_location);
 		}
 	}
 }
