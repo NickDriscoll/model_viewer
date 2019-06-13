@@ -113,7 +113,7 @@ fn get_mesh_origin(mesh: &Option<Mesh>) -> glm::TVec4<f32> {
 }
 
 fn main() {
-	//Init OpenVR
+	//Get the OpenVR context
 	let openvr_context = unsafe {
 		match openvr::init(ApplicationType::Scene) {
 			Ok(ctxt) => {
@@ -126,7 +126,7 @@ fn main() {
 		}
 	};
 
-	//Get the OpenVR system and compositor
+	//Get the OpenVR submodules
 	let (openvr_system, openvr_compositor, openvr_rendermodels) = {
 		if let Some(ref ctxt) = openvr_context {
 			(Some(ctxt.system().unwrap()), Some(ctxt.compositor().unwrap()), Some(ctxt.render_models().unwrap()))
@@ -147,6 +147,8 @@ fn main() {
 
 	//Init glfw
 	let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
+
+	//Using OpenGL 3.3 core. but that could change
 	glfw.window_hint(glfw::WindowHint::ContextVersion(3, 3));
 	glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
 
@@ -179,48 +181,7 @@ fn main() {
 	let model_matrix_location = unsafe { get_uniform_location(texture_program, "model_matrix") };
 
 	//Setup the VR rendering target
-	let vr_render_target = unsafe {
-		let mut render_target = 0;
-		gl::GenFramebuffers(1, &mut render_target);
-		gl::BindFramebuffer(gl::FRAMEBUFFER, render_target);
-
-		//Create the texture that will be rendered to
-		let mut vr_render_texture = 0;
-		gl::GenTextures(1, &mut vr_render_texture);
-		gl::BindTexture(gl::TEXTURE_2D, vr_render_texture);
-		gl::TexImage2D(gl::TEXTURE_2D, 0,
-						   gl::RGB as i32,
-						   render_target_size.0 as GLsizei,
-						   render_target_size.1 as GLsizei,
-						   0,
-						   gl::RGB,
-						   gl::UNSIGNED_BYTE,
-						   0 as *const c_void);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
-
-		//Create depth buffer
-		let mut depth_buffer = 0;
-		gl::GenRenderbuffers(1, &mut depth_buffer);
-		gl::BindRenderbuffer(gl::RENDERBUFFER, depth_buffer);
-		gl::RenderbufferStorage(gl::RENDERBUFFER,
-								gl::DEPTH_COMPONENT,
-								render_target_size.0 as GLsizei,
-								render_target_size.1 as GLsizei);
-		gl::FramebufferRenderbuffer(gl::FRAMEBUFFER, gl::DEPTH_ATTACHMENT, gl::RENDERBUFFER, depth_buffer);
-
-		//Configure framebuffer
-		gl::FramebufferTexture(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0, vr_render_texture, 0);
-		let drawbuffers = [gl::COLOR_ATTACHMENT0];
-		gl::DrawBuffers(1, &drawbuffers as *const u32);
-		if gl::CheckFramebufferStatus(gl::FRAMEBUFFER) != gl::FRAMEBUFFER_COMPLETE {
-			println!("Framebuffer wasn't complete");
-		}
-		gl::BindRenderbuffer(gl::RENDERBUFFER, 0);
-		gl::BindTexture(gl::TEXTURE_2D, 0);
-		gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
-		render_target
-	};
+	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
 	let openvr_texture_handle = Texture {
 		handle: Handle::OpenGLTexture(vr_render_target as usize),
 		color_space: ColorSpace::Auto
@@ -435,8 +396,7 @@ fn main() {
 									vert_data.push(random::<f32>());
 								}
 
-								let pack = (vert_data, model.indices);
-								tx.send(pack).unwrap();
+								tx.send((vert_data, model.indices)).unwrap();
 							});
 							loading_model_flag = true;
 						}

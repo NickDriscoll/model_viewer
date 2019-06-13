@@ -193,3 +193,46 @@ pub unsafe fn load_texture_from_data(image_data: ImageData) -> GLuint {
 	gl::GenerateMipmap(gl::TEXTURE_2D);
 	tex
 }
+
+pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint {
+	let mut render_target = 0;
+	gl::GenFramebuffers(1, &mut render_target);
+	gl::BindFramebuffer(gl::FRAMEBUFFER, render_target);
+
+	//Create the texture that will be rendered to
+	let mut vr_render_texture = 0;
+	gl::GenTextures(1, &mut vr_render_texture);
+	gl::BindTexture(gl::TEXTURE_2D, vr_render_texture);
+	gl::TexImage2D(gl::TEXTURE_2D, 0,
+					   gl::RGB as i32,
+					   render_target_size.0 as GLsizei,
+					   render_target_size.1 as GLsizei,
+					   0,
+					   gl::RGB,
+					   gl::UNSIGNED_BYTE,
+					   0 as *const c_void);
+	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+
+	//Create depth buffer
+	let mut depth_buffer = 0;
+	gl::GenRenderbuffers(1, &mut depth_buffer);
+	gl::BindRenderbuffer(gl::RENDERBUFFER, depth_buffer);
+	gl::RenderbufferStorage(gl::RENDERBUFFER,
+							gl::DEPTH_COMPONENT,
+							render_target_size.0 as GLsizei,
+							render_target_size.1 as GLsizei);
+	gl::FramebufferRenderbuffer(gl::FRAMEBUFFER, gl::DEPTH_ATTACHMENT, gl::RENDERBUFFER, depth_buffer);
+
+	//Configure framebuffer
+	gl::FramebufferTexture(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0, vr_render_texture, 0);
+	let drawbuffers = [gl::COLOR_ATTACHMENT0];
+	gl::DrawBuffers(1, &drawbuffers as *const u32);
+	if gl::CheckFramebufferStatus(gl::FRAMEBUFFER) != gl::FRAMEBUFFER_COMPLETE {
+		println!("Framebuffer wasn't complete");
+	}
+	gl::BindRenderbuffer(gl::RENDERBUFFER, 0);
+	gl::BindTexture(gl::TEXTURE_2D, 0);
+	gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+	render_target
+}
