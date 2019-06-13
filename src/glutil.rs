@@ -14,6 +14,7 @@ use crate::structs::*;
 use crate::flatten_glm;
 
 pub type ImageData = (Vec<u8>, u32, u32);
+const INFO_LOG_SIZE: usize = 512;
 
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
 	let shader = gl::CreateShader(shadertype);
@@ -23,7 +24,6 @@ pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
 
 	//Check for errors
 	let mut success = gl::FALSE as GLint;
-	const INFO_LOG_SIZE: usize = 512;
 	let mut infolog = Vec::with_capacity(INFO_LOG_SIZE);
 	infolog.set_len(INFO_LOG_SIZE - 1);
 	gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut success);
@@ -44,10 +44,6 @@ pub unsafe fn compile_program_from_files(vertex_path: &str, fragment_path: &str)
 	let vertexshader = compile_shader_from_file(gl::VERTEX_SHADER, vertex_path);
 	let fragmentshader = compile_shader_from_file(gl::FRAGMENT_SHADER, fragment_path);
 
-	let mut success = gl::FALSE as GLint;
-	const INFO_LOG_SIZE: usize = 512;
-	let mut infolog = Vec::with_capacity(INFO_LOG_SIZE);
-
 	//Link shaders
 	let shader_progam = gl::CreateProgram();
 	gl::AttachShader(shader_progam, vertexshader);
@@ -55,6 +51,8 @@ pub unsafe fn compile_program_from_files(vertex_path: &str, fragment_path: &str)
 	gl::LinkProgram(shader_progam);
 
 	//Check for errors
+	let mut success = gl::FALSE as GLint;
+	let mut infolog = Vec::with_capacity(INFO_LOG_SIZE);
 	gl::GetProgramiv(shader_progam, gl::LINK_STATUS, &mut success);
 	if success != gl::TRUE as GLint {
 		gl::GetProgramInfoLog(shader_progam, INFO_LOG_SIZE as i32, ptr::null_mut(), infolog.as_mut_ptr() as *mut GLchar);

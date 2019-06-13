@@ -268,41 +268,9 @@ fn main() {
 		meshes.insert(mesh)
 	};
 
-	//Cube variables	
-	let cube_vertices = [
-		//Position data 				//Normals						//Tex coords
-		-0.5f32, -0.5, 0.5,												0.0, 1.0,
-		-0.5, 0.5, 0.5,													-1.0, 1.0,
-		0.5, 0.5, 0.5,													2.0, 1.0,
-		0.5, -0.5, 0.5,													1.0, 1.0,
-		-0.5, -0.5, -0.5,												0.0, 0.0,
-		-0.5, 0.5, -0.5,												-1.0, 0.0,
-		0.5, 0.5, -0.5,													1.0, -1.0,
-		0.5, -0.5, -0.5,												1.0, 0.0
-	];
-	let cube_indices = [
-		1u16, 0, 3,
-		3, 2, 1,
-		2, 3, 7,
-		7, 6, 2,
-		3, 0, 4,
-		4, 7, 3,
-		6, 5, 1,
-		1, 2, 6,
-		4, 5, 6,
-		6, 7, 4,
-		5, 4, 0,
-		0, 1, 5
-	];
-	let cube_vao = unsafe { create_vertex_array_object(&cube_vertices, &cube_indices) };
-	
-	let cube_sphere_radius = 0.20;
-	let mut loaded_bound_controller_mesh = None;
-
-	let cube_mesh = Mesh::new(cube_vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), texture_program, brick_texture, cube_indices.len() as i32);
-	//let cube_mesh_index = meshes.insert(cube_mesh);
-
-	//Variables for the mesh loaded from a file
+	//Variables for the mesh loaded from a file	
+	let loaded_sphere_radius = 0.20;
+	let mut loaded_bound_controller_index = None;
 	let mut loaded_mesh_index = None;
 	let mut loaded_space_to_controller_space = glm::identity();
 
@@ -315,6 +283,7 @@ fn main() {
 
 	//Gameplay state
 	let mut ticks = 0.0;
+
 	let mut camera_position = glm::vec3(0.0, -1.0, -1.0);
 	let mut camera_velocity = glm::vec3(0.0, 0.0, 0.0);
 	let mut camera_fov = 90.0;
@@ -328,19 +297,19 @@ fn main() {
 	while !window.should_close() {
 		//Find controllers if we haven't already
 		if let Some(ref sys) = openvr_system {
-			for i in 0..controllers.controller_indices.len() {
-				if let None = controllers.controller_indices[i] {
+			for i in 0..controllers.indices.len() {
+				if let None = controllers.indices[i] {
 					const ROLES: [TrackedControllerRole; 2] = [TrackedControllerRole::LeftHand, TrackedControllerRole::RightHand];
-					controllers.controller_indices[i] = sys.tracked_device_index_for_controller_role(ROLES[i]);
+					controllers.indices[i] = sys.tracked_device_index_for_controller_role(ROLES[i]);
 				}
 			}
 		}
 
 		//Load controller meshes if we haven't already
-		if let None = controllers.controller_mesh_indices[0] {
-			for i in 0..controllers.controller_indices.len() {
-				if let Some(index) = controllers.controller_indices[i] {
-					controllers.controller_mesh_indices = load_controller_meshes(&openvr_system,
+		if let None = controllers.mesh_indices[0] {
+			for i in 0..controllers.indices.len() {
+				if let Some(index) = controllers.indices[i] {
+					controllers.mesh_indices = load_controller_meshes(&openvr_system,
 														  &openvr_rendermodels,
 														  &mut meshes,
 														  index,
@@ -364,8 +333,8 @@ fn main() {
 
 		//Get controller state structs
 		for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
-			if let (Some(index), Some(sys)) = (controllers.controller_indices[i], &openvr_system) {
-				controllers.controller_states[i] = sys.controller_state(index);
+			if let (Some(index), Some(sys)) = (controllers.indices[i], &openvr_system) {
+				controllers.states[i] = sys.controller_state(index);
 			}
 		}
 
@@ -373,7 +342,7 @@ fn main() {
 		if loading_model_flag {
 			if let Ok(pack) = load_rx.try_recv() {
 				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1) };
-				let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(0.2, 0.2, 0.2)), texture_program, brick_texture, pack.1.len() as i32);
+				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), texture_program, brick_texture, pack.1.len() as i32);
 
 				//Delete old mesh if there is one
 				if let Some(i) = loaded_mesh_index {
@@ -503,25 +472,26 @@ fn main() {
 			if let (Some(mesh_index),
 					Some(loaded_index),
 					Some(state),
-					Some(p_state)) = (controllers.controller_mesh_indices[i],
+					Some(p_state)) = (controllers.mesh_indices[i],
 									  loaded_mesh_index,
-									  controllers.controller_states[i],
-									  controllers.previous_controller_states[i]) {
+									  controllers.states[i],
+									  controllers.previous_states[i]) {
 
+				//If the trigger was pulled this frame
 				if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
 					//Grab the object the controller is currently touching, if there is one
 
 					let controller_origin = get_mesh_origin(&meshes[mesh_index as usize]);
-					let cube_origin = get_mesh_origin(&meshes[loaded_index]);
+					let loaded_origin = get_mesh_origin(&meshes[loaded_index]);
 
-					//Get distance from controller_origin to cube_origin
-					let dist = f32::sqrt(f32::powi(controller_origin.x - cube_origin.x, 2) +
-										 f32::powi(controller_origin.y - cube_origin.y, 2) +
-										 f32::powi(controller_origin.z - cube_origin.z, 2));
+					//Get distance from controller_origin to loaded_origin
+					let dist = f32::sqrt(f32::powi(controller_origin.x - loaded_origin.x, 2) +
+										 f32::powi(controller_origin.y - loaded_origin.y, 2) +
+										 f32::powi(controller_origin.z - loaded_origin.z, 2));
 
-					if dist < cube_sphere_radius {
+					if dist < loaded_sphere_radius {
 						//Set the controller's mesh as the mesh the cube mesh is "bound" to
-						loaded_bound_controller_mesh = Some(mesh_index);
+						loaded_bound_controller_index = Some(i);
 
 						//Calculate the cube-space to controller-space matrix aka inverse(controller.model_matrix) * cube.model_matrix
 						if let (Some(cont_mesh), Some(loaded_mesh)) = (&meshes[mesh_index], &meshes[loaded_index]) {
@@ -530,9 +500,10 @@ fn main() {
 					}
 				}
 
+				//If the trigger was released this frame
 				if state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER == 0 &&
 				   p_state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER != 0 {
-					loaded_bound_controller_mesh = None;
+					loaded_bound_controller_index = None;
 				}
 			}
 		}
@@ -582,15 +553,17 @@ fn main() {
 		//Ensure controller meshes are drawn at each controller's position
 		if let Some(poses) = render_poses {
 			for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
-				attach_mesh_to_controller(&mut meshes, &poses, &controllers.controller_indices[i], controllers.controller_mesh_indices[i]);
+				attach_mesh_to_controller(&mut meshes, &poses, &controllers.indices[i], controllers.mesh_indices[i]);
 			}
 		}
 
 		//If the loaded mesh is currently being grabbed, draw it at the grabbing controller's position
-		if let (Some(mesh_index), Some(load_index)) = (loaded_bound_controller_mesh, loaded_mesh_index) {
-			let indices = meshes.two_mut_refs(load_index, mesh_index);
-			if let (Some(loaded), Some(controller)) = indices {
-				loaded.model_matrix = controller.model_matrix * loaded_space_to_controller_space;
+		if let Some(index) = loaded_bound_controller_index {
+			if let (Some(mesh_index), Some(load_index)) = (controllers.mesh_indices[index], loaded_mesh_index) {
+				let indices = meshes.two_mut_refs(load_index, mesh_index);
+				if let (Some(loaded), Some(controller)) = indices {
+					loaded.model_matrix = controller.model_matrix * loaded_space_to_controller_space;
+				}
 			}
 		}
 
@@ -598,7 +571,7 @@ fn main() {
 		camera_position += camera_velocity;
 		camera_fov += camera_fov_delta;
 
-		controllers.previous_controller_states = controllers.controller_states;
+		controllers.previous_states = controllers.states;
 
 		//Rendering code
 		unsafe {
