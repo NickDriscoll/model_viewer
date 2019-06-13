@@ -68,12 +68,15 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 		let name = sys.string_tracked_device_property(index, openvr::property::RenderModelName_String).unwrap();
 		if let Some(model) = ren_mod.load_render_model(&name).unwrap() {
 			//Flatten each vertex into a simple &[f32]
-			const ELEMENT_STRIDE: usize = 5;
+			const ELEMENT_STRIDE: usize = 8;
 			let mut vertices = Vec::with_capacity(ELEMENT_STRIDE * model.vertices().len());
 			for vertex in model.vertices() {
 				vertices.push(vertex.position[0]);
 				vertices.push(vertex.position[1]);
 				vertices.push(vertex.position[2]);
+				vertices.push(vertex.normal[0]);
+				vertices.push(vertex.normal[1]);
+				vertices.push(vertex.normal[2]);
 				vertices.push(vertex.texture_coord[0]);
 				vertices.push(vertex.texture_coord[1]);
 			}
@@ -293,14 +296,14 @@ fn main() {
 	let cube_vao = unsafe { create_vertex_array_object(&cube_vertices, &cube_indices) };
 	
 	let cube_sphere_radius = 0.20;
-	let mut cube_bound_controller_mesh = None;
+	let mut loaded_bound_controller_mesh = None;
 
 	let cube_mesh = Mesh::new(cube_vao, glm::translation(&glm::vec3(0.0, 1.0, 0.0)) * glm::scaling(&glm::vec3(0.25, 0.25, 0.25)), texture_program, brick_texture, cube_indices.len() as i32);
-	let cube_mesh_index = meshes.insert(cube_mesh);
-	let mut cube_space_to_controller_space = glm::identity();
+	//let cube_mesh_index = meshes.insert(cube_mesh);
 
 	//Variables for the mesh loaded from a file
 	let mut loaded_mesh_index = None;
+	let mut loaded_space_to_controller_space = glm::identity();
 
 	//Thread listening flags
 	let mut loading_model_flag = false;
@@ -387,7 +390,7 @@ fn main() {
 				let image_data = (data, width, height);
 				brick_texture = unsafe { Some(load_texture_from_data(image_data)) };
 
-				let mesh_indices = [Some(cube_mesh_index), loaded_mesh_index];
+				let mesh_indices = [loaded_mesh_index];
 
 				for index in &mesh_indices {
 					if let Some(i) = index {					
@@ -497,8 +500,10 @@ fn main() {
 		//Handle controller input
 		for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
 			if let (Some(mesh_index),
+					Some(loaded_index),
 					Some(state),
 					Some(p_state)) = (controllers.controller_mesh_indices[i],
+									  loaded_mesh_index,
 									  controllers.controller_states[i],
 									  controllers.previous_controller_states[i]) {
 
@@ -506,7 +511,7 @@ fn main() {
 					//Grab the object the controller is currently touching, if there is one
 
 					let controller_origin = get_mesh_origin(&meshes[mesh_index as usize]);
-					let cube_origin = get_mesh_origin(&meshes[cube_mesh_index]);
+					let cube_origin = get_mesh_origin(&meshes[loaded_index]);
 
 					//Get distance from controller_origin to cube_origin
 					let dist = f32::sqrt(f32::powi(controller_origin.x - cube_origin.x, 2) +
@@ -515,18 +520,18 @@ fn main() {
 
 					if dist < cube_sphere_radius {
 						//Set the controller's mesh as the mesh the cube mesh is "bound" to
-						cube_bound_controller_mesh = Some(mesh_index);
+						loaded_bound_controller_mesh = Some(mesh_index);
 
 						//Calculate the cube-space to controller-space matrix aka inverse(controller.model_matrix) * cube.model_matrix
-						if let (Some(cont_mesh), Some(cube_mesh)) = (&meshes[mesh_index], &meshes[cube_mesh_index]) {
-							cube_space_to_controller_space = glm::affine_inverse(cont_mesh.model_matrix) * cube_mesh.model_matrix;
+						if let (Some(cont_mesh), Some(loaded_mesh)) = (&meshes[mesh_index], &meshes[loaded_index]) {
+							loaded_space_to_controller_space = glm::affine_inverse(cont_mesh.model_matrix) * loaded_mesh.model_matrix;
 						}
 					}
 				}
 
 				if state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER == 0 &&
 				   p_state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER != 0 {
-					cube_bound_controller_mesh = None;
+					loaded_bound_controller_mesh = None;
 				}
 			}
 		}
@@ -580,19 +585,11 @@ fn main() {
 			}
 		}
 
-		//If the cube is currently being grabbed, draw it at the grabbing controller's position
-		if let Some(mesh_index) = cube_bound_controller_mesh {
-			let indices = meshes.two_mut_refs(cube_mesh_index, mesh_index);
-			if let (Some(cube), Some(controller)) = indices {
-				cube.model_matrix = controller.model_matrix * cube_space_to_controller_space;
-			}
-		}
-
-		//Update the loaded mesh
-		if let Some(index) = loaded_mesh_index {
-			if let Some(mesh) = &mut meshes[index] {
-				mesh.model_matrix = glm::rotation(ticks*0.5, &glm::vec3(0.0, 1.0, 0.0)) *
-											 glm::scaling(&glm::vec3(0.2, 0.2, 0.2));
+		//If the loaded mesh is currently being grabbed, draw it at the grabbing controller's position
+		if let (Some(mesh_index), Some(load_index)) = (loaded_bound_controller_mesh, loaded_mesh_index) {
+			let indices = meshes.two_mut_refs(load_index, mesh_index);
+			if let (Some(loaded), Some(controller)) = indices {
+				loaded.model_matrix = controller.model_matrix * loaded_space_to_controller_space;
 			}
 		}
 

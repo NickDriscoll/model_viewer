@@ -12,7 +12,7 @@ void main() {
 	vec3 tex_color = texture(tex, v_tex_coords).rgb;
 
 	//If f_normal and LIGHT_DIRECTION are normalized, the dot product will return cos(theta)
-	float intensity = ax(0.0, dot(f_normal, LIGHT_DIRECTION));
+	float intensity = max(0.0, dot(f_normal, LIGHT_DIRECTION));
 
 	vec3 result = tex_color * intensity;
 	color = vec4(tex_color, 1.0);

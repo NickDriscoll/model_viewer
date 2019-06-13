@@ -89,13 +89,9 @@ pub unsafe fn render_mesh(mesh: &Mesh, p_matrix: &glm::TMat4<f32>, v_matrix: &gl
 	gl::UniformMatrix4fv(mvp_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
 
 	let tex = match mesh.texture {
-		Some(t) => {
-			t
-		}
-		None => {
-			//Color every fragment black if there's no texture
-			0
-		}
+		Some(t) => { t }
+		//Color every fragment black if there's no texture
+		None => { 0 }
 	};
 	gl::BindTexture(gl::TEXTURE_2D, tex);
 
