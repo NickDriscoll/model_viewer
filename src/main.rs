@@ -16,6 +16,7 @@ use self::gl::types::*;
 
 mod structs;
 mod glutil;
+mod prims;
 
 const NEAR_Z: f32 = 0.25;
 const FAR_Z: f32 = 50.0;
@@ -227,6 +228,8 @@ fn main() {
 							 texture_program, Some(checkerboard_texture), indices.len() as i32);
 		meshes.insert(mesh)
 	};
+
+	//Create the sphere
 
 	//Variables for the mesh loaded from a file	
 	let loaded_sphere_radius = 0.20;
