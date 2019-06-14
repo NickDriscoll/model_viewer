@@ -9,7 +9,7 @@ uniform sampler2D tex;
 
 const float angle = 90; //Angle is in degrees
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
-const vec4 LIGHT_POSITION = vec4(0.0, 0.3, 1.0, 1.0);
+const vec4 LIGHT_POSITION = vec4(0.0, 2.0, 0.0, 1.0);
 const float AMBIENT_STRENGTH = 0.1;
 
 void main() {
@@ -19,11 +19,8 @@ void main() {
 	//Get raw texel
 	vec3 tex_color = texture(tex, v_tex_coords).rgb;
 
-	//Get light direction vector from angle
-	//vec4 light_direction = vec4(cos(radians(angle)), sin(radians(angle)), 0.0, 0.0);
-
 	//Get light direction vector from light position
-	vec4 light_direction = LIGHT_POSITION - f_pos;
+	vec4 light_direction = normalize(LIGHT_POSITION - f_pos);
 
 	//Get ambient contribution
 	vec3 ambient = AMBIENT_STRENGTH * LIGHT_COLOR;

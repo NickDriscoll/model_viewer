@@ -16,7 +16,6 @@ use self::gl::types::*;
 
 mod structs;
 mod glutil;
-mod prims;
 
 const NEAR_Z: f32 = 0.25;
 const FAR_Z: f32 = 50.0;
@@ -229,7 +228,36 @@ fn main() {
 		meshes.insert(mesh)
 	};
 
-	//Create the sphere
+	//Create the sphere that represents the light source
+	let sphere_mesh_index = unsafe {
+		let model: obj::Obj = match obj::load_obj(BufReader::new(File::open("models/sphere.obj").unwrap())) {
+			Ok(m) => {
+				m
+			}
+			Err(e) => {
+				println!("{:?}", e);
+				return
+			}
+		};
+
+		//Take loaded model and create a Mesh
+		const ELEMENT_STRIDE: usize = 8;
+		let mut vert_data = Vec::with_capacity(ELEMENT_STRIDE * model.vertices.len());
+		for v in model.vertices {
+			vert_data.push(v.position[0]);
+			vert_data.push(v.position[1]);
+			vert_data.push(v.position[2]);
+			vert_data.push(v.normal[0]);
+			vert_data.push(v.normal[1]);
+			vert_data.push(v.normal[2]);
+			vert_data.push(random::<f32>());
+			vert_data.push(random::<f32>());
+		}
+
+		let vao = create_vertex_array_object(&vert_data, &model.indices);
+		let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 2.0, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), texture_program, None, model.indices.len() as i32);
+		meshes.insert(mesh)
+	};
 
 	//Variables for the mesh loaded from a file	
 	let loaded_sphere_radius = 0.20;
