@@ -4,7 +4,6 @@ use glfw::{Action, Context, Key, WindowMode, WindowEvent};
 use openvr::{ApplicationType, button_id, ControllerState, Eye, System, RenderModels, TrackedControllerRole, TrackedDevicePose};
 use openvr::compositor::texture::{ColorSpace, Handle, Texture};
 use nfd::Response;
-use std::os::raw::c_void;
 use std::fs::File;
 use std::io::BufReader;
 use std::thread;

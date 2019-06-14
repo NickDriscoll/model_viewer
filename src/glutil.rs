@@ -15,6 +15,7 @@ use crate::flatten_glm;
 
 pub type ImageData = (Vec<u8>, u32, u32);
 const INFO_LOG_SIZE: usize = 512;
+const ATTRIBUTE_STRIDE: i32 = 8;
 
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
 	let shader = gl::CreateShader(shadertype);
@@ -140,7 +141,6 @@ pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16]) -> G
 				   gl::STATIC_DRAW);
 	
 
-	const ATTRIBUTE_STRIDE: i32 = 8;
 	let byte_stride = ATTRIBUTE_STRIDE * mem::size_of::<GLfloat>() as i32;
 
 	//Configure and enable the vertex attributes	
@@ -173,7 +173,7 @@ pub fn image_data_from_path(path: &str) -> ImageData {
 }
 
 pub unsafe fn load_texture_from_data(image_data: ImageData) -> GLuint {
-	let mut tex = 0;	
+	let mut tex = 0;
 	gl::GenTextures(1, &mut tex);
 	gl::BindTexture(gl::TEXTURE_2D, tex);
 	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
