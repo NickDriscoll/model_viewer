@@ -15,7 +15,9 @@ void main() {
 	f_pos = model_matrix * vec4(position, 1.0);
 
 	//Send world space representation of normal vector
-	f_normal = model_matrix * vec4(normal, 0.0);
+	//Create normal matrix that protects against the effects of non-uniform scaling
+	mat3 normal_matrix = mat3(transpose(inverse(model_matrix)));
+	f_normal = vec4(normal_matrix * normal, 0.0);
 
 	//Send tex coords
 	v_tex_coords = tex_coords;

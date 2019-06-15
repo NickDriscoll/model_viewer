@@ -9,7 +9,7 @@ uniform sampler2D tex;
 
 const float angle = 90; //Angle is in degrees
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
-const vec4 LIGHT_POSITION = vec4(0.0, 2.0, 0.0, 1.0);
+const vec4 LIGHT_POSITION = vec4(0.0, 1.5, 0.0, 1.0);
 const float AMBIENT_STRENGTH = 0.1;
 
 void main() {
