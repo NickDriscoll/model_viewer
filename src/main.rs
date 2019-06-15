@@ -20,6 +20,8 @@ mod glutil;
 const NEAR_Z: f32 = 0.25;
 const FAR_Z: f32 = 50.0;
 
+type MeshArrays = (Vec<f32>, Vec<u16>);
+
 fn openvr_to_mat4(mat: [[f32; 4]; 3]) -> glm::TMat4<f32> {
 	glm::mat4(
 			mat[0][0], mat[0][1], mat[0][2], mat[0][3],
@@ -111,6 +113,33 @@ fn get_mesh_origin(mesh: &Option<Mesh>) -> glm::TVec4<f32> {
 	}
 }
 
+fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
+	let model: obj::Obj = match obj::load_obj(BufReader::new(File::open(path).unwrap())) {
+		Ok(m) => {
+			m
+		}
+		Err(e) => {
+			println!("{:?}", e);
+			return None;
+		}
+	};
+
+	//Take loaded model and create a Mesh
+	const ELEMENT_STRIDE: usize = 8;
+	let mut vert_data = Vec::with_capacity(ELEMENT_STRIDE * model.vertices.len());
+	for v in model.vertices {
+		vert_data.push(v.position[0]);
+		vert_data.push(v.position[1]);
+		vert_data.push(v.position[2]);
+		vert_data.push(v.normal[0]);
+		vert_data.push(v.normal[1]);
+		vert_data.push(v.normal[2]);
+		vert_data.push(random::<f32>());
+		vert_data.push(random::<f32>());
+	}
+	Some((vert_data, model.indices))
+}
+
 fn main() {
 	//Get the OpenVR context
 	let openvr_context = unsafe {
@@ -173,11 +202,11 @@ fn main() {
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
 	//Compile shader program
-	let texture_program = unsafe { compile_program_from_files("shaders/vertex_texture.glsl", "shaders/fragment_texture.glsl") };
+	let nonluminous_shader = unsafe { compile_program_from_files("shaders/nonluminous_vertex.glsl", "shaders/nonluminous_fragment.glsl") };
 
 	//Get mvp uniform location
-	let mvp_location = unsafe { get_uniform_location(texture_program, "mvp") };
-	let model_matrix_location = unsafe { get_uniform_location(texture_program, "model_matrix") };
+	let mvp_location = unsafe { get_uniform_location(nonluminous_shader, "mvp") };
+	let model_matrix_location = unsafe { get_uniform_location(nonluminous_shader, "model_matrix") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -224,39 +253,22 @@ fn main() {
 		];
 		let vao = create_vertex_array_object(&vertices, &indices);
 		let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(5.0, 5.0, 5.0)),
-							 texture_program, Some(checkerboard_texture), indices.len() as i32);
+							 nonluminous_shader, Some(checkerboard_texture), indices.len() as i32);
 		meshes.insert(mesh)
 	};
 
 	//Create the sphere that represents the light source
 	let sphere_mesh_index = unsafe {
-		let model: obj::Obj = match obj::load_obj(BufReader::new(File::open("models/sphere.obj").unwrap())) {
-			Ok(m) => {
-				m
+		match load_wavefront_obj("models/sphere.obj") {
+			Some(obj) => {
+				let vao = create_vertex_array_object(&obj.0, &obj.1);
+				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 2.0, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), nonluminous_shader, None, obj.1.len() as i32);
+				Some(meshes.insert(mesh))
 			}
-			Err(e) => {
-				println!("{:?}", e);
-				return
+			None => {
+				None
 			}
-		};
-
-		//Take loaded model and create a Mesh
-		const ELEMENT_STRIDE: usize = 8;
-		let mut vert_data = Vec::with_capacity(ELEMENT_STRIDE * model.vertices.len());
-		for v in model.vertices {
-			vert_data.push(v.position[0]);
-			vert_data.push(v.position[1]);
-			vert_data.push(v.position[2]);
-			vert_data.push(v.normal[0]);
-			vert_data.push(v.normal[1]);
-			vert_data.push(v.normal[2]);
-			vert_data.push(random::<f32>());
-			vert_data.push(random::<f32>());
 		}
-
-		let vao = create_vertex_array_object(&vert_data, &model.indices);
-		let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 2.0, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), texture_program, None, model.indices.len() as i32);
-		meshes.insert(mesh)
 	};
 
 	//Variables for the mesh loaded from a file	
@@ -281,8 +293,7 @@ fn main() {
 	let mut camera_fov_delta = 0.0;
 	let camera_speed = 0.05;
 
-	type ModelLoadPacket = (Vec<f32>, Vec<u16>);
-	let (load_tx, load_rx) = mpsc::channel::<ModelLoadPacket>();
+	let (load_tx, load_rx) = mpsc::channel::<MeshArrays>();
 
 	//Main loop
 	while !window.should_close() {
@@ -304,7 +315,7 @@ fn main() {
 														  &openvr_rendermodels,
 														  &mut meshes,
 														  index,
-														  texture_program);
+														  nonluminous_shader);
 
 					//We break here because the models only need to be loaded once, but we still want to check both controller indices if necessary
 					break;
@@ -333,7 +344,7 @@ fn main() {
 		if loading_model_flag {
 			if let Ok(pack) = load_rx.try_recv() {
 				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1) };
-				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), texture_program, brick_texture, pack.1.len() as i32);
+				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), nonluminous_shader, brick_texture, pack.1.len() as i32);
 
 				//Delete old mesh if there is one
 				if let Some(i) = loaded_mesh_index {
@@ -402,31 +413,16 @@ fn main() {
 									_ => { return }
 								};
 
-								let model: obj::Obj = match obj::load_obj(BufReader::new(File::open(path).unwrap())) {
-									Ok(m) => {
-										m
+								let packet = match load_wavefront_obj(&path) {
+									Some(obj) => {
+										obj
 									}
-									Err(e) => {
-										println!("{:?}", e);
+									None => {
 										return
 									}
 								};
 
-								//Take loaded model and create a Mesh
-								const ELEMENT_STRIDE: usize = 8;
-								let mut vert_data = Vec::with_capacity(ELEMENT_STRIDE * model.vertices.len());
-								for v in model.vertices {
-									vert_data.push(v.position[0]);
-									vert_data.push(v.position[1]);
-									vert_data.push(v.position[2]);
-									vert_data.push(v.normal[0]);
-									vert_data.push(v.normal[1]);
-									vert_data.push(v.normal[2]);
-									vert_data.push(random::<f32>());
-									vert_data.push(random::<f32>());
-								}
-
-								tx.send((vert_data, model.indices)).unwrap();
+								tx.send(packet).unwrap();
 							});
 							loading_model_flag = true;
 						}
