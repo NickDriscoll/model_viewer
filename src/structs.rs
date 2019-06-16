@@ -24,6 +24,10 @@ impl Mesh {
 	}
 }
 
+pub struct RenderContext {
+	
+}
+
 //Struct of arrays that stores VR controller data.
 pub struct Controllers {
 	pub indices: [Option<u32>; Self::NUMBER_OF_CONTROLLERS],

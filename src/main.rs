@@ -204,9 +204,10 @@ fn main() {
 	//Compile shader program
 	let nonluminous_shader = unsafe { compile_program_from_files("shaders/nonluminous_vertex.glsl", "shaders/nonluminous_fragment.glsl") };
 
-	//Get mvp uniform location
+	//Get locations of program uniforms
 	let mvp_location = unsafe { get_uniform_location(nonluminous_shader, "mvp") };
 	let model_matrix_location = unsafe { get_uniform_location(nonluminous_shader, "model_matrix") };
+	let light_position_location = unsafe { get_uniform_location(nonluminous_shader, "light_position") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -258,11 +259,13 @@ fn main() {
 	};
 
 	//Create the sphere that represents the light source
+	let light_position = glm::vec4(0.0, 1.0, 0.0, 1.0);
 	let sphere_mesh_index = unsafe {
 		match load_wavefront_obj("models/sphere.obj") {
 			Some(obj) => {
 				let vao = create_vertex_array_object(&obj.0, &obj.1);
-				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 2.0, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), nonluminous_shader, None, obj.1.len() as i32);
+				let t = glm::vec4_to_vec3(&light_position);
+				let mesh = Mesh::new(vao, glm::translation(&t) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), nonluminous_shader, None, obj.1.len() as i32);
 				Some(meshes.insert(mesh))
 			}
 			None => {
@@ -569,13 +572,13 @@ fn main() {
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
 			//Render left eye
-			render_scene(&mut meshes, p_matrices.0, v_matrices.0, mvp_location, model_matrix_location);
+			render_scene(&mut meshes, p_matrices.0, v_matrices.0, mvp_location, model_matrix_location, light_position_location, light_position);
 
 			//Send to HMD
 			submit_to_hmd(Eye::Left, &openvr_compositor, &openvr_texture_handle);
 
 			//Render right eye
-			render_scene(&mut meshes, p_matrices.1, v_matrices.1, mvp_location, model_matrix_location);
+			render_scene(&mut meshes, p_matrices.1, v_matrices.1, mvp_location, model_matrix_location, light_position_location, light_position);
 
 			//Send to HMD
 			submit_to_hmd(Eye::Right, &openvr_compositor, &openvr_texture_handle);
@@ -585,7 +588,7 @@ fn main() {
 			gl::Viewport(0, 0, window_size.0 as GLsizei, window_size.1 as GLsizei);
 
 			//Draw companion view
-			render_scene(&mut meshes, p_matrices.2, v_matrices.2, mvp_location, model_matrix_location);
+			render_scene(&mut meshes, p_matrices.2, v_matrices.2, mvp_location, model_matrix_location, light_position_location, light_position);
 		}
 
 		window.render_context().swap_buffers();

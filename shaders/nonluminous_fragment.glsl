@@ -6,10 +6,11 @@ in vec2 v_tex_coords;
 out vec4 color;
 
 uniform sampler2D tex;
+uniform vec4 light_position;
 
 const float angle = 90; //Angle is in degrees
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
-const vec4 LIGHT_POSITION = vec4(0.0, 1.5, 0.0, 1.0);
+//const vec4 LIGHT_POSITION = vec4(0.0, 0.5, 0.0, 1.0);
 const float AMBIENT_STRENGTH = 0.1;
 
 void main() {
@@ -20,7 +21,7 @@ void main() {
 	vec3 tex_color = texture(tex, v_tex_coords).rgb;
 
 	//Get light direction vector from light position
-	vec4 light_direction = normalize(LIGHT_POSITION - f_pos);
+	vec4 light_direction = normalize(light_position - f_pos);
 
 	//Get ambient contribution
 	vec3 ambient = AMBIENT_STRENGTH * LIGHT_COLOR;
