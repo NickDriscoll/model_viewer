@@ -301,9 +301,8 @@ fn main() {
 	//The channel for sending 3D models between threads
 	let (load_tx, load_rx) = mpsc::channel::<Option<MeshArrays>>();
 
-	//Framerate diagnostic tool
+	//The instant recorded at the beginning of last frame
 	let mut last_frame_instant = Instant::now();
-	let mut fps_averages = [0.0; 500];
 
 	//Main loop
 	let mut frame_count: u64 = 0;
@@ -316,16 +315,6 @@ fn main() {
 			let dur = frame_instant.duration_since(last_frame_instant);
 			(dur.subsec_millis() as f32 / 1000.0) + (dur.subsec_micros() as f32 / 1_000_000.0)
 		};
-
-		fps_averages[frame_count as usize % fps_averages.len()] = f32::floor(1.0 / seconds_elapsed);
-		if frame_count as usize % fps_averages.len() == 0 {
-			let mut avg = 0.0;
-			for i in 0..fps_averages.len() {
-				avg += fps_averages[i];
-			}
-			avg /= fps_averages.len() as f32;
-			println!("FPS: {:?}", avg);
-		}
 
 		//Find controllers if we haven't already
 		if let Some(ref sys) = openvr_system {
@@ -443,6 +432,7 @@ fn main() {
 									_ => { return }
 								};
 
+								//Send model data back to the main thread
 								tx.send(load_wavefront_obj(&path)).unwrap();
 							});
 							loading_model_flag = true;
@@ -577,7 +567,7 @@ fn main() {
 		//Make the light bob up and down
 		if let Some(index) = sphere_mesh_index {
 			if let Some(mesh) = &mut meshes[index] {
-				mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks) + 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1));
+				mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.1*f32::sin(ticks) + 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1));
 				light_position = mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
 			}
 		}
@@ -619,6 +609,7 @@ fn main() {
 		window.render_context().swap_buffers();
 		glfw.poll_events();
 
+		//End of frame updates
 		controllers.previous_states = controllers.states;
 		last_frame_instant = frame_instant;
 	}
