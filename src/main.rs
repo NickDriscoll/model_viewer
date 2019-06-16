@@ -301,16 +301,31 @@ fn main() {
 	//The channel for sending 3D models between threads
 	let (load_tx, load_rx) = mpsc::channel::<Option<MeshArrays>>();
 
+	//Framerate diagnostic tool
 	let mut last_frame_instant = Instant::now();
+	let mut fps_averages = [0.0; 500];
 
 	//Main loop
+	let mut frame_count: u64 = 0;
 	while !window.should_close() {
+		frame_count += 1;
+
 		//Frame rate independence variables
-		let frame_instant = Instant::now();		
+		let frame_instant = Instant::now();
 		let seconds_elapsed = { 
 			let dur = frame_instant.duration_since(last_frame_instant);
 			(dur.subsec_millis() as f32 / 1000.0) + (dur.subsec_micros() as f32 / 1_000_000.0)
 		};
+
+		fps_averages[frame_count as usize % fps_averages.len()] = f32::floor(1.0 / seconds_elapsed);
+		if frame_count as usize % fps_averages.len() == 0 {
+			let mut avg = 0.0;
+			for i in 0..fps_averages.len() {
+				avg += fps_averages[i];
+			}
+			avg /= fps_averages.len() as f32;
+			println!("FPS: {:?}", avg);
+		}
 
 		//Find controllers if we haven't already
 		if let Some(ref sys) = openvr_system {
