@@ -7,6 +7,7 @@ use nfd::Response;
 use std::fs::File;
 use std::io::BufReader;
 use std::thread;
+use std::time::Instant;
 use std::sync::mpsc;
 use obj;
 use rand::random;
@@ -294,12 +295,23 @@ fn main() {
 	let mut camera_velocity = glm::vec3(0.0, 0.0, 0.0);
 	let mut camera_fov = 90.0;
 	let mut camera_fov_delta = 0.0;
-	let camera_speed = 0.05;
+	let camera_speed = 5.0;
+	let camera_fov_delta_speed = 5.0;
 
-	let (load_tx, load_rx) = mpsc::channel::<MeshArrays>();
+	//The channel for sending 3D models between threads
+	let (load_tx, load_rx) = mpsc::channel::<Option<MeshArrays>>();
+
+	let mut last_frame_instant = Instant::now();
 
 	//Main loop
 	while !window.should_close() {
+		//Frame rate independence variables
+		let frame_instant = Instant::now();		
+		let seconds_elapsed = { 
+			let dur = frame_instant.duration_since(last_frame_instant);
+			(dur.subsec_millis() as f32 / 1000.0) + (dur.subsec_micros() as f32 / 1_000_000.0)
+		};
+
 		//Find controllers if we haven't already
 		if let Some(ref sys) = openvr_system {
 			for i in 0..controllers.indices.len() {
@@ -345,15 +357,17 @@ fn main() {
 
 		//Check if a new model has been loaded
 		if loading_model_flag {
-			if let Ok(pack) = load_rx.try_recv() {
-				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1) };
-				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), nonluminous_shader, brick_texture, pack.1.len() as i32);
+			if let Ok(package) = load_rx.try_recv() {
+				if let Some(pack) = package {
+					let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1) };
+					let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), nonluminous_shader, brick_texture, pack.1.len() as i32);
 
-				//Delete old mesh if there is one
-				if let Some(i) = loaded_mesh_index {
-					meshes[i] = None;
-				}
-				loaded_mesh_index = Some(meshes.insert(mesh));
+					//Delete old mesh if there is one
+					if let Some(i) = loaded_mesh_index {
+						meshes[i] = None;
+					}
+					loaded_mesh_index = Some(meshes.insert(mesh));
+				}				
 				loading_model_flag = false;
 			}
 		}
@@ -388,44 +402,33 @@ fn main() {
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
 						Key::W => {
-							camera_velocity.z = camera_speed;
+							camera_velocity.z = camera_speed * seconds_elapsed;
 						}
 						Key::S => {
-							camera_velocity.z = -camera_speed;
+							camera_velocity.z = -camera_speed * seconds_elapsed;
 						}
 						Key::A => {
-							camera_velocity.x = camera_speed;
+							camera_velocity.x = camera_speed * seconds_elapsed;
 						}
 						Key::D => {
-							camera_velocity.x = -camera_speed;
+							camera_velocity.x = -camera_speed * seconds_elapsed;
 						}
 						Key::O => {
-							camera_fov_delta = -1.0;
+							camera_fov_delta = -camera_fov_delta_speed * seconds_elapsed;
 						}
 						Key::P => {
-							camera_fov_delta = 1.0;
+							camera_fov_delta = camera_fov_delta_speed * seconds_elapsed;
 						}
 						Key::L => {
 							let tx = load_tx.clone();
 							thread::spawn( move || {
 								//Invoke file selection dialogue
 								let path = match nfd::open_file_dialog(None, None).unwrap() {
-									Response::Okay(filename) => {
-										filename
-									}
+									Response::Okay(filename) => { filename }
 									_ => { return }
 								};
 
-								let packet = match load_wavefront_obj(&path) {
-									Some(obj) => {
-										obj
-									}
-									None => {
-										return
-									}
-								};
-
-								tx.send(packet).unwrap();
+								tx.send(load_wavefront_obj(&path)).unwrap();
 							});
 							loading_model_flag = true;
 						}
@@ -537,7 +540,7 @@ fn main() {
 		};
 
 		//Update simulation
-		ticks += 0.02;
+		ticks += 2.0 * seconds_elapsed;
 
 		//Ensure controller meshes are drawn at each controller's position
 		if let Some(poses) = render_poses {
@@ -559,7 +562,7 @@ fn main() {
 		//Make the light bob up and down
 		if let Some(index) = sphere_mesh_index {
 			if let Some(mesh) = &mut meshes[index] {
-				mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks) + 0.6, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1));
+				mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks) + 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1));
 				light_position = mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
 			}
 		}
@@ -568,8 +571,6 @@ fn main() {
 		//Update the camera
 		camera_position += camera_velocity;
 		camera_fov += camera_fov_delta;
-
-		controllers.previous_states = controllers.states;
 
 		//Rendering code
 		unsafe {
@@ -602,6 +603,9 @@ fn main() {
 
 		window.render_context().swap_buffers();
 		glfw.poll_events();
+
+		controllers.previous_states = controllers.states;
+		last_frame_instant = frame_instant;
 	}
 
 	//Shut down OpenVR
