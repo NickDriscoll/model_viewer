@@ -259,7 +259,7 @@ fn main() {
 	};
 
 	//Create the sphere that represents the light source
-	let light_position = glm::vec4(0.0, 1.0, 0.0, 1.0);
+	let mut light_position = glm::vec4(0.0, 1.0, 0.0, 1.0);
 	let sphere_mesh_index = unsafe {
 		match load_wavefront_obj("models/sphere.obj") {
 			Some(obj) => {
@@ -555,6 +555,15 @@ fn main() {
 				}
 			}
 		}
+
+		//Make the light bob up and down
+		if let Some(index) = sphere_mesh_index {
+			if let Some(mesh) = &mut meshes[index] {
+				mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks) + 0.6, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1));
+				light_position = mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
+			}
+		}
+		
 
 		//Update the camera
 		camera_position += camera_velocity;
