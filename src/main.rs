@@ -567,7 +567,7 @@ fn main() {
 		//Make the light bob up and down
 		if let Some(index) = sphere_mesh_index {
 			if let Some(mesh) = &mut meshes[index] {
-				mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.1*f32::sin(ticks) + 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1));
+				mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks*0.2) + 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1));
 				light_position = mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
 			}
 		}
