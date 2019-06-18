@@ -93,16 +93,7 @@ pub unsafe fn render_mesh(mesh: &Mesh, p_matrix: &glm::TMat4<f32>, v_matrix: &gl
 	let light_pos = [light.x, light.y, light.z, 1.0];
 	gl::Uniform4fv(light_location, 1, &light_pos as *const GLfloat);
 
-	let tex = match mesh.texture {
-		Some(t) => {
-			t
-		}
-		None => {
-			//Color every fragment black if there's no texture
-			0
-		}
-	};
-	gl::BindTexture(gl::TEXTURE_2D, tex);
+	gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
 
 	gl::BindVertexArray(mesh.vao);
 	gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());

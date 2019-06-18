@@ -86,10 +86,10 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 			//Create vao
 			let vao = unsafe { create_vertex_array_object(&vertices, model.indices()) };
 
-			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, None, model.indices().len() as i32);
+			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, 0, model.indices().len() as i32);
 			let left_index = Some(meshes.insert(mesh));
 
-			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, None, model.indices().len() as i32);
+			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), program, 0, model.indices().len() as i32);
 			let right_index = Some(meshes.insert(mesh));
 
 			result = [left_index, right_index];
@@ -235,7 +235,7 @@ fn main() {
 
 	//Textures
 	let checkerboard_texture = unsafe { load_texture("textures/checkerboard.jpg") };
-	let mut brick_texture = None;
+	let mut brick_texture = 0;
 
 	//OptionVec of meshes
 	let mut meshes: OptionVec<Mesh> = OptionVec::with_capacity(5);
@@ -255,7 +255,7 @@ fn main() {
 		];
 		let vao = create_vertex_array_object(&vertices, &indices);
 		let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(5.0, 5.0, 5.0)),
-							 nonluminous_shader, Some(checkerboard_texture), indices.len() as i32);
+							 nonluminous_shader, checkerboard_texture, indices.len() as i32);
 		meshes.insert(mesh)
 	};
 
@@ -266,7 +266,7 @@ fn main() {
 			Some(obj) => {
 				let vao = create_vertex_array_object(&obj.0, &obj.1);
 				let t = glm::vec4_to_vec3(&light_position);
-				let mesh = Mesh::new(vao, glm::translation(&t) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), nonluminous_shader, None, obj.1.len() as i32);
+				let mesh = Mesh::new(vao, glm::translation(&t) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), nonluminous_shader, 0, obj.1.len() as i32);
 				Some(meshes.insert(mesh))
 			}
 			None => {
@@ -307,8 +307,6 @@ fn main() {
 	//Main loop
 	let mut frame_count: u64 = 0;
 	while !window.should_close() {
-		frame_count += 1;
-
 		//Frame rate independence variables
 		let frame_instant = Instant::now();
 		let seconds_elapsed = { 
@@ -381,9 +379,9 @@ fn main() {
 			//Check if the cube's texture is loaded yet
 			if let Ok((data, width, height)) = texture_rx.try_recv() {
 				let image_data = (data, width, height);
-				brick_texture = unsafe { Some(load_texture_from_data(image_data)) };
+				brick_texture = unsafe { load_texture_from_data(image_data) };
 
-				let mesh_indices = [loaded_mesh_index];
+				let mesh_indices = [loaded_mesh_index, sphere_mesh_index];
 
 				for index in &mesh_indices {
 					if let Some(i) = index {					
@@ -576,6 +574,7 @@ fn main() {
 		//Update the camera
 		camera_position += camera_velocity;
 		camera_fov += camera_fov_delta;
+		frame_count += 1;
 
 		//Rendering code
 		unsafe {

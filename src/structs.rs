@@ -8,12 +8,12 @@ pub struct Mesh {
 	pub vao: GLuint, //Vertex array object
 	pub model_matrix: glm::TMat4<f32>, //Matrix that transforms points in model space to world space
 	pub program: GLuint, //GLSL program to be rendered with
-	pub texture: Option<GLuint>, //Texture
+	pub texture: GLuint, //Texture
 	pub indices_count: GLsizei //Number of indices in index array
 }
 
 impl Mesh {
-	pub fn new(vao: GLuint, model_matrix: glm::TMat4<f32>, glprogram: GLuint, texture: Option<GLuint>, indices_count: GLsizei) -> Self {
+	pub fn new(vao: GLuint, model_matrix: glm::TMat4<f32>, glprogram: GLuint, texture: GLuint, indices_count: GLsizei) -> Self {
 		Mesh {
 			vao,
 			model_matrix,
