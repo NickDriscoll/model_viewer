@@ -81,8 +81,8 @@ pub unsafe fn get_uniform_location(program: GLuint, name: &str) -> GLint {
 	gl::GetUniformLocation(program, cstring.as_ptr())
 }
 
-pub unsafe fn render_mesh(mesh: &Mesh, p_matrix: &glm::TMat4<f32>, v_matrix: &glm::TMat4<f32>, mvp_location: GLint, model_location: GLint, light_location: GLint, light: glm::TVec4<f32>, view_location: GLint, view_position: glm::TVec4<f32>) {
-	gl::UseProgram(mesh.program);
+pub unsafe fn render_mesh(mesh: &Mesh, program: GLuint, p_matrix: &glm::TMat4<f32>, v_matrix: &glm::TMat4<f32>, mvp_location: GLint, model_location: GLint, light_location: GLint, light: glm::TVec4<f32>, view_location: GLint, view_position: glm::TVec4<f32>) {
+	gl::UseProgram(program);
 
 	//Send matrices to GPU
 	let mvp = p_matrix * v_matrix * mesh.model_matrix;
@@ -92,7 +92,6 @@ pub unsafe fn render_mesh(mesh: &Mesh, p_matrix: &glm::TMat4<f32>, v_matrix: &gl
 	//Send vectors to GPU
 	let light_pos = [light.x, light.y, light.z, 1.0];
 	gl::Uniform4fv(light_location, 1, &light_pos as *const GLfloat);
-
 	let view_pos = [view_position.x, view_position.y, view_position.z, 1.0];
 	gl::Uniform4fv(view_location, 1, &view_pos as *const GLfloat);
 
@@ -102,12 +101,12 @@ pub unsafe fn render_mesh(mesh: &Mesh, p_matrix: &glm::TMat4<f32>, v_matrix: &gl
 	gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
 }
 
-pub unsafe fn render_scene(meshes: &mut OptionVec<Mesh>, p_matrix: glm::TMat4<f32>, v_matrix: glm::TMat4<f32>, mvp_location: GLint, model_location: GLint, light_location: GLint, light: glm::TVec4<f32>, view_location: GLint, view_position: glm::TVec4<f32>) {
+pub unsafe fn render_scene(meshes: &mut OptionVec<Mesh>, program: GLuint, p_matrix: glm::TMat4<f32>, v_matrix: glm::TMat4<f32>, mvp_location: GLint, model_location: GLint, light_location: GLint, light: glm::TVec4<f32>, view_location: GLint, view_position: glm::TVec4<f32>) {
 	gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
 	for option_mesh in meshes.iter() {
 		if let Some(mesh) = option_mesh {
-			render_mesh(&mesh, &p_matrix, &v_matrix, mvp_location, model_location, light_location, light, view_location, view_position);
+			render_mesh(&mesh, program, &p_matrix, &v_matrix, mvp_location, model_location, light_location, light, view_location, view_position);
 		}
 	}
 }
