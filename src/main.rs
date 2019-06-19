@@ -209,6 +209,7 @@ fn main() {
 	let mvp_location = unsafe { get_uniform_location(nonluminous_shader, "mvp") };
 	let model_matrix_location = unsafe { get_uniform_location(nonluminous_shader, "model_matrix") };
 	let light_position_location = unsafe { get_uniform_location(nonluminous_shader, "light_position") };
+	let view_position_location = unsafe { get_uniform_location(nonluminous_shader, "view_position") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -513,22 +514,31 @@ fn main() {
 						let right_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Right));
 
 						//Need to return inverse(hmd_to_absolute * eye_to_hmd)
-						(glm::affine_inverse(hmd_to_absolute * left_eye_to_hmd),
+						[glm::affine_inverse(hmd_to_absolute * left_eye_to_hmd),
 						 glm::affine_inverse(hmd_to_absolute * right_eye_to_hmd),
-						 glm::affine_inverse(hmd_to_absolute))
+						 glm::affine_inverse(hmd_to_absolute)]
 					}
 					None => {						
 						//Create a matrix that gets a decent view of the scene
 						let view_matrix = glm::translation(&camera_position);
-						(glm::identity(), glm::identity(), view_matrix)
+						[glm::identity(), glm::identity(), view_matrix]
 					}
 				}
 			}
 			None => {
 				//Create a matrix that gets a decent view of the scene
 				let view_matrix = glm::translation(&camera_position);
-				(glm::identity(), glm::identity(), view_matrix)
+				[glm::identity(), glm::identity(), view_matrix]
 			}
+		};
+
+		//Get view positions
+		let view_positions = {
+			let mut temp = Vec::with_capacity(v_matrices.len());
+			for matrix in &v_matrices {
+				temp.push(glm::affine_inverse(*matrix) * glm::vec4(0.0, 0.0, 0.0, 1.0));
+			}
+			temp
 		};
 
 		//Get projection matrices
@@ -586,13 +596,13 @@ fn main() {
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
 			//Render left eye
-			render_scene(&mut meshes, p_matrices.0, v_matrices.0, mvp_location, model_matrix_location, light_position_location, light_position);
+			render_scene(&mut meshes, p_matrices.0, v_matrices[0], mvp_location, model_matrix_location, light_position_location, light_position, view_position_location, view_positions[0]);
 
 			//Send to HMD
 			submit_to_hmd(Eye::Left, &openvr_compositor, &openvr_texture_handle);
 
 			//Render right eye
-			render_scene(&mut meshes, p_matrices.1, v_matrices.1, mvp_location, model_matrix_location, light_position_location, light_position);
+			render_scene(&mut meshes, p_matrices.1, v_matrices[1], mvp_location, model_matrix_location, light_position_location, light_position, view_position_location, view_positions[1]);
 
 			//Send to HMD
 			submit_to_hmd(Eye::Right, &openvr_compositor, &openvr_texture_handle);
@@ -602,7 +612,7 @@ fn main() {
 			gl::Viewport(0, 0, window_size.0 as GLsizei, window_size.1 as GLsizei);
 
 			//Draw companion view
-			render_scene(&mut meshes, p_matrices.2, v_matrices.2, mvp_location, model_matrix_location, light_position_location, light_position);
+			render_scene(&mut meshes, p_matrices.2, v_matrices[2], mvp_location, model_matrix_location, light_position_location, light_position, view_position_location, view_positions[2]);
 		}
 
 		window.render_context().swap_buffers();
