@@ -9,6 +9,7 @@ use std::io::BufReader;
 use std::thread;
 use std::time::Instant;
 use std::sync::mpsc;
+use std::ptr;
 use obj;
 use rand::random;
 use crate::structs::*;
@@ -603,7 +604,35 @@ fn main() {
 				gl::Viewport(0, 0, sizes[i].0 as GLsizei, sizes[i].1 as GLsizei);
 
 				//Render the scene
-				render_scene(&mut meshes, nonluminous_shader, p_matrices[i], v_matrices[i], mvp_location, model_matrix_location, light_position_location, light_position, view_position_location, view_positions[i]);
+				gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+				for option_mesh in meshes.iter() {
+					if let Some(mesh) = option_mesh {
+						//Bind the program that will render the mesh
+						gl::UseProgram(nonluminous_shader);
+
+						//Send matrix uniforms to GPU
+						let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
+						gl::UniformMatrix4fv(mvp_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
+						gl::UniformMatrix4fv(model_matrix_location, 1, gl::FALSE, &flatten_glm(&mesh.model_matrix) as *const GLfloat);
+
+						//Send vector uniforms to GPU
+						let light_pos = [light_position.x, light_position.y, light_position.z, 1.0];
+						gl::Uniform4fv(light_position_location, 1, &light_pos as *const GLfloat);
+						let view_pos = [view_positions[i].x, view_positions[i].y, view_positions[i].z, 1.0];
+						gl::Uniform4fv(view_position_location, 1, &view_pos as *const GLfloat);
+
+						//Bind the mesh's texture
+						gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
+
+						//Bind the mesh's vertex array object
+						gl::BindVertexArray(mesh.vao);
+
+						//Draw call
+						gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
+					}
+				}
+
+				//render_scene(&mut meshes, nonluminous_shader, p_matrices[i], v_matrices[i], mvp_location, model_matrix_location, light_position_location, light_position, view_position_location, view_positions[i]);
 
 				//Submit render to HMD
 				submit_to_hmd(eyes[i], &openvr_compositor, &openvr_texture_handle);
