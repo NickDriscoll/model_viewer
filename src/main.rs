@@ -598,6 +598,7 @@ fn main() {
 			//Set clear color
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
+			//Render once per framebuffer (Left eye, Right eye, Companion window)
 			for i in 0..framebuffers.len() {
 				//Set up render target
 				gl::BindFramebuffer(gl::FRAMEBUFFER, framebuffers[i]);
@@ -609,17 +610,24 @@ fn main() {
 					if let Some(mesh) = option_mesh {
 						//Bind the program that will render the mesh
 						gl::UseProgram(nonluminous_shader);
+						
+						//Compute the model-view-projection matrix
+						let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
 
 						//Send matrix uniforms to GPU
-						let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
-						gl::UniformMatrix4fv(mvp_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
-						gl::UniformMatrix4fv(model_matrix_location, 1, gl::FALSE, &flatten_glm(&mesh.model_matrix) as *const GLfloat);
+						let mat_locs = [mvp_location, model_matrix_location];
+						let mats = [&mvp, &mesh.model_matrix];
+						for i in 0..mat_locs.len() {
+							gl::UniformMatrix4fv(mat_locs[i], 1, gl::FALSE, &flatten_glm(mats[i]) as *const GLfloat);
+						}
 
 						//Send vector uniforms to GPU
-						let light_pos = [light_position.x, light_position.y, light_position.z, 1.0];
-						gl::Uniform4fv(light_position_location, 1, &light_pos as *const GLfloat);
-						let view_pos = [view_positions[i].x, view_positions[i].y, view_positions[i].z, 1.0];
-						gl::Uniform4fv(view_position_location, 1, &view_pos as *const GLfloat);
+						let vec_locs = [light_position_location, view_position_location];
+						let vecs = [&light_position, &view_positions[i]];
+						for i in 0..vec_locs.len() {
+							let pos = [vecs[i].x, vecs[i].y, vecs[i].z, 1.0];
+							gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);
+						}
 
 						//Bind the mesh's texture
 						gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
@@ -631,8 +639,6 @@ fn main() {
 						gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
 					}
 				}
-
-				//render_scene(&mut meshes, nonluminous_shader, p_matrices[i], v_matrices[i], mvp_location, model_matrix_location, light_position_location, light_position, view_position_location, view_positions[i]);
 
 				//Submit render to HMD
 				submit_to_hmd(eyes[i], &openvr_compositor, &openvr_texture_handle);

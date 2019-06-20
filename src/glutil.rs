@@ -10,8 +10,6 @@ use std::os::raw::c_void;
 use image::GenericImageView;
 use openvr::Eye;
 use openvr::Compositor;
-use crate::structs::*;
-use crate::flatten_glm;
 
 pub type ImageData = (Vec<u8>, u32, u32);
 const INFO_LOG_SIZE: usize = 512;
