@@ -543,10 +543,10 @@ fn main() {
 		let p_mat = glm::perspective(aspect_ratio, f32::to_radians(camera_fov), NEAR_Z, FAR_Z);
 		let p_matrices = match openvr_system {
 			Some(ref sys) => {
-				(get_projection_matrix(sys, Eye::Left), get_projection_matrix(sys, Eye::Right), p_mat)
+				[get_projection_matrix(sys, Eye::Left), get_projection_matrix(sys, Eye::Right), p_mat]
 			}
 			None => {
-				(glm::identity(), glm::identity(), p_mat)
+				[glm::identity(), glm::identity(), p_mat]
 			}
 		};
 
@@ -586,31 +586,27 @@ fn main() {
 
 		//Rendering code
 		unsafe {
-			//Set up to render on texture
-			gl::BindFramebuffer(gl::FRAMEBUFFER, vr_render_target);
-			gl::Viewport(0, 0, render_target_size.0 as GLsizei, render_target_size.1 as GLsizei);
+			//Set up data
+			let framebuffers = [vr_render_target, vr_render_target, 0];
+			let sizes = [render_target_size, render_target_size, window_size];
+			let eyes = [Some(Eye::Left), Some(Eye::Right), None];
 
 			//Set clear color
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
-			//Render left eye
-			render_scene(&mut meshes, nonluminous_shader, p_matrices.0, v_matrices[0], mvp_location, model_matrix_location, light_position_location, light_position, view_position_location, view_positions[0]);
+			for i in 0..3 {
+				//Set up render target
+				gl::BindFramebuffer(gl::FRAMEBUFFER, framebuffers[i]);
+				gl::Viewport(0, 0, sizes[i].0 as GLsizei, sizes[i].1 as GLsizei);
 
-			//Send to HMD
-			submit_to_hmd(Eye::Left, &openvr_compositor, &openvr_texture_handle);
+				//Render the scene
+				render_scene(&mut meshes, nonluminous_shader, p_matrices[i], v_matrices[i], mvp_location, model_matrix_location, light_position_location, light_position, view_position_location, view_positions[i]);
 
-			//Render right eye
-			render_scene(&mut meshes, nonluminous_shader, p_matrices.1, v_matrices[1], mvp_location, model_matrix_location, light_position_location, light_position, view_position_location, view_positions[1]);
-
-			//Send to HMD
-			submit_to_hmd(Eye::Right, &openvr_compositor, &openvr_texture_handle);
-
-			//Unbind the vr render target so that we can draw to the window
-			gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
-			gl::Viewport(0, 0, window_size.0 as GLsizei, window_size.1 as GLsizei);
-
-			//Draw companion view
-			render_scene(&mut meshes, nonluminous_shader, p_matrices.2, v_matrices[2], mvp_location, model_matrix_location, light_position_location, light_position, view_position_location, view_positions[2]);
+				//Submit render to HMD
+				if let Some(eye) = eyes[i] {
+					submit_to_hmd(eye, &openvr_compositor, &openvr_texture_handle);
+				}
+			}
 		}
 
 		window.render_context().swap_buffers();

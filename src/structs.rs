@@ -23,7 +23,19 @@ impl Mesh {
 }
 
 pub struct RenderContext {
-	
+	program: GLuint,
+	mat4_locations: Vec<GLint>,
+	vec4_locations: Vec<GLint>
+}
+
+impl RenderContext {
+	pub fn new(program: GLuint, mat4_locations: Vec<GLint>, vec4_locations: Vec<GLint>) -> Self {
+		RenderContext {
+			program,
+			mat4_locations,
+			vec4_locations
+		}
+	}
 }
 
 //Struct of arrays that stores VR controller data.
