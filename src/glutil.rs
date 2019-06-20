@@ -82,22 +82,27 @@ pub unsafe fn get_uniform_location(program: GLuint, name: &str) -> GLint {
 }
 
 pub unsafe fn render_mesh(mesh: &Mesh, program: GLuint, p_matrix: &glm::TMat4<f32>, v_matrix: &glm::TMat4<f32>, mvp_location: GLint, model_location: GLint, light_location: GLint, light: glm::TVec4<f32>, view_location: GLint, view_position: glm::TVec4<f32>) {
+	//Bind the program that will render the mesh
 	gl::UseProgram(program);
 
-	//Send matrices to GPU
+	//Send matrix uniforms to GPU
 	let mvp = p_matrix * v_matrix * mesh.model_matrix;
 	gl::UniformMatrix4fv(mvp_location, 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
 	gl::UniformMatrix4fv(model_location, 1, gl::FALSE, &flatten_glm(&mesh.model_matrix) as *const GLfloat);
 
-	//Send vectors to GPU
+	//Send vector uniforms to GPU
 	let light_pos = [light.x, light.y, light.z, 1.0];
 	gl::Uniform4fv(light_location, 1, &light_pos as *const GLfloat);
 	let view_pos = [view_position.x, view_position.y, view_position.z, 1.0];
 	gl::Uniform4fv(view_location, 1, &view_pos as *const GLfloat);
 
+	//Bind the mesh's texture
 	gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
 
+	//Bind the mesh's vertex array object
 	gl::BindVertexArray(mesh.vao);
+
+	//Draw call
 	gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
 }
 
@@ -111,9 +116,9 @@ pub unsafe fn render_scene(meshes: &mut OptionVec<Mesh>, program: GLuint, p_matr
 	}
 }
 
-pub unsafe fn submit_to_hmd(eye: Eye, openvr_compositor: &Option<Compositor>, target_handle: &openvr::compositor::texture::Texture) {
-	if let Some(ref comp) = openvr_compositor {
-		comp.submit(eye, target_handle, None, None).unwrap();
+pub unsafe fn submit_to_hmd(eye: Option<Eye>, openvr_compositor: &Option<Compositor>, target_handle: &openvr::compositor::texture::Texture) {
+	if let (Some(ref comp), Some(e)) = (openvr_compositor, eye) {
+		comp.submit(e, target_handle, None, None).unwrap();
 	}
 }
 

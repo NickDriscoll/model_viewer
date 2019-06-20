@@ -15,7 +15,7 @@ void main() {
 	f_pos = model_matrix * vec4(position, 1.0);
 
 	//Send world space representation of normal vector
-	//Create normal matrix that protects against the effects of non-uniform scaling
+	//We use a normal matrix instead of just the model matrix so that non-uniform scaling doesn't mess up the normal vector
 	mat3 normal_matrix = mat3(transpose(inverse(model_matrix)));
 	f_normal = vec4(normal_matrix * normal, 0.0);
 

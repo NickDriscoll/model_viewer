@@ -142,7 +142,7 @@ fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
 }
 
 fn main() {
-	//Get the OpenVR context
+	//Initialize OpenVR
 	let openvr_context = unsafe {
 		match openvr::init(ApplicationType::Scene) {
 			Ok(ctxt) => {
@@ -177,10 +177,11 @@ fn main() {
 	//Init glfw
 	let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
 
-	//Using OpenGL 3.3 core. but that could change
+	//Using OpenGL 3.3 core, but that could change
 	glfw.window_hint(glfw::WindowHint::ContextVersion(3, 3));
 	glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
 
+	//Disable window resizing
 	glfw.window_hint(glfw::WindowHint::Resizable(false));
 
 	//Create window
@@ -228,6 +229,9 @@ fn main() {
 	//Texture loading channel
 	let (texture_tx, texture_rx) = mpsc::channel::<ImageData>();
 
+	//The channel for sending 3D models between threads
+	let (load_tx, load_rx) = mpsc::channel::<Option<MeshArrays>>();
+
 	//Spawn thread to load brick texture
 	let tx = texture_tx.clone();
 	thread::spawn( move || {
@@ -239,7 +243,7 @@ fn main() {
 	let mut brick_texture = 0;
 
 	//OptionVec of meshes
-	let mut meshes: OptionVec<Mesh> = OptionVec::with_capacity(5);
+	let mut meshes = OptionVec::with_capacity(5);
 
 	//Create the floor
 	let floor_mesh_index = unsafe {
@@ -291,6 +295,7 @@ fn main() {
 	//Gameplay state
 	let mut ticks = 0.0;
 
+	//Camera state
 	let mut camera_position = glm::vec3(0.0, -1.0, -1.0);
 	let mut camera_velocity = glm::vec3(0.0, 0.0, 0.0);
 	let mut camera_fov = 90.0;
@@ -298,14 +303,15 @@ fn main() {
 	let camera_speed = 5.0;
 	let camera_fov_delta_speed = 5.0;
 
-	//The channel for sending 3D models between threads
-	let (load_tx, load_rx) = mpsc::channel::<Option<MeshArrays>>();
-
 	//The instant recorded at the beginning of last frame
 	let mut last_frame_instant = Instant::now();
 
+	//Set up rendering data for later
+	let framebuffers = [vr_render_target, vr_render_target, 0];
+	let sizes = [render_target_size, render_target_size, window_size];
+	let eyes = [Some(Eye::Left), Some(Eye::Right), None];
+
 	//Main loop
-	let mut frame_count: u64 = 0;
 	while !window.should_close() {
 		//Frame rate independence variables
 		let frame_instant = Instant::now();
@@ -576,25 +582,22 @@ fn main() {
 				mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks*0.2) + 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1));
 				light_position = mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
 			}
-		}
-		
+		}		
 
 		//Update the camera
 		camera_position += camera_velocity;
 		camera_fov += camera_fov_delta;
-		frame_count += 1;
+
+		//End of frame updates
+		controllers.previous_states = controllers.states;
+		last_frame_instant = frame_instant;
 
 		//Rendering code
 		unsafe {
-			//Set up data
-			let framebuffers = [vr_render_target, vr_render_target, 0];
-			let sizes = [render_target_size, render_target_size, window_size];
-			let eyes = [Some(Eye::Left), Some(Eye::Right), None];
-
 			//Set clear color
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
-			for i in 0..3 {
+			for i in 0..framebuffers.len() {
 				//Set up render target
 				gl::BindFramebuffer(gl::FRAMEBUFFER, framebuffers[i]);
 				gl::Viewport(0, 0, sizes[i].0 as GLsizei, sizes[i].1 as GLsizei);
@@ -603,18 +606,12 @@ fn main() {
 				render_scene(&mut meshes, nonluminous_shader, p_matrices[i], v_matrices[i], mvp_location, model_matrix_location, light_position_location, light_position, view_position_location, view_positions[i]);
 
 				//Submit render to HMD
-				if let Some(eye) = eyes[i] {
-					submit_to_hmd(eye, &openvr_compositor, &openvr_texture_handle);
-				}
+				submit_to_hmd(eyes[i], &openvr_compositor, &openvr_texture_handle);
 			}
 		}
 
 		window.render_context().swap_buffers();
 		glfw.poll_events();
-
-		//End of frame updates
-		controllers.previous_states = controllers.states;
-		last_frame_instant = frame_instant;
 	}
 
 	//Shut down OpenVR
