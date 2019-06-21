@@ -57,10 +57,8 @@ fn get_projection_matrix(sys: &System, eye: Eye) -> glm::TMat4<f32> {
 fn attach_mesh_to_controller(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevicePose], controller_index: &Option<u32>, mesh_index: Option<usize>) {
 	if let Some(index) = controller_index {
 		let controller_model_matrix = openvr_to_mat4(*poses[*index as usize].device_to_absolute_tracking());
-		if let Some(i) = mesh_index {
-			if let Some(mesh) = &mut meshes[i] {
-				mesh.model_matrix = controller_model_matrix;
-			}
+		if let Some(mesh) = get_mesh(meshes, mesh_index) {
+			mesh.model_matrix = controller_model_matrix;
 		}
 	}
 }
@@ -140,6 +138,18 @@ fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
 		vert_data.push(random::<f32>());
 	}
 	Some((vert_data, model.indices))
+}
+
+fn get_mesh(meshes: &mut OptionVec<Mesh>, index: Option<usize>) -> Option<&mut Mesh> {
+	match index {
+		Some(i) => {
+			match &mut meshes[i] {
+				Some(mesh) => { Some(mesh) }
+				None => { None }
+			}
+		}
+		None => { None }
+	}
 }
 
 fn main() {
@@ -390,10 +400,8 @@ fn main() {
 				let mesh_indices = [loaded_mesh_index, sphere_mesh_index];
 
 				for index in &mesh_indices {
-					if let Some(i) = index {					
-						if let Some(ref mut mesh) = &mut meshes[*i] {
-							mesh.texture = brick_texture;
-						}						
+					if let Some(mesh) = get_mesh(&mut meshes, *index) {
+						mesh.texture = brick_texture;
 					}
 				}
 
@@ -578,12 +586,10 @@ fn main() {
 		}
 
 		//Make the light bob up and down
-		if let Some(index) = sphere_mesh_index {
-			if let Some(mesh) = &mut meshes[index] {
-				mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks*0.2) + 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1));
-				light_position = mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
-			}
-		}		
+		if let Some(mesh) = get_mesh(&mut meshes, sphere_mesh_index) {
+			mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks*0.2) + 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1));
+			light_position = mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
+		}
 
 		//Update the camera
 		camera_position += camera_velocity;
