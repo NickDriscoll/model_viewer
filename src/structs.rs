@@ -1,6 +1,6 @@
 use gl::types::*;
 use openvr::ControllerState;
-use std::slice::{Iter, IterMut};
+use std::slice::Iter;
 use std::ops::{Index, IndexMut};
 
 //A renderable 3D thing
@@ -22,6 +22,7 @@ impl Mesh {
 	}
 }
 
+/*
 pub struct RenderContext {
 	program: GLuint,
 	mat4_locations: Vec<GLint>,
@@ -37,6 +38,7 @@ impl RenderContext {
 		}
 	}
 }
+*/
 
 //Struct of arrays that stores VR controller data.
 pub struct Controllers {
@@ -120,9 +122,11 @@ impl<T> OptionVec<T> {
 		self.optionvec.iter()
 	}
 
+	/*
 	pub fn iter_mut(&mut self) -> IterMut<Option<T>> {
 		self.optionvec.iter_mut()
 	}
+	*/
 }
 
 impl<T> Index<usize> for OptionVec<T> {

@@ -101,10 +101,14 @@ fn pressed_this_frame(state: &ControllerState, p_state: &ControllerState, flag: 
 	state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
 }
 
+fn get_frame_origin(model_matrix: &glm::TMat4<f32>) -> glm::TVec4<f32> {
+	model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
+}
+
 fn get_mesh_origin(mesh: &Option<Mesh>) -> glm::TVec4<f32> {
 	match mesh {
 		Some(mesh) => {
-			mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
+			get_frame_origin(&mesh.model_matrix)
 		}
 		None => {
 			println!("Couldn't return mesh origin cause it was \"None\"");
@@ -257,7 +261,7 @@ fn main() {
 	let mut meshes = OptionVec::with_capacity(5);
 
 	//Create the floor
-	let floor_mesh_index = unsafe {
+	unsafe {
 		let vertices = [
 			//Positions					//Normals							//Tex coords
 			-0.5f32, 0.0, -0.5,			0.0, 1.0, 0.0,						0.0, 0.0,
@@ -271,8 +275,8 @@ fn main() {
 		];
 		let vao = create_vertex_array_object(&vertices, &indices);
 		let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(5.0, 5.0, 5.0)), checkerboard_texture, indices.len() as i32);
-		meshes.insert(mesh)
-	};
+		meshes.insert(mesh);
+	}
 
 	//Create the sphere that represents the light source
 	let mut light_position = glm::vec4(0.0, 1.0, 0.0, 1.0);
@@ -567,6 +571,10 @@ fn main() {
 		//Update simulation
 		ticks += 2.0 * seconds_elapsed;
 
+		//Update the camera
+		camera_position += camera_velocity * seconds_elapsed;
+		camera_fov += camera_fov_delta * seconds_elapsed;
+
 		//Ensure controller meshes are drawn at each controller's position
 		if let Some(poses) = render_poses {
 			for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
@@ -587,12 +595,8 @@ fn main() {
 		//Make the light bob up and down
 		if let Some(mesh) = get_mesh(&mut meshes, sphere_mesh_index) {
 			mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks*0.2) + 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1));
-			light_position = mesh.model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0);
+			light_position = get_frame_origin(&mesh.model_matrix);
 		}
-
-		//Update the camera
-		camera_position += camera_velocity * seconds_elapsed;
-		camera_fov += camera_fov_delta * seconds_elapsed;
 
 		//End of frame updates
 		controllers.previous_states = controllers.states;
@@ -602,6 +606,9 @@ fn main() {
 		unsafe {
 			//Set clear color
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
+						
+			//Bind the program that will render the meshes
+			gl::UseProgram(nonluminous_shader);
 
 			//Render once per framebuffer (Left eye, Right eye, Companion window)
 			for i in 0..framebuffers.len() {
@@ -613,9 +620,6 @@ fn main() {
 				gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 				for option_mesh in meshes.iter() {
 					if let Some(mesh) = option_mesh {
-						//Bind the program that will render the mesh
-						gl::UseProgram(nonluminous_shader);
-						
 						//Compute the model-view-projection matrix
 						let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
 
