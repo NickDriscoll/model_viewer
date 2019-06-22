@@ -487,19 +487,13 @@ fn main() {
 									  controllers.states[i],
 									  controllers.previous_states[i]) {
 
-				//If the trigger was pulled this frame
+				//If the trigger was pulled this frame, grab the object the controller is currently touching, if there is one
 				if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
-					//Grab the object the controller is currently touching, if there is one
-
 					let controller_origin = get_mesh_origin(&meshes[mesh_index as usize]);
 					let loaded_origin = get_mesh_origin(&meshes[loaded_index]);
 
-					//Get distance from controller_origin to loaded_origin
-					let dist = f32::sqrt(f32::powi(controller_origin.x - loaded_origin.x, 2) +
-										 f32::powi(controller_origin.y - loaded_origin.y, 2) +
-										 f32::powi(controller_origin.z - loaded_origin.z, 2));
-
-					if dist < loaded_sphere_radius {
+					//Check for collision
+					if glm::distance(&controller_origin, &loaded_origin) < loaded_sphere_radius {
 						//Set the controller's mesh as the mesh the cube mesh is "bound" to
 						loaded_bound_controller_index = Some(i);
 
