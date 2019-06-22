@@ -418,22 +418,22 @@ fn main() {
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
 						Key::W => {
-							camera_velocity.z = camera_speed * seconds_elapsed;
+							camera_velocity.z = camera_speed;
 						}
 						Key::S => {
-							camera_velocity.z = -camera_speed * seconds_elapsed;
+							camera_velocity.z = -camera_speed;
 						}
 						Key::A => {
-							camera_velocity.x = camera_speed * seconds_elapsed;
+							camera_velocity.x = camera_speed;
 						}
 						Key::D => {
-							camera_velocity.x = -camera_speed * seconds_elapsed;
+							camera_velocity.x = -camera_speed;
 						}
 						Key::O => {
-							camera_fov_delta = -camera_fov_delta_speed * seconds_elapsed;
+							camera_fov_delta = -camera_fov_delta_speed;
 						}
 						Key::P => {
-							camera_fov_delta = camera_fov_delta_speed * seconds_elapsed;
+							camera_fov_delta = camera_fov_delta_speed;
 						}
 						Key::L => {
 							let tx = load_tx.clone();
@@ -472,7 +472,7 @@ fn main() {
 						_ => {}
 					}
 				}
-				_ => {}
+				_ => { println!("{:?}", event); }
 			}
 		}
 
@@ -592,8 +592,8 @@ fn main() {
 		}
 
 		//Update the camera
-		camera_position += camera_velocity;
-		camera_fov += camera_fov_delta;
+		camera_position += camera_velocity * seconds_elapsed;
+		camera_fov += camera_fov_delta * seconds_elapsed;
 
 		//End of frame updates
 		controllers.previous_states = controllers.states;
