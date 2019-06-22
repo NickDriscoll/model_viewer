@@ -411,6 +411,7 @@ fn main() {
 
 		//Handle window events
 		for (_, event) in glfw::flush_messages(&events) {
+			println!("{:?}", event);
 			match event {
 				WindowEvent::Close => {
 					window.set_should_close(true);
@@ -472,7 +473,7 @@ fn main() {
 						_ => {}
 					}
 				}
-				_ => { println!("{:?}", event); }
+				_ => {}
 			}
 		}
 
@@ -512,7 +513,11 @@ fn main() {
 				//If the trigger was released this frame
 				if state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER == 0 &&
 				   p_state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER != 0 {
-					loaded_bound_controller_index = None;
+				   	if let Some(idx) = loaded_bound_controller_index {
+				   		if idx == i {
+				   			loaded_bound_controller_index = None;
+				   		}
+				   	}					
 				}
 			}
 		}
