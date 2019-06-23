@@ -314,18 +314,6 @@ fn main() {
 	let mut manual_camera = false;
 	let mut camera = Camera::new(glm::vec3(0.0, -1.0, -1.0));
 
-	/*
-	let mut camera.position = glm::vec3(0.0, -1.0, -1.0);
-	let mut camera.velocity = glm::vec3(0.0, 0.0, 0.0);
-	let mut camera.yaw = 0.0;
-	let mut camera.pitch = 0.0;
-	let mut camera.fov = 90.0;
-	let mut camera.fov_delta = 0.0;
-	let Camera::SPEED = 2.0;
-	let Camera::FOV_SPEED = 5.0;
-	*/
-
-	let mut locked_cursor = false;
 	let mut last_mouse_action = window.get_mouse_button(MouseButton::Button1);
 
 	//The instant recorded at the beginning of last frame
@@ -432,16 +420,16 @@ fn main() {
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
 						Key::W => {
-							camera.velocity.z = Camera::SPEED;
+							camera.velocity = glm::vec3(0.0, 0.0, Camera::SPEED);
 						}
 						Key::S => {
-							camera.velocity.z = -Camera::SPEED;
+							camera.velocity = glm::vec3(0.0, 0.0, -Camera::SPEED);
 						}
 						Key::A => {
-							camera.velocity.x = Camera::SPEED;
+							camera.velocity = glm::vec3(Camera::SPEED, 0.0, 0.0);
 						}
 						Key::D => {
-							camera.velocity.x = -Camera::SPEED;
+							camera.velocity = glm::vec3(-Camera::SPEED, 0.0, 0.0);
 						}
 						Key::O => {
 							camera.fov_delta = -Camera::FOV_SPEED;
@@ -498,7 +486,7 @@ fn main() {
 		let cursor_pos = window.get_cursor_pos();
 		let cursor_delta = (cursor_pos.0 - window_size.0 as f64 / 2.0, cursor_pos.1 - window_size.1 as f64 / 2.0);
 
-		if locked_cursor {
+		if window.get_cursor_mode() == CursorMode::Disabled {
 			const MOUSE_SENSITIVITY: f32 = 0.001;
 			camera.yaw += cursor_delta.0 as f32 * MOUSE_SENSITIVITY;
 			camera.pitch += cursor_delta.1 as f32 * MOUSE_SENSITIVITY;
@@ -515,9 +503,7 @@ fn main() {
 
 		//Check if the mouse has been clicked
 		if last_mouse_action == Action::Press && mouse_action == Action::Release {
-			locked_cursor = !locked_cursor;
-
-			if locked_cursor {
+			if window.get_cursor_mode() == CursorMode::Normal {
 				window.set_cursor_mode(CursorMode::Disabled);
 			} else {
 				window.set_cursor_mode(CursorMode::Normal);
@@ -628,7 +614,8 @@ fn main() {
 		ticks += 2.0 * seconds_elapsed;
 
 		//Update the camera
-		camera.position += camera.velocity * seconds_elapsed;
+		camera.position += glm::vec4_to_vec3(&(seconds_elapsed * (glm::affine_inverse(v_matrices[2]) * glm::vec4(camera.velocity.x, camera.velocity.y, camera.velocity.z, 0.0))));
+		//camera.position += camera.velocity * seconds_elapsed;
 		camera.fov += camera.fov_delta * seconds_elapsed;
 
 		//Ensure controller meshes are drawn at each controller's position
