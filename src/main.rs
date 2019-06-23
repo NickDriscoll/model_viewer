@@ -1,6 +1,6 @@
 extern crate gl;
 extern crate nalgebra_glm as glm;
-use glfw::{Action, Context, Key, WindowMode, WindowEvent};
+use glfw::{Action, Context, Key, MouseButton, WindowMode, WindowEvent};
 use openvr::{ApplicationType, button_id, ControllerState, Eye, System, RenderModels, TrackedControllerRole, TrackedDevicePose};
 use openvr::compositor::texture::{ColorSpace, Handle, Texture};
 use nfd::Response;
@@ -311,12 +311,22 @@ fn main() {
 	let mut ticks = 0.0;
 
 	//Camera state
-	let mut camera_position = glm::vec3(0.0, -1.0, -1.0);
-	let mut camera_velocity = glm::vec3(0.0, 0.0, 0.0);
-	let mut camera_fov = 90.0;
-	let mut camera_fov_delta = 0.0;
-	let camera_speed = 5.0;
-	let camera_fov_delta_speed = 5.0;
+	let mut manual_camera = false;
+	let mut camera = Camera::new(glm::vec3(0.0, -1.0, -1.0));
+
+	/*
+	let mut camera.position = glm::vec3(0.0, -1.0, -1.0);
+	let mut camera.velocity = glm::vec3(0.0, 0.0, 0.0);
+	let mut camera.yaw = 0.0;
+	let mut camera.pitch = 0.0;
+	let mut camera.fov = 90.0;
+	let mut camera.fov_delta = 0.0;
+	let Camera::SPEED = 2.0;
+	let Camera::FOV_SPEED = 5.0;
+	*/
+
+	let mut locked_cursor = false;
+	let mut last_mouse_action = window.get_mouse_button(MouseButton::Button1);
 
 	//The instant recorded at the beginning of last frame
 	let mut last_frame_instant = Instant::now();
@@ -413,7 +423,7 @@ fn main() {
 			}
 		}
 
-		//Handle window events
+		//Handle window and keyboard events
 		for (_, event) in glfw::flush_messages(&events) {
 			println!("{:?}", event);
 			match event {
@@ -423,22 +433,22 @@ fn main() {
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
 						Key::W => {
-							camera_velocity.z = camera_speed;
+							camera.velocity.z = Camera::SPEED;
 						}
 						Key::S => {
-							camera_velocity.z = -camera_speed;
+							camera.velocity.z = -Camera::SPEED;
 						}
 						Key::A => {
-							camera_velocity.x = camera_speed;
+							camera.velocity.x = Camera::SPEED;
 						}
 						Key::D => {
-							camera_velocity.x = -camera_speed;
+							camera.velocity.x = -Camera::SPEED;
 						}
 						Key::O => {
-							camera_fov_delta = -camera_fov_delta_speed;
+							camera.fov_delta = -Camera::FOV_SPEED;
 						}
 						Key::P => {
-							camera_fov_delta = camera_fov_delta_speed;
+							camera.fov_delta = Camera::FOV_SPEED;
 						}
 						Key::L => {
 							let tx = load_tx.clone();
@@ -454,6 +464,9 @@ fn main() {
 							});
 							loading_model_flag = true;
 						}
+						Key::Space => {
+							manual_camera = !manual_camera;
+						}
 						Key::Escape => {
 							window.set_should_close(true);
 						}
@@ -465,14 +478,14 @@ fn main() {
 				WindowEvent::Key(key, _, Action::Release, ..) => {
 					match key {
 						Key::A | Key::D => {
-							camera_velocity.x = 0.0;
+							camera.velocity.x = 0.0;
 						}
 						Key::W | Key::S => {
-							camera_velocity.z = 0.0;
+							camera.velocity.z = 0.0;
 						}
 						Key::O | Key::P => {
-							camera_fov_delta = 0.0;
-							println!("fov is now {}", camera_fov);
+							camera.fov_delta = 0.0;
+							println!("fov is now {}", camera.fov);
 						}
 						_ => {}
 					}
@@ -480,6 +493,35 @@ fn main() {
 				_ => {}
 			}
 		}
+
+		//Handle mouse input
+		let mouse_action = window.get_mouse_button(MouseButton::Button1);
+		let cursor_pos = window.get_cursor_pos();
+		let cursor_delta = (cursor_pos.0 - window_size.0 as f64 / 2.0, cursor_pos.1 - window_size.1 as f64 / 2.0);
+
+		if locked_cursor {
+			const MOUSE_SENSITIVITY: f32 = 0.001;
+			camera.yaw += cursor_delta.0 as f32 * MOUSE_SENSITIVITY;
+			camera.pitch += cursor_delta.1 as f32 * MOUSE_SENSITIVITY;
+
+			if camera.pitch > glm::half_pi() {
+				camera.pitch = glm::half_pi();
+			} else if camera.pitch < -glm::half_pi::<f32>() {
+				camera.pitch = -glm::half_pi::<f32>();
+			}
+
+			//Reset cursor to center of screen
+			window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
+		}
+
+		//Check if the mouse has been clicked
+		if last_mouse_action == Action::Press && mouse_action == Action::Release {
+			locked_cursor = !locked_cursor;
+
+			//Reset cursor to center of screen
+			window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
+		}
+		last_mouse_action = mouse_action;
 
 		//Handle controller input
 		for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
@@ -529,21 +571,30 @@ fn main() {
 						let left_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Left));
 						let right_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Right));
 
+						let companion_v_mat = if !manual_camera { 
+							glm::affine_inverse(hmd_to_absolute)
+						} else {
+							//glm::translation(&camera.position) * glm::rotation(camera.yaw, &glm::vec3(0.0, 1.0, 0.0))
+							glm::rotation(camera.pitch, &glm::vec3(1.0, 0.0, 0.0)) *
+							glm::rotation(camera.yaw, &glm::vec3(0.0, 1.0, 0.0)) *
+							glm::translation(&camera.position)
+						};
+
 						//Need to return inverse(hmd_to_absolute * eye_to_hmd)
 						[glm::affine_inverse(hmd_to_absolute * left_eye_to_hmd),
 						 glm::affine_inverse(hmd_to_absolute * right_eye_to_hmd),
-						 glm::affine_inverse(hmd_to_absolute)]
+						 companion_v_mat]
 					}
 					None => {						
 						//Create a matrix that gets a decent view of the scene
-						let view_matrix = glm::translation(&camera_position);
+						let view_matrix = glm::translation(&camera.position) * glm::rotation(camera.yaw, &glm::vec3(0.0, 1.0, 0.0));
 						[glm::identity(), glm::identity(), view_matrix]
 					}
 				}
 			}
 			None => {
 				//Create a matrix that gets a decent view of the scene
-				let view_matrix = glm::translation(&camera_position);
+				let view_matrix = glm::translation(&camera.position) * glm::rotation(camera.yaw, &glm::vec3(0.0, 1.0, 0.0));
 				[glm::identity(), glm::identity(), view_matrix]
 			}
 		};
@@ -558,7 +609,7 @@ fn main() {
 		};
 
 		//Get projection matrices
-		let p_mat = glm::perspective(aspect_ratio, f32::to_radians(camera_fov), NEAR_Z, FAR_Z);
+		let p_mat = glm::perspective(aspect_ratio, f32::to_radians(camera.fov), NEAR_Z, FAR_Z);
 		let p_matrices = match openvr_system {
 			Some(ref sys) => {
 				[get_projection_matrix(sys, Eye::Left), get_projection_matrix(sys, Eye::Right), p_mat]
@@ -572,8 +623,8 @@ fn main() {
 		ticks += 2.0 * seconds_elapsed;
 
 		//Update the camera
-		camera_position += camera_velocity * seconds_elapsed;
-		camera_fov += camera_fov_delta * seconds_elapsed;
+		camera.position += camera.velocity * seconds_elapsed;
+		camera.fov += camera.fov_delta * seconds_elapsed;
 
 		//Ensure controller meshes are drawn at each controller's position
 		if let Some(poses) = render_poses {
@@ -625,14 +676,14 @@ fn main() {
 
 						//Send matrix uniforms to GPU
 						let mat_locs = [mvp_location, model_matrix_location];
-						let mats = [&mvp, &mesh.model_matrix];
+						let mats = [mvp, mesh.model_matrix];
 						for i in 0..mat_locs.len() {
-							gl::UniformMatrix4fv(mat_locs[i], 1, gl::FALSE, &flatten_glm(mats[i]) as *const GLfloat);
+							gl::UniformMatrix4fv(mat_locs[i], 1, gl::FALSE, &flatten_glm(&mats[i]) as *const GLfloat);
 						}
 
 						//Send vector uniforms to GPU
 						let vec_locs = [light_position_location, view_position_location];
-						let vecs = [&light_position, &view_positions[i]];
+						let vecs = [light_position, view_positions[i]];
 						for i in 0..vec_locs.len() {
 							let pos = [vecs[i].x, vecs[i].y, vecs[i].z, 1.0];
 							gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);

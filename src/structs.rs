@@ -22,6 +22,33 @@ impl Mesh {
 	}
 }
 
+pub struct Camera {	
+	pub position: glm::TVec3<f32>,
+	pub velocity: glm::TVec3<f32>,
+	pub yaw: f32,
+	pub pitch: f32,
+	pub fov: f32,
+	pub fov_delta: f32
+}
+
+impl Camera {
+	pub const SPEED: f32 = 2.0;
+	pub const FOV_SPEED: f32 = 5.0;
+
+	pub fn new(position: glm::TVec3<f32>) -> Self {
+		let velocity = glm::vec3(0.0, 0.0, 0.0);
+
+		Camera {
+			position,
+			velocity,
+			yaw: 0.0,
+			pitch: 0.0,
+			fov: 90.0,
+			fov_delta: 0.0
+		}
+	}
+}
+
 /*
 pub struct RenderContext {
 	program: GLuint,
