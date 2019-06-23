@@ -1,6 +1,6 @@
 extern crate gl;
 extern crate nalgebra_glm as glm;
-use glfw::{Action, Context, Key, MouseButton, WindowMode, WindowEvent};
+use glfw::{Action, Context, CursorMode, Key, MouseButton, WindowMode, WindowEvent};
 use openvr::{ApplicationType, button_id, ControllerState, Eye, System, RenderModels, TrackedControllerRole, TrackedDevicePose};
 use openvr::compositor::texture::{ColorSpace, Handle, Texture};
 use nfd::Response;
@@ -425,7 +425,6 @@ fn main() {
 
 		//Handle window and keyboard events
 		for (_, event) in glfw::flush_messages(&events) {
-			println!("{:?}", event);
 			match event {
 				WindowEvent::Close => {
 					window.set_should_close(true);
@@ -517,6 +516,12 @@ fn main() {
 		//Check if the mouse has been clicked
 		if last_mouse_action == Action::Press && mouse_action == Action::Release {
 			locked_cursor = !locked_cursor;
+
+			if locked_cursor {
+				window.set_cursor_mode(CursorMode::Disabled);
+			} else {
+				window.set_cursor_mode(CursorMode::Normal);
+			}
 
 			//Reset cursor to center of screen
 			window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
