@@ -341,18 +341,18 @@ fn main() {
 
 		//Find controllers if we haven't already
 		if let Some(ref sys) = openvr_system {
-			for i in 0..controllers.indices.len() {
-				if let None = controllers.indices[i] {
+			for i in 0..controllers.device_indices.len() {
+				if let None = controllers.device_indices[i] {
 					const ROLES: [TrackedControllerRole; 2] = [TrackedControllerRole::LeftHand, TrackedControllerRole::RightHand];
-					controllers.indices[i] = sys.tracked_device_index_for_controller_role(ROLES[i]);
+					controllers.device_indices[i] = sys.tracked_device_index_for_controller_role(ROLES[i]);
 				}
 			}
 		}
 
 		//Load controller meshes if we haven't already
 		if let None = controllers.mesh_indices[0] {
-			for i in 0..controllers.indices.len() {
-				if let Some(index) = controllers.indices[i] {
+			for i in 0..controllers.device_indices.len() {
+				if let Some(index) = controllers.device_indices[i] {
 					controllers.mesh_indices = load_controller_meshes(&openvr_system,
 														  &openvr_rendermodels,
 														  &mut meshes,
@@ -376,7 +376,7 @@ fn main() {
 
 		//Get controller state structs
 		for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
-			if let (Some(index), Some(sys)) = (controllers.indices[i], &openvr_system) {
+			if let (Some(index), Some(sys)) = (controllers.device_indices[i], &openvr_system) {
 				controllers.states[i] = sys.controller_state(index);
 			}
 		}
@@ -523,29 +523,40 @@ fn main() {
 
 		//Handle controller input
 		for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
-			if let (Some(mesh_index),
+			if let (Some(device_index),
+					Some(mesh_index),
 					Some(state),
-					Some(p_state)) = (controllers.mesh_indices[i],
+					Some(p_state),
+					Some(sys)) = (	  controllers.device_indices[i],
+									  controllers.mesh_indices[i],
 									  controllers.states[i],
-									  controllers.previous_states[i]) {
+									  controllers.previous_states[i],
+									  &openvr_system) {
 
 				//If the trigger was pulled this frame, grab the object the controller is currently touching, if there is one
 				if let Some(loaded_index) = loaded_mesh_index {
-					if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
-						let controller_origin = get_mesh_origin(&meshes[mesh_index as usize]);
-						let loaded_origin = get_mesh_origin(&meshes[loaded_index]);
+					//Make controller vibrate if it collides with something
+					let controller_origin = get_mesh_origin(&meshes[mesh_index as usize]);
+					let loaded_origin = get_mesh_origin(&meshes[loaded_index]);
+					let is_colliding = glm::distance(&controller_origin, &loaded_origin) < loaded_sphere_radius;
 
-						//Check for collision
-						if glm::distance(&controller_origin, &loaded_origin) < loaded_sphere_radius {
-							//Set the controller's mesh as the mesh the cube mesh is "bound" to
-							loaded_bound_controller_index = Some(i);
+					if is_colliding && !controllers.was_colliding[i] {
+						println!("Just touched something");
+						sys.trigger_haptic_pulse(device_index, 1, 2000);
+					}
 
-							//Calculate the cube-space to controller-space matrix aka inverse(controller.model_matrix) * cube.model_matrix
-							if let (Some(cont_mesh), Some(loaded_mesh)) = (&meshes[mesh_index], &meshes[loaded_index]) {
-								loaded_space_to_controller_space = glm::affine_inverse(cont_mesh.model_matrix) * loaded_mesh.model_matrix;
-							}
+					if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) && is_colliding {
+						//Set the controller's mesh as the mesh the cube mesh is "bound" to
+						loaded_bound_controller_index = Some(i);
+
+						//Calculate the cube-space to controller-space matrix aka inverse(controller.model_matrix) * cube.model_matrix
+						if let (Some(cont_mesh), Some(loaded_mesh)) = (&meshes[mesh_index], &meshes[loaded_index]) {
+							loaded_space_to_controller_space = glm::affine_inverse(cont_mesh.model_matrix) * loaded_mesh.model_matrix;
 						}
 					}
+
+
+					controllers.was_colliding[i] = is_colliding;
 				}
 				//If the trigger was released this frame
 				if state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER == 0 &&
@@ -558,7 +569,7 @@ fn main() {
 				}
 
 				//If the menu button was pushed this frame
-				println!("{}\t{}", state.button_pressed, (1 as u64) << button_id::DASHBOARD_BACK);
+				//println!("{}\t{}", state.button_pressed, (1 as u64) << button_id::DASHBOARD_BACK);
 				if pressed_this_frame(&state, &p_state, button_id::DASHBOARD_BACK) {
 					println!("Yay");
 				}
@@ -619,7 +630,7 @@ fn main() {
 		//Ensure controller meshes are drawn at each controller's position
 		if let Some(poses) = render_poses {
 			for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
-				attach_mesh_to_controller(&mut meshes, &poses, &controllers.indices[i], controllers.mesh_indices[i]);
+				attach_mesh_to_controller(&mut meshes, &poses, &controllers.device_indices[i], controllers.mesh_indices[i]);
 			}
 		}
 
