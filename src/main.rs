@@ -593,7 +593,7 @@ fn main() {
 		let view_positions = {
 			let mut temp = Vec::with_capacity(v_matrices.len());
 			for matrix in &v_matrices {
-				temp.push(glm::affine_inverse(*matrix) * glm::vec4(0.0, 0.0, 0.0, 1.0));
+				temp.push(get_frame_origin(&glm::affine_inverse(*matrix)));
 			}
 			temp
 		};
