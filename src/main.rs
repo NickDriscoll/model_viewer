@@ -156,6 +156,12 @@ fn get_mesh(meshes: &mut OptionVec<Mesh>, index: Option<usize>) -> Option<&mut M
 	}
 }
 
+fn get_freecam_matrix(camera: &Camera) -> glm::TMat4<f32> {
+	glm::rotation(camera.pitch, &glm::vec3(1.0, 0.0, 0.0)) *
+	glm::rotation(camera.yaw, &glm::vec3(0.0, 1.0, 0.0)) *
+	glm::translation(&camera.position)
+}
+
 fn main() {
 	//Initialize OpenVR
 	let openvr_context = unsafe {
@@ -314,7 +320,7 @@ fn main() {
 	let mut manual_camera = false;
 	let mut camera = Camera::new(glm::vec3(0.0, -1.0, -1.0));
 
-	let mut last_mouse_action = window.get_mouse_button(MouseButton::Button1);
+	let mut last_rbutton_state = window.get_mouse_button(MouseButton::Button2);
 
 	//The instant recorded at the beginning of last frame
 	let mut last_frame_instant = Instant::now();
@@ -482,10 +488,11 @@ fn main() {
 		}
 
 		//Handle mouse input
-		let mouse_action = window.get_mouse_button(MouseButton::Button1);
+		let rbutton_state = window.get_mouse_button(MouseButton::Button2);
 		let cursor_pos = window.get_cursor_pos();
 		let cursor_delta = (cursor_pos.0 - window_size.0 as f64 / 2.0, cursor_pos.1 - window_size.1 as f64 / 2.0);
 
+		//If the cursor is currently captured
 		if window.get_cursor_mode() == CursorMode::Disabled {
 			const MOUSE_SENSITIVITY: f32 = 0.001;
 			camera.yaw += cursor_delta.0 as f32 * MOUSE_SENSITIVITY;
@@ -502,7 +509,7 @@ fn main() {
 		}
 
 		//Check if the mouse has been clicked
-		if last_mouse_action == Action::Press && mouse_action == Action::Release {
+		if last_rbutton_state == Action::Press && rbutton_state == Action::Release {
 			if window.get_cursor_mode() == CursorMode::Normal {
 				window.set_cursor_mode(CursorMode::Disabled);
 			} else {
@@ -512,35 +519,34 @@ fn main() {
 			//Reset cursor to center of screen
 			window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
 		}
-		last_mouse_action = mouse_action;
+		last_rbutton_state = rbutton_state;
 
 		//Handle controller input
 		for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
 			if let (Some(mesh_index),
-					Some(loaded_index),
 					Some(state),
 					Some(p_state)) = (controllers.mesh_indices[i],
-									  loaded_mesh_index,
 									  controllers.states[i],
 									  controllers.previous_states[i]) {
 
 				//If the trigger was pulled this frame, grab the object the controller is currently touching, if there is one
-				if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
-					let controller_origin = get_mesh_origin(&meshes[mesh_index as usize]);
-					let loaded_origin = get_mesh_origin(&meshes[loaded_index]);
+				if let Some(loaded_index) = loaded_mesh_index {
+					if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
+						let controller_origin = get_mesh_origin(&meshes[mesh_index as usize]);
+						let loaded_origin = get_mesh_origin(&meshes[loaded_index]);
 
-					//Check for collision
-					if glm::distance(&controller_origin, &loaded_origin) < loaded_sphere_radius {
-						//Set the controller's mesh as the mesh the cube mesh is "bound" to
-						loaded_bound_controller_index = Some(i);
+						//Check for collision
+						if glm::distance(&controller_origin, &loaded_origin) < loaded_sphere_radius {
+							//Set the controller's mesh as the mesh the cube mesh is "bound" to
+							loaded_bound_controller_index = Some(i);
 
-						//Calculate the cube-space to controller-space matrix aka inverse(controller.model_matrix) * cube.model_matrix
-						if let (Some(cont_mesh), Some(loaded_mesh)) = (&meshes[mesh_index], &meshes[loaded_index]) {
-							loaded_space_to_controller_space = glm::affine_inverse(cont_mesh.model_matrix) * loaded_mesh.model_matrix;
+							//Calculate the cube-space to controller-space matrix aka inverse(controller.model_matrix) * cube.model_matrix
+							if let (Some(cont_mesh), Some(loaded_mesh)) = (&meshes[mesh_index], &meshes[loaded_index]) {
+								loaded_space_to_controller_space = glm::affine_inverse(cont_mesh.model_matrix) * loaded_mesh.model_matrix;
+							}
 						}
 					}
 				}
-
 				//If the trigger was released this frame
 				if state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER == 0 &&
 				   p_state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER != 0 {
@@ -550,43 +556,36 @@ fn main() {
 				   		}
 				   	}					
 				}
+
+				//If the menu button was pushed this frame
+				println!("{}\t{}", state.button_pressed, (1 as u64) << button_id::DASHBOARD_BACK);
+				if pressed_this_frame(&state, &p_state, button_id::DASHBOARD_BACK) {
+					println!("Yay");
+				}
 			}
 		}
 
 		//Get view matrices
-		let v_matrices = match openvr_system {
-			Some(ref sys) => {
-				match render_poses {
-					Some(poses) => {
-						let hmd_to_absolute = openvr_to_mat4(*poses[0].device_to_absolute_tracking());
-						let left_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Left));
-						let right_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Right));
+		let v_matrices = match (&openvr_system, &render_poses) {
+			(Some(sys), Some(poses)) => {
+					let hmd_to_absolute = openvr_to_mat4(*poses[0].device_to_absolute_tracking());
+					let left_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Left));
+					let right_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Right));
 
-						let companion_v_mat = if !manual_camera { 
-							glm::affine_inverse(hmd_to_absolute)
-						} else {
-							//glm::translation(&camera.position) * glm::rotation(camera.yaw, &glm::vec3(0.0, 1.0, 0.0))
-							glm::rotation(camera.pitch, &glm::vec3(1.0, 0.0, 0.0)) *
-							glm::rotation(camera.yaw, &glm::vec3(0.0, 1.0, 0.0)) *
-							glm::translation(&camera.position)
-						};
+					let companion_v_mat = if !manual_camera { 
+						glm::affine_inverse(hmd_to_absolute)
+					} else {
+						get_freecam_matrix(&camera)
+					};
 
-						//Need to return inverse(hmd_to_absolute * eye_to_hmd)
-						[glm::affine_inverse(hmd_to_absolute * left_eye_to_hmd),
-						 glm::affine_inverse(hmd_to_absolute * right_eye_to_hmd),
-						 companion_v_mat]
-					}
-					None => {						
-						//Create a matrix that gets a decent view of the scene
-						let view_matrix = glm::translation(&camera.position) * glm::rotation(camera.yaw, &glm::vec3(0.0, 1.0, 0.0));
-						[glm::identity(), glm::identity(), view_matrix]
-					}
-				}
+					//Need to return inverse(hmd_to_absolute * eye_to_hmd)
+					[glm::affine_inverse(hmd_to_absolute * left_eye_to_hmd),
+					 glm::affine_inverse(hmd_to_absolute * right_eye_to_hmd),
+					 companion_v_mat]
 			}
-			None => {
+			_ => {				
 				//Create a matrix that gets a decent view of the scene
-				let view_matrix = glm::translation(&camera.position) * glm::rotation(camera.yaw, &glm::vec3(0.0, 1.0, 0.0));
-				[glm::identity(), glm::identity(), view_matrix]
+				[glm::identity(), glm::identity(), get_freecam_matrix(&camera)]
 			}
 		};
 
@@ -614,8 +613,7 @@ fn main() {
 		ticks += 2.0 * seconds_elapsed;
 
 		//Update the camera
-		camera.position += glm::vec4_to_vec3(&(seconds_elapsed * (glm::affine_inverse(v_matrices[2]) * glm::vec4(camera.velocity.x, camera.velocity.y, camera.velocity.z, 0.0))));
-		//camera.position += camera.velocity * seconds_elapsed;
+		camera.position += glm::vec4_to_vec3(&(seconds_elapsed * (glm::affine_inverse(v_matrices[2]) * glm::vec3_to_vec4(&camera.velocity))));
 		camera.fov += camera.fov_delta * seconds_elapsed;
 
 		//Ensure controller meshes are drawn at each controller's position
