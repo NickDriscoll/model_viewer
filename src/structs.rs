@@ -36,11 +36,9 @@ impl Camera {
 	pub const FOV_SPEED: f32 = 5.0;
 
 	pub fn new(position: glm::TVec3<f32>) -> Self {
-		let velocity = glm::vec3(0.0, 0.0, 0.0);
-
 		Camera {
 			position,
-			velocity,
+			velocity: glm::vec3(0.0, 0.0, 0.0),
 			yaw: 0.0,
 			pitch: 0.0,
 			fov: 90.0,

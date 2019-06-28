@@ -68,30 +68,37 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 	if let (Some(ref sys), Some(ref ren_mod)) = (&openvr_system, &openvr_rendermodels) {
 		let name = sys.string_tracked_device_property(index, openvr::property::RenderModelName_String).unwrap();
 		if let Some(model) = ren_mod.load_render_model(&name).unwrap() {
-			//Flatten each vertex into a simple &[f32]
-			const ELEMENT_STRIDE: usize = 8;
-			let mut vertices = Vec::with_capacity(ELEMENT_STRIDE * model.vertices().len());
-			for vertex in model.vertices() {
-				vertices.push(vertex.position[0]);
-				vertices.push(vertex.position[1]);
-				vertices.push(vertex.position[2]);
-				vertices.push(vertex.normal[0]);
-				vertices.push(vertex.normal[1]);
-				vertices.push(vertex.normal[2]);
-				vertices.push(vertex.texture_coord[0]);
-				vertices.push(vertex.texture_coord[1]);
+			if let Some(tex_id) = model.diffuse_texture_id() {
+				if let Some(tex) = ren_mod.load_texture(tex_id).unwrap() {
+					//Flatten each vertex into a simple &[f32]
+					const ELEMENT_STRIDE: usize = 8;
+					let mut vertices = Vec::with_capacity(ELEMENT_STRIDE * model.vertices().len());
+					for vertex in model.vertices() {
+						vertices.push(vertex.position[0]);
+						vertices.push(vertex.position[1]);
+						vertices.push(vertex.position[2]);
+						vertices.push(vertex.normal[0]);
+						vertices.push(vertex.normal[1]);
+						vertices.push(vertex.normal[2]);
+						vertices.push(vertex.texture_coord[0]);
+						vertices.push(vertex.texture_coord[1]);
+					}
+
+					//Create vao
+					let vao = unsafe { create_vertex_array_object(&vertices, model.indices()) };
+
+					//Create texture on GPU
+					let t = unsafe { load_texture_from_data((tex.data().to_vec(), tex.dimensions().0 as u32, tex.dimensions().1 as u32)) };
+
+					let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), t, model.indices().len() as i32);
+					let left_index = Some(meshes.insert(mesh));
+
+					let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), t, model.indices().len() as i32);
+					let right_index = Some(meshes.insert(mesh));
+
+					result = [left_index, right_index];					
+				}
 			}
-
-			//Create vao
-			let vao = unsafe { create_vertex_array_object(&vertices, model.indices()) };
-
-			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), 0, model.indices().len() as i32);
-			let left_index = Some(meshes.insert(mesh));
-
-			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), 0, model.indices().len() as i32);
-			let right_index = Some(meshes.insert(mesh));
-
-			result = [left_index, right_index];
 		}
 	}
 	result
@@ -207,12 +214,7 @@ fn main() {
 
 	//Create window
 	let window_size = (1280, 720);
-	let (mut window, events) = {
-		glfw.create_window(window_size.0,
-						   window_size.1,
-						   "Model viewer",
-							WindowMode::Windowed).unwrap()
-	};
+	let (mut window, events) = glfw.create_window(window_size.0, window_size.1, "Model viewer", WindowMode::Windowed).unwrap();
 
 	//Calculate window's aspect ratio
 	let aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
@@ -306,10 +308,6 @@ fn main() {
 	let mut loaded_mesh_index = None;
 	let mut loaded_space_to_controller_space = glm::identity();
 
-	//Thread listening flags
-	let mut loading_model_flag = false;
-	let mut loading_brick_texture_flag = true;
-
 	//Initialize the struct of arrays containing controller related state
 	let mut controllers = Controllers::new();
 
@@ -382,38 +380,30 @@ fn main() {
 		}
 
 		//Check if a new model has been loaded
-		if loading_model_flag {
-			if let Ok(package) = load_rx.try_recv() {
-				if let Some(pack) = package {
-					let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1) };
-					let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), brick_texture, pack.1.len() as i32);
+		if let Ok(package) = load_rx.try_recv() {
+			if let Some(pack) = package {
+				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1) };
+				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), brick_texture, pack.1.len() as i32);
 
-					//Delete old mesh if there is one
-					if let Some(i) = loaded_mesh_index {
-						meshes[i] = None;
-					}
-					loaded_mesh_index = Some(meshes.insert(mesh));
-				}				
-				loading_model_flag = false;
+				//Delete old mesh if there is one
+				if let Some(i) = loaded_mesh_index {
+					meshes[i] = None;
+				}
+				loaded_mesh_index = Some(meshes.insert(mesh));
 			}
 		}
 
-		//Check if the cube's texture has been loaded
-		if loading_brick_texture_flag {
-			//Check if the cube's texture is loaded yet
-			if let Ok((data, width, height)) = texture_rx.try_recv() {
-				let image_data = (data, width, height);
-				brick_texture = unsafe { load_texture_from_data(image_data) };
+		//Check if there are any textures to be received from the worker thread
+		if let Ok((data, width, height)) = texture_rx.try_recv() {
+			let image_data = (data, width, height);
+			brick_texture = unsafe { load_texture_from_data(image_data) };
 
-				let mesh_indices = [loaded_mesh_index, sphere_mesh_index];
+			let mesh_indices = [loaded_mesh_index, sphere_mesh_index];
 
-				for index in &mesh_indices {
-					if let Some(mesh) = get_mesh(&mut meshes, *index) {
-						mesh.texture = brick_texture;
-					}
+			for index in &mesh_indices {
+				if let Some(mesh) = get_mesh(&mut meshes, *index) {
+					mesh.texture = brick_texture;
 				}
-
-				loading_brick_texture_flag = false;
 			}
 		}
 
@@ -455,7 +445,6 @@ fn main() {
 								//Send model data back to the main thread
 								tx.send(load_wavefront_obj(&path)).unwrap();
 							});
-							loading_model_flag = true;
 						}
 						Key::Space => {
 							manual_camera = !manual_camera;
@@ -541,8 +530,7 @@ fn main() {
 					let is_colliding = glm::distance(&controller_origin, &loaded_origin) < loaded_sphere_radius;
 
 					if is_colliding && !controllers.was_colliding[i] {
-						println!("Just touched something");
-						sys.trigger_haptic_pulse(device_index, 1, 2000);
+						sys.trigger_haptic_pulse(device_index, 0, 2000);
 					}
 
 					if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) && is_colliding {
@@ -554,8 +542,6 @@ fn main() {
 							loaded_space_to_controller_space = glm::affine_inverse(cont_mesh.model_matrix) * loaded_mesh.model_matrix;
 						}
 					}
-
-
 					controllers.was_colliding[i] = is_colliding;
 				}
 				//If the trigger was released this frame
