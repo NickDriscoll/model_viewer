@@ -503,7 +503,7 @@ fn main() {
 			window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
 		}
 
-		//Check if the mouse has been clicked
+		//Check if the right mouse button has been clicked
 		if last_rbutton_state == Action::Press && rbutton_state == Action::Release {
 			if window.get_cursor_mode() == CursorMode::Normal {
 				window.set_cursor_mode(CursorMode::Disabled);
@@ -535,6 +535,7 @@ fn main() {
 					let loaded_origin = get_mesh_origin(&meshes[loaded_index]);
 					let is_colliding = glm::distance(&controller_origin, &loaded_origin) < loaded_sphere_radius;
 
+					//If the controller just collided with it this frame
 					if is_colliding && !controllers.was_colliding[i] {
 						sys.trigger_haptic_pulse(device_index, 0, 2000);
 					}
@@ -553,10 +554,8 @@ fn main() {
 				//If the trigger was released this frame
 				if state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER == 0 &&
 				   p_state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER != 0 {
-				   	if let Some(idx) = loaded_bound_controller_index {
-				   		if idx == i {
-				   			loaded_bound_controller_index = None;
-				   		}
+				   	if Some(i) == loaded_bound_controller_index {
+				   		loaded_bound_controller_index = None;
 				   	}					
 				}
 
