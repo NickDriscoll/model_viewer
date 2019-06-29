@@ -108,6 +108,10 @@ fn pressed_this_frame(state: &ControllerState, p_state: &ControllerState, flag: 
 	state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
 }
 
+fn released_this_frame(state: &ControllerState, p_state: &ControllerState, flag: u32) -> bool {
+	state.button_pressed & (1 as u64) << flag == 0 && p_state.button_pressed & (1 as u64) << flag != 0
+}
+
 fn get_frame_origin(model_matrix: &glm::TMat4<f32>) -> glm::TVec4<f32> {
 	model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
 }
@@ -552,11 +556,10 @@ fn main() {
 					controllers.was_colliding[i] = is_colliding;
 				}
 				//If the trigger was released this frame
-				if state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER == 0 &&
-				   p_state.button_pressed & (1 as u64) << button_id::STEAM_VR_TRIGGER != 0 {
+				if released_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
 				   	if Some(i) == loaded_bound_controller_index {
 				   		loaded_bound_controller_index = None;
-				   	}					
+				   	}
 				}
 
 				//If the menu button was pushed this frame
