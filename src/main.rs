@@ -169,6 +169,10 @@ fn get_freecam_matrix(camera: &Camera) -> glm::TMat4<f32> {
 	glm::translation(&camera.position)
 }
 
+fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
+	glm::scaling(&glm::vec3(scale, scale, scale))
+}
+
 fn main() {
 	//Initialize OpenVR
 	let openvr_context = unsafe {
@@ -273,16 +277,17 @@ fn main() {
 		let vertices = [
 			//Positions					//Normals							//Tex coords
 			-0.5f32, 0.0, -0.5,			0.0, 1.0, 0.0,						0.0, 0.0,
-			-0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						0.0, 4.0,
-			0.5, 0.0, -0.5,				0.0, 1.0, 0.0,						4.0, 0.0,
-			0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						4.0, 4.0
+			-0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						0.0, 8.0,
+			0.5, 0.0, -0.5,				0.0, 1.0, 0.0,						8.0, 0.0,
+			0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						8.0, 8.0
 		];
 		let indices = [
 			0u16, 1, 2,
 			1, 3, 2
 		];
 		let vao = create_vertex_array_object(&vertices, &indices);
-		let mesh = Mesh::new(vao, glm::scaling(&glm::vec3(5.0, 5.0, 5.0)), checkerboard_texture, indices.len() as i32);
+		let scale = 10.0;
+		let mesh = Mesh::new(vao, uniform_scale(scale), checkerboard_texture, indices.len() as i32);
 		meshes.insert(mesh);
 	}
 
@@ -293,7 +298,7 @@ fn main() {
 			Some(obj) => {
 				let vao = create_vertex_array_object(&obj.0, &obj.1);
 				let t = glm::vec4_to_vec3(&light_position);
-				let mesh = Mesh::new(vao, glm::translation(&t) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), 0, obj.1.len() as i32);
+				let mesh = Mesh::new(vao, glm::translation(&t) * uniform_scale(0.1), 0, obj.1.len() as i32);
 				Some(meshes.insert(mesh))
 			}
 			None => {
@@ -363,8 +368,8 @@ fn main() {
 		}
 
 		//Get VR pose data
-		let render_poses = match openvr_compositor {
-			Some(ref comp) => {
+		let render_poses = match &openvr_compositor {
+			Some(comp) => {
 				Some(comp.wait_get_poses().unwrap().render)
 			}
 			None => {
@@ -383,7 +388,7 @@ fn main() {
 		if let Ok(package) = load_rx.try_recv() {
 			if let Some(pack) = package {
 				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1) };
-				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1)), brick_texture, pack.1.len() as i32);
+				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), brick_texture, pack.1.len() as i32);
 
 				//Delete old mesh if there is one
 				if let Some(i) = loaded_mesh_index {
@@ -632,7 +637,7 @@ fn main() {
 
 		//Make the light bob up and down
 		if let Some(mesh) = get_mesh(&mut meshes, sphere_mesh_index) {
-			mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks*0.2) + 0.8, 0.0)) * glm::scaling(&glm::vec3(0.1, 0.1, 0.1));
+			mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks*0.2) + 0.8, 0.0)) * uniform_scale(0.1);
 			light_position = get_frame_origin(&mesh.model_matrix);
 		}
 
