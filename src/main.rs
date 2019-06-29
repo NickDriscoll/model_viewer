@@ -362,6 +362,7 @@ fn main() {
 														  index);
 
 					//We break here because the models only need to be loaded once, but we still want to check both controller indices if necessary
+					//I should probably check if it is even possible for a higher controller index to be loaded first
 					break;
 				}
 			}
@@ -399,8 +400,7 @@ fn main() {
 		}
 
 		//Check if there are any textures to be received from the worker thread
-		if let Ok((data, width, height)) = texture_rx.try_recv() {
-			let image_data = (data, width, height);
+		if let Ok(image_data) = texture_rx.try_recv() {
 			brick_texture = unsafe { load_texture_from_data(image_data) };
 
 			let mesh_indices = [loaded_mesh_index, sphere_mesh_index];
@@ -438,6 +438,9 @@ fn main() {
 						Key::P => {
 							camera.fov_delta = Camera::FOV_SPEED;
 						}
+						Key::I => {
+							camera.fov = 90.0;
+						}
 						Key::L => {
 							let tx = load_tx.clone();
 							thread::spawn( move || {
@@ -472,7 +475,7 @@ fn main() {
 						}
 						Key::O | Key::P => {
 							camera.fov_delta = 0.0;
-							println!("fov is now {}", camera.fov);
+							println!("Field of view is now {} degrees", camera.fov);
 						}
 						_ => {}
 					}
@@ -488,15 +491,13 @@ fn main() {
 
 		//If the cursor is currently captured
 		if window.get_cursor_mode() == CursorMode::Disabled {
+			//No idea what a good range is for this value, but this is working for now
 			const MOUSE_SENSITIVITY: f32 = 0.001;
 			camera.yaw += cursor_delta.0 as f32 * MOUSE_SENSITIVITY;
 			camera.pitch += cursor_delta.1 as f32 * MOUSE_SENSITIVITY;
 
-			if camera.pitch > glm::half_pi() {
-				camera.pitch = glm::half_pi();
-			} else if camera.pitch < -glm::half_pi::<f32>() {
-				camera.pitch = -glm::half_pi::<f32>();
-			}
+			//Prevent the camera from flipping upside down
+			camera.pitch = glm::clamp_scalar(camera.pitch, -glm::half_pi::<f32>(), glm::half_pi());
 
 			//Reset cursor to center of screen
 			window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
