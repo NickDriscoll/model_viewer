@@ -500,7 +500,7 @@ fn main() {
 			camera.yaw += cursor_delta.0 as f32 * MOUSE_SENSITIVITY;
 			camera.pitch += cursor_delta.1 as f32 * MOUSE_SENSITIVITY;
 
-			//Prevent the camera from flipping upside down
+			//Prevent the camera from flipping upside down by constraining its pitch to the range [-pi/2, pi/2]
 			camera.pitch = glm::clamp_scalar(camera.pitch, -glm::half_pi::<f32>(), glm::half_pi());
 
 			//Reset cursor to center of screen
@@ -555,6 +555,7 @@ fn main() {
 					}
 					controllers.was_colliding[i] = is_colliding;
 				}
+				
 				//If the trigger was released this frame
 				if released_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
 				   	if Some(i) == loaded_bound_controller_index {
@@ -630,9 +631,8 @@ fn main() {
 
 		//If the loaded mesh is currently being grabbed, draw it at the grabbing controller's position
 		if let Some(index) = loaded_bound_controller_index {
-			if let (Some(mesh_index), Some(load_index)) = (controllers.mesh_indices[index], loaded_mesh_index) {
-				let indices = meshes.two_mut_refs(load_index, mesh_index);
-				if let (Some(loaded), Some(controller)) = indices {
+			if let (Some(mesh_index), Some(load_index)) = (controllers.mesh_indices[index], loaded_mesh_index) {				
+				if let (Some(loaded), Some(controller)) = meshes.two_mut_refs(load_index, mesh_index) {
 					loaded.model_matrix = controller.model_matrix * loaded_space_to_controller_space;
 				}
 			}
