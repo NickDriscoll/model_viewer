@@ -185,7 +185,7 @@ fn main() {
 				Some(ctxt)
 			}
 			Err(e) => {
-				println!("ERROR: {}", e);
+				println!("OpenVR initialization error: {}", e);
 				None
 			}
 		}
@@ -297,7 +297,7 @@ fn main() {
 
 	//Create the sphere that represents the light source
 	let mut light_position = glm::vec4(0.0, 1.0, 0.0, 1.0);
-	let sphere_mesh_index = unsafe {
+	let sphere_index = unsafe {
 		match load_wavefront_obj("models/sphere.obj") {
 			Some(obj) => {
 				let vao = create_vertex_array_object(&obj.0, &obj.1);
@@ -313,7 +313,7 @@ fn main() {
 
 	//Variables for the mesh loaded from a file	
 	let loaded_sphere_radius = 0.20;
-	let mut loaded_bound_controller_index = None;
+	let mut loaded_bound_controller_index = None; //The controller index a given model is bound to
 	let mut loaded_mesh_index = None;
 	let mut loaded_space_to_controller_space = glm::identity();
 
@@ -324,7 +324,6 @@ fn main() {
 	let mut ticks = 0.0;
 
 	//Camera state
-	let mut manual_camera = false;
 	let mut camera = Camera::new(glm::vec3(0.0, -1.0, -1.0));
 
 	let mut last_rbutton_state = window.get_mouse_button(MouseButton::Button2);
@@ -407,7 +406,7 @@ fn main() {
 		if let Ok(image_data) = texture_rx.try_recv() {
 			brick_texture = unsafe { load_texture_from_data(image_data) };
 
-			let mesh_indices = [loaded_mesh_index, sphere_mesh_index];
+			let mesh_indices = [loaded_mesh_index, sphere_index];
 
 			for index in &mesh_indices {
 				if let Some(mesh) = get_mesh(&mut meshes, *index) {
@@ -459,7 +458,7 @@ fn main() {
 							});
 						}
 						Key::Space => {
-							manual_camera = !manual_camera;
+							camera.attached_to_hmd = !camera.attached_to_hmd;
 						}
 						Key::Escape => {
 							window.set_should_close(true);
@@ -491,14 +490,14 @@ fn main() {
 		//Handle mouse input
 		let rbutton_state = window.get_mouse_button(MouseButton::Button2);
 		let cursor_pos = window.get_cursor_pos();
-		let cursor_delta = (cursor_pos.0 - window_size.0 as f64 / 2.0, cursor_pos.1 - window_size.1 as f64 / 2.0);
+		let cursor_delta = [cursor_pos.0 - window_size.0 as f64 / 2.0, cursor_pos.1 - window_size.1 as f64 / 2.0];
 
 		//If the cursor is currently captured
 		if window.get_cursor_mode() == CursorMode::Disabled {
 			//No idea what a good range is for this value, but this is working for now
 			const MOUSE_SENSITIVITY: f32 = 0.001;
-			camera.yaw += cursor_delta.0 as f32 * MOUSE_SENSITIVITY;
-			camera.pitch += cursor_delta.1 as f32 * MOUSE_SENSITIVITY;
+			camera.yaw += cursor_delta[0] as f32 * MOUSE_SENSITIVITY;
+			camera.pitch += cursor_delta[1] as f32 * MOUSE_SENSITIVITY;
 
 			//Prevent the camera from flipping upside down by constraining its pitch to the range [-pi/2, pi/2]
 			camera.pitch = glm::clamp_scalar(camera.pitch, -glm::half_pi::<f32>(), glm::half_pi());
@@ -578,7 +577,7 @@ fn main() {
 					let left_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Left));
 					let right_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Right));
 
-					let companion_v_mat = if !manual_camera { 
+					let companion_v_mat = if !camera.attached_to_hmd { 
 						glm::affine_inverse(hmd_to_absolute)
 					} else {
 						get_freecam_matrix(&camera)
@@ -639,7 +638,7 @@ fn main() {
 		}
 
 		//Make the light bob up and down
-		if let Some(mesh) = get_mesh(&mut meshes, sphere_mesh_index) {
+		if let Some(mesh) = get_mesh(&mut meshes, sphere_index) {
 			mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks*0.2) + 0.8, 0.0)) * uniform_scale(0.1);
 			light_position = get_frame_origin(&mesh.model_matrix);
 		}

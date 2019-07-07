@@ -28,7 +28,8 @@ pub struct Camera {
 	pub yaw: f32, 					//In radians
 	pub pitch: f32, 				//In radians
 	pub fov: f32,					//In degrees
-	pub fov_delta: f32
+	pub fov_delta: f32,
+	pub attached_to_hmd: bool
 }
 
 impl Camera {
@@ -42,7 +43,8 @@ impl Camera {
 			yaw: 0.0,
 			pitch: 0.0,
 			fov: 90.0,
-			fov_delta: 0.0
+			fov_delta: 0.0,
+			attached_to_hmd: true
 		}
 	}
 }
