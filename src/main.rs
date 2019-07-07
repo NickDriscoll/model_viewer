@@ -541,7 +541,7 @@ fn main() {
 
 						//If the controller just collided with it this frame
 						if is_colliding && !controllers.was_colliding[i] {
-							sys.trigger_haptic_pulse(device_index, 0, 2000);
+							//sys.trigger_haptic_pulse(device_index, 0, 2000);
 						}
 
 						if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) && is_colliding {
