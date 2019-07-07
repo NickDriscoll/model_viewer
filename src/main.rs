@@ -311,11 +311,10 @@ fn main() {
 		}
 	};
 
-	//Variables for the mesh loaded from a file	
-	let loaded_sphere_radius = 0.20;
-	let mut loaded_bound_controller_index = None; //The controller index a given model is bound to
-	let mut loaded_mesh_index = None;
-	let mut loaded_space_to_controller_space = glm::identity();
+	let model_bounding_sphere_radius = 0.20;
+	let mut bound_controller_indices = Vec::new();
+	let mut model_indices = Vec::new();
+	let mut model_to_controller_matrices = Vec::new();
 
 	//Initialize the struct of arrays containing controller related state
 	let mut controllers = Controllers::new();
@@ -393,12 +392,7 @@ fn main() {
 			if let Some(pack) = package {
 				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1) };
 				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), brick_texture, pack.1.len() as i32);
-
-				//Delete old mesh if there is one
-				if let Some(i) = loaded_mesh_index {
-					meshes[i] = None;
-				}
-				loaded_mesh_index = Some(meshes.insert(mesh));
+				model_indices.push(Some(meshes.insert(mesh)));
 			}
 		}
 
@@ -406,7 +400,11 @@ fn main() {
 		if let Ok(image_data) = texture_rx.try_recv() {
 			brick_texture = unsafe { load_texture_from_data(image_data) };
 
-			let mesh_indices = [loaded_mesh_index, sphere_index];
+			let mut mesh_indices = Vec::with_capacity(model_indices.len() + 1);
+			for i in 0..model_indices.len() {
+				mesh_indices.push(model_indices[i]);
+			}
+			mesh_indices.push(sphere_index);
 
 			for index in &mesh_indices {
 				if let Some(mesh) = get_mesh(&mut meshes, *index) {
@@ -531,41 +529,43 @@ fn main() {
 									  controllers.previous_states[i],
 									  &openvr_system) {
 
-				//If the trigger was pulled this frame, grab the object the controller is currently touching, if there is one
-				if let Some(loaded_index) = loaded_mesh_index {
-					//Make controller vibrate if it collides with something
-					let controller_origin = get_mesh_origin(&meshes[mesh_index as usize]);
-					let loaded_origin = get_mesh_origin(&meshes[loaded_index]);
-					let is_colliding = glm::distance(&controller_origin, &loaded_origin) < loaded_sphere_radius;
+				for j in 0..bound_controller_indices.len() {
+					//If the trigger was pulled this frame, grab the object the controller is currently touching, if there is one
+					if let Some(loaded_index) = model_indices[j] {
+						//Make controller vibrate if it collides with something
+						let controller_origin = get_mesh_origin(&meshes[mesh_index as usize]);
+						let loaded_origin = get_mesh_origin(&meshes[loaded_index]);
+						let is_colliding = glm::distance(&controller_origin, &loaded_origin) < model_bounding_sphere_radius;
 
-					//If the controller just collided with it this frame
-					if is_colliding && !controllers.was_colliding[i] {
-						sys.trigger_haptic_pulse(device_index, 0, 2000);
-					}
-
-					if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) && is_colliding {
-						//Set the controller's mesh as the mesh the cube mesh is "bound" to
-						loaded_bound_controller_index = Some(i);
-
-						//Calculate the cube-space to controller-space matrix aka inverse(controller.model_matrix) * cube.model_matrix
-						if let (Some(cont_mesh), Some(loaded_mesh)) = (&meshes[mesh_index], &meshes[loaded_index]) {
-							loaded_space_to_controller_space = glm::affine_inverse(cont_mesh.model_matrix) * loaded_mesh.model_matrix;
+						//If the controller just collided with it this frame
+						if is_colliding && !controllers.was_colliding[i] {
+							sys.trigger_haptic_pulse(device_index, 0, 2000);
 						}
-					}
-					controllers.was_colliding[i] = is_colliding;
-				}
-				
-				//If the trigger was released this frame
-				if released_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
-				   	if Some(i) == loaded_bound_controller_index {
-				   		loaded_bound_controller_index = None;
-				   	}
-				}
 
-				//If the menu button was pushed this frame
-				//println!("{}\t{}", state.button_pressed, (1 as u64) << button_id::DASHBOARD_BACK);
-				if pressed_this_frame(&state, &p_state, button_id::DASHBOARD_BACK) {
-					println!("Yay");
+						if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) && is_colliding {
+							//Set the controller's mesh as the mesh the cube mesh is "bound" to
+							bound_controller_indices[j] = Some(i);
+
+							//Calculate the cube-space to controller-space matrix aka inverse(controller.model_matrix) * cube.model_matrix
+							if let (Some(cont_mesh), Some(loaded_mesh)) = (&meshes[mesh_index], &meshes[loaded_index]) {
+								model_to_controller_matrices[j] = glm::affine_inverse(cont_mesh.model_matrix) * loaded_mesh.model_matrix;
+							}
+						}
+						controllers.was_colliding[i] = is_colliding;
+					}
+					
+					//If the trigger was released this frame
+					if released_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
+					   	if Some(i) == bound_controller_indices[j] {
+					   		bound_controller_indices[j] = None;
+					   	}
+					}
+
+					//If the menu button was pushed this frame
+					//println!("{}\t{}", state.button_pressed, (1 as u64) << button_id::DASHBOARD_BACK);
+					if pressed_this_frame(&state, &p_state, button_id::DASHBOARD_BACK) {
+						println!("Yay");
+					}
 				}
 			}
 		}
@@ -628,11 +628,13 @@ fn main() {
 			}
 		}
 
-		//If the loaded mesh is currently being grabbed, draw it at the grabbing controller's position
-		if let Some(index) = loaded_bound_controller_index {
-			if let (Some(mesh_index), Some(load_index)) = (controllers.mesh_indices[index], loaded_mesh_index) {				
-				if let (Some(loaded), Some(controller)) = meshes.two_mut_refs(load_index, mesh_index) {
-					loaded.model_matrix = controller.model_matrix * loaded_space_to_controller_space;
+		//If a model is being grabbed, place it in the right spot
+		for i in 0..bound_controller_indices.len() {
+			if let Some(index) = bound_controller_indices[i] {
+				if let (Some(mesh_index), Some(load_index)) = (controllers.mesh_indices[index], model_indices[i]) {				
+					if let (Some(loaded), Some(controller)) = meshes.two_mut_refs(load_index, mesh_index) {
+						loaded.model_matrix = controller.model_matrix * model_to_controller_matrices[i];
+					}
 				}
 			}
 		}
