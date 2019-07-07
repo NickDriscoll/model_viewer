@@ -393,6 +393,8 @@ fn main() {
 				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1) };
 				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), brick_texture, pack.1.len() as i32);
 				model_indices.push(Some(meshes.insert(mesh)));
+				bound_controller_indices.push(None);
+				model_to_controller_matrices.push(glm::identity());
 			}
 		}
 
@@ -529,7 +531,7 @@ fn main() {
 									  controllers.previous_states[i],
 									  &openvr_system) {
 
-				for j in 0..bound_controller_indices.len() {
+				for j in 0..model_indices.len() {
 					//If the trigger was pulled this frame, grab the object the controller is currently touching, if there is one
 					if let Some(loaded_index) = model_indices[j] {
 						//Make controller vibrate if it collides with something
@@ -577,7 +579,7 @@ fn main() {
 					let left_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Left));
 					let right_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Right));
 
-					let companion_v_mat = if !camera.attached_to_hmd { 
+					let companion_v_mat = if camera.attached_to_hmd { 
 						glm::affine_inverse(hmd_to_absolute)
 					} else {
 						get_freecam_matrix(&camera)
