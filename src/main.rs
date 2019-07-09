@@ -345,16 +345,18 @@ fn main() {
 	let font = Font::from_bytes(include_bytes!("../fonts/Constantia.ttf") as &[u8]).unwrap();
 	let mut glyph_cache = Cache::builder().build();
 
-	let captial_a = {
+	let capital_a = {
 		let position = rusttype::Point {
-			x: 1.0,
-			y: 1.0
+			x: 0.0,
+			y: 0.0
 		};
-		font.glyph('A').scaled(rusttype::Scale::uniform(1.0)).positioned(position)
+		font.glyph('A').scaled(rusttype::Scale::uniform(200.0)).positioned(position)
 	};
-	glyph_cache.queue_glyph(0, captial_a);
+	glyph_cache.queue_glyph(0, capital_a.clone());
 
 	glyph_cache.cache_queued(|rect, data| {
+		println!("{}\n{:?}", data.len(), rect);
+
 		let mut data_vec = Vec::new();
 		data_vec.extend_from_slice(data);
 
@@ -365,18 +367,40 @@ fn main() {
 	}).unwrap();
 
 	//Create a square to draw the letter on
-	let vertices = [
-		-0.5f32, -0.5,			0.0, 0.0,
-		0.5, -0.5,				1.0, 0.0,
-		0.5, 0.5,				1.0, 1.0,
-		-0.5, 0.5,				0.0, 1.0
-	];
-	let indices = [
-		0u16, 1, 2,
-		0, 2, 3
-	];
+	let capital_a_vao = {
+		let mut temp = 0;
+		if let Ok(Some((uvs, screen_rect))) = glyph_cache.rect_for(0, &capital_a) {
+			let vertices = [
+				-0.5f32, -0.5,			uvs.min.x, uvs.max.y,
+				0.5, -0.5,				uvs.max.x, uvs.max.y,
+				0.5, 0.5,				uvs.max.x, uvs.min.y,
+				-0.5, 0.5,				uvs.min.x, uvs.min.y
+			];
 
-	let capital_a_vao = unsafe { create_vertex_array_object(&vertices, &indices, &[2, 2]) };
+			let indices = [
+				0u16, 1, 2,
+				0, 2, 3
+			];
+			println!("{:?}", screen_rect);
+
+			/*
+			let vertices = [
+				screen_rect.min.x, screen_rect.min.y,			uvs.min.x, uvs.min.y,
+				screen_rect.max.x, screen_rect.min.y,			uvs.max.x, uvs.min.y,
+				screen_rect.min.x, screen_rect.max.y,			uvs.min.x, uvs.max.y,
+				screen_rect.max.x, screen_rect.max.y,			uvs.max.x, uvs.max.y
+			];
+
+			let indices = [
+				2u16, 1, 0,
+				3, 1, 2
+			];
+			*/
+
+			temp = unsafe { create_vertex_array_object(&vertices, &indices, &[2, 2]) };
+		}
+		temp
+	};
 
 	//Main loop
 	while !window.should_close() {
@@ -764,7 +788,7 @@ fn main() {
 			gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
 
 			//Draw call
-			//gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
+			gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
 		}
 
 		window.render_context().swap_buffers();
