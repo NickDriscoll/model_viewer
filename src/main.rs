@@ -12,6 +12,8 @@ use std::sync::mpsc;
 use std::ptr;
 use obj;
 use rand::random;
+use rusttype::gpu_cache::Cache;
+use rusttype::Font;
 use crate::structs::*;
 use crate::glutil::*;
 use self::gl::types::*;
@@ -85,7 +87,7 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 					}
 
 					//Create vao
-					let vao = unsafe { create_vertex_array_object(&vertices, model.indices()) };
+					let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]) };
 
 					//Create texture on GPU
 					let t = unsafe { load_texture_from_data((tex.data().to_vec(), tex.dimensions().0 as u32, tex.dimensions().1 as u32)) };
@@ -272,6 +274,7 @@ fn main() {
 	//Textures
 	let checkerboard_texture = unsafe { load_texture("textures/checkerboard.jpg") };
 	let mut brick_texture = 0;
+	let mut glyph_texture = 0;
 
 	//OptionVec of meshes
 	let mut meshes = OptionVec::with_capacity(5);
@@ -289,7 +292,7 @@ fn main() {
 			0u16, 1, 2,
 			1, 3, 2
 		];
-		let vao = create_vertex_array_object(&vertices, &indices);
+		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
 		let scale = 10.0;
 		let mesh = Mesh::new(vao, uniform_scale(scale), checkerboard_texture, indices.len() as i32);
 		meshes.insert(mesh);
@@ -300,7 +303,7 @@ fn main() {
 	let sphere_index = unsafe {
 		match load_wavefront_obj("models/sphere.obj") {
 			Some(obj) => {
-				let vao = create_vertex_array_object(&obj.0, &obj.1);
+				let vao = create_vertex_array_object(&obj.0, &obj.1, &[3, 3, 2]);
 				let t = glm::vec4_to_vec3(&light_position);
 				let mesh = Mesh::new(vao, glm::translation(&t) * uniform_scale(0.1), 0, obj.1.len() as i32);
 				Some(meshes.insert(mesh))
@@ -335,12 +338,50 @@ fn main() {
 	let sizes = [render_target_size, render_target_size, window_size];
 	let eyes = [Some(Eye::Left), Some(Eye::Right), None];
 
+	//Load the font and create the glyph cache
+	let font = Font::from_bytes(include_bytes!("../fonts/Constantia.ttf") as &[u8]).unwrap();
+	let mut glyph_cache = Cache::builder().build();
+
+	let letter_A = {
+		let position = rusttype::Point {
+			x: 1.0,
+			y: 1.0
+		};
+		font.glyph('A').scaled(rusttype::Scale::uniform(1.0)).positioned(position)
+	};
+	glyph_cache.queue_glyph(0, letter_A);
+
+	glyph_cache.cache_queued(|rect, data| {
+		let mut data_vec = Vec::new();
+		data_vec.extend_from_slice(data);
+
+		let width = rect.max.x - rect.min.x;
+		let height = rect.max.y - rect.min.y;
+
+		glyph_texture = unsafe { load_texture_from_data((data_vec, width, height)) };
+	}).unwrap();
+
+	//Create a square to draw the letter on
+	let vertices = [
+		-0.5f32, -0.5,
+		0.5, -0.5,
+		0.5, 0.5,
+		-0.5, 0.5
+	];
+	let indices = [
+		0u16, 2, 1,
+		2, 0, 3
+	];
+
 	//Main loop
 	while !window.should_close() {
-		//Frame rate independence variables
-		let frame_instant = Instant::now();
-		let seconds_elapsed = { 
+		//Calculate time since the last frame started		
+		let seconds_elapsed = {
+			let frame_instant = Instant::now();
 			let dur = frame_instant.duration_since(last_frame_instant);
+			last_frame_instant = frame_instant;
+
+			//There's an underlying assumption here that frames will always take less than one second to complete
 			(dur.subsec_millis() as f32 / 1000.0) + (dur.subsec_micros() as f32 / 1_000_000.0)
 		};
 
@@ -390,7 +431,7 @@ fn main() {
 		//Check if a new model has been loaded
 		if let Ok(package) = load_rx.try_recv() {
 			if let Some(pack) = package {
-				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1) };
+				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1, &[3, 3, 2]) };
 				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), brick_texture, pack.1.len() as i32);
 				model_indices.push(Some(meshes.insert(mesh)));
 				bound_controller_indices.push(None);
@@ -649,7 +690,6 @@ fn main() {
 
 		//End of frame updates
 		controllers.previous_states = controllers.states;
-		last_frame_instant = frame_instant;
 
 		//Rendering code
 		unsafe {

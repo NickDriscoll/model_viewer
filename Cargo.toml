@@ -14,3 +14,8 @@ nalgebra-glm = "0.3"
 rand = "0.6"
 nfd = "0.0.4"
 obj-rs = "0.5"
+
+[dependencies.rusttype]
+version = "0.7.5"
+default-features = false
+features = ["gpu_cache"]

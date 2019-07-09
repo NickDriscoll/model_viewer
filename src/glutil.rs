@@ -12,7 +12,6 @@ use openvr::{Compositor, Eye};
 
 pub type ImageData = (Vec<u8>, u32, u32);
 const INFO_LOG_SIZE: usize = 512;
-const ATTRIBUTE_STRIDE: i32 = 8;
 
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
 	let shader = gl::CreateShader(shadertype);
@@ -84,7 +83,9 @@ pub unsafe fn submit_to_hmd(eye: Option<Eye>, openvr_compositor: &Option<Composi
 	}
 }
 
-pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16]) -> GLuint {
+pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16], attribute_strides: &[i32]) -> GLuint {
+	//let attribute_strides = [3, 3, 2];
+
 	let (mut vbo, mut vao, mut ebo) = (0, 0, 0);
 	gl::GenVertexArrays(1, &mut vao);
 	gl::GenBuffers(1, &mut vbo);
@@ -103,19 +104,22 @@ pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16]) -> G
 				   (indices.len() * mem::size_of::<GLushort>()) as GLsizeiptr,
 				   &indices[0] as *const u16 as *const c_void,
 				   gl::STATIC_DRAW);
-	
 
-	let byte_stride = ATTRIBUTE_STRIDE * mem::size_of::<GLfloat>() as i32;
+	let byte_stride = {
+		let mut sum = 0;
+		for stride in attribute_strides {
+			sum += stride;
+		}
+		sum * mem::size_of::<GLfloat>() as i32
+	};
 
-	//Configure and enable the vertex attributes	
-	gl::VertexAttribPointer(0, 3, gl::FLOAT, gl::FALSE, byte_stride, 0 as *const c_void);
-	gl::EnableVertexAttribArray(0);
-
-	gl::VertexAttribPointer(1, 3, gl::FLOAT, gl::FALSE, byte_stride, (3 * mem::size_of::<GLfloat>()) as *const c_void);
-	gl::EnableVertexAttribArray(1);
-	
-	gl::VertexAttribPointer(2, 2, gl::FLOAT, gl::FALSE, byte_stride, (6 * mem::size_of::<GLfloat>()) as *const c_void);
-	gl::EnableVertexAttribArray(2);
+	//Configure and enable the vertex attributes
+	let mut cumulative_size = 0;
+	for i in 0..attribute_strides.len() {
+		gl::VertexAttribPointer(i as u32, attribute_strides[i], gl::FLOAT, gl::FALSE, byte_stride, (cumulative_size * mem::size_of::<GLfloat>() as u32) as *const c_void);
+		gl::EnableVertexAttribArray(i as u32);
+		cumulative_size += attribute_strides[i] as u32;
+	}
 
 	vao
 }
