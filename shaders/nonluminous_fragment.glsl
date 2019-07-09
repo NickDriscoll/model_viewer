@@ -3,6 +3,7 @@
 in vec4 f_pos;
 in vec4 f_normal;
 in vec2 v_tex_coords;
+out vec4 frag_color;
 
 uniform sampler2D tex;
 uniform vec4 light_position;
@@ -36,5 +37,5 @@ void main() {
 	vec3 specular = pow(specular_angle, SHININESS) * LIGHT_COLOR;
 
 	vec3 result = tex_color * (ambient + diffuse + specular);
-	gl_FragColor = vec4(result, 1.0);
+	frag_color = vec4(result, 1.0);
 }

@@ -220,10 +220,10 @@ fn main() {
 	glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
 
 	//Disable window resizing
-	glfw.window_hint(glfw::WindowHint::Resizable(false));
+	//glfw.window_hint(glfw::WindowHint::Resizable(false));
 
 	//Create window
-	let window_size = (1280, 720);
+	let window_size = (720, 720);
 	let (mut window, events) = glfw.create_window(window_size.0, window_size.1, "Model viewer", WindowMode::Windowed).unwrap();
 
 	//Calculate window's aspect ratio
@@ -236,7 +236,7 @@ fn main() {
 	//Load all OpenGL function pointers
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
-	//Compile shader program
+	//Compile 3D shaders
 	let nonluminous_shader = unsafe { compile_program_from_files("shaders/nonluminous_vertex.glsl", "shaders/nonluminous_fragment.glsl") };
 
 	//Get locations of program uniforms
@@ -244,6 +244,12 @@ fn main() {
 	let model_matrix_location = unsafe { get_uniform_location(nonluminous_shader, "model_matrix") };
 	let light_position_location = unsafe { get_uniform_location(nonluminous_shader, "light_position") };
 	let view_position_location = unsafe { get_uniform_location(nonluminous_shader, "view_position") };
+
+	//Compile 2D shaders
+	let overlay_shader = unsafe { compile_program_from_files("shaders/overlay_vertex.glsl", "shaders/overlay_fragment.glsl") };
+
+	//Get locations of 2D program unforms
+	let p_mat_location = unsafe { get_uniform_location(overlay_shader, "projection_matrix") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -342,14 +348,14 @@ fn main() {
 	let font = Font::from_bytes(include_bytes!("../fonts/Constantia.ttf") as &[u8]).unwrap();
 	let mut glyph_cache = Cache::builder().build();
 
-	let letter_A = {
+	let captial_a = {
 		let position = rusttype::Point {
 			x: 1.0,
 			y: 1.0
 		};
 		font.glyph('A').scaled(rusttype::Scale::uniform(1.0)).positioned(position)
 	};
-	glyph_cache.queue_glyph(0, letter_A);
+	glyph_cache.queue_glyph(0, captial_a);
 
 	glyph_cache.cache_queued(|rect, data| {
 		let mut data_vec = Vec::new();
@@ -363,15 +369,17 @@ fn main() {
 
 	//Create a square to draw the letter on
 	let vertices = [
-		-0.5f32, -0.5,
-		0.5, -0.5,
-		0.5, 0.5,
-		-0.5, 0.5
+		-0.5f32, -0.5,			0.0, 0.0,
+		0.5, -0.5,				1.0, 0.0,
+		0.5, 0.5,				1.0, 1.0,
+		-0.5, 0.5,				0.0, 1.0
 	];
 	let indices = [
-		0u16, 2, 1,
-		2, 0, 3
+		0u16, 1, 2,
+		0, 2, 3
 	];
+
+	let capital_a_vao = unsafe { create_vertex_array_object(&vertices, &indices, &[2, 2]) };
 
 	//Main loop
 	while !window.should_close() {
@@ -741,6 +749,23 @@ fn main() {
 				//Submit render to HMD
 				submit_to_hmd(eyes[i], &openvr_compositor, &openvr_texture_handle);
 			}
+
+			//Now that 3D rendering is over it's now time to render any 2D overlays
+
+			//Bind the 2D glsl program
+			gl::UseProgram(overlay_shader);
+
+			//Send uniforms
+			gl::UniformMatrix4fv(p_mat_location, 1, gl::FALSE, &flatten_glm(&p_matrices[2]) as *const GLfloat);
+
+			//Bind the letter's vao
+			gl::BindVertexArray(capital_a_vao);
+
+			//Bind the glyph cache texture
+			gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
+
+			//Draw call
+			gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
 		}
 
 		window.render_context().swap_buffers();

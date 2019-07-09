@@ -3,8 +3,7 @@ use std::ffi::CString;
 use std::str;
 use std::io::Read;
 use std::fs::File;
-use std::ptr;
-use std::mem;
+use std::{mem, process, ptr};
 use std::path::Path;
 use std::os::raw::c_void;
 use image::GenericImageView;
@@ -33,7 +32,16 @@ pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
 
 pub unsafe fn compile_shader_from_file(shadertype: GLenum, path: &str) -> GLuint {
 	let mut source = String::new();
-	File::open(path).unwrap().read_to_string(&mut source).unwrap();
+
+	match File::open(path) {
+		Ok(mut file) => {
+			file.read_to_string(&mut source).unwrap();
+		}
+		Err(e) => {
+			println!("{}\npath: \"{}\"", e, path);
+			process::exit(-1);
+		}
+	}
 	compile_shader(shadertype, &source)
 }
 
@@ -146,8 +154,10 @@ pub unsafe fn load_texture_from_data(image_data: ImageData) -> GLuint {
 	gl::BindTexture(gl::TEXTURE_2D, tex);
 	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
 	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
-	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+	//gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+	//gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
 
 	gl::TexImage2D(gl::TEXTURE_2D,
 				   0,
