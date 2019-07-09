@@ -223,11 +223,11 @@ fn main() {
 	//glfw.window_hint(glfw::WindowHint::Resizable(false));
 
 	//Create window
-	let window_size = (720, 720);
+	let mut window_size = (1280, 720);
 	let (mut window, events) = glfw.create_window(window_size.0, window_size.1, "Model viewer", WindowMode::Windowed).unwrap();
 
 	//Calculate window's aspect ratio
-	let aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
+	let mut aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
 
 	//Configure window
 	window.set_key_polling(true);
@@ -247,9 +247,6 @@ fn main() {
 
 	//Compile 2D shaders
 	let overlay_shader = unsafe { compile_program_from_files("shaders/overlay_vertex.glsl", "shaders/overlay_fragment.glsl") };
-
-	//Get locations of 2D program unforms
-	let p_mat_location = unsafe { get_uniform_location(overlay_shader, "projection_matrix") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -341,8 +338,8 @@ fn main() {
 
 	//Set up rendering data for later
 	let framebuffers = [vr_render_target, vr_render_target, 0];
-	let sizes = [render_target_size, render_target_size, window_size];
 	let eyes = [Some(Eye::Left), Some(Eye::Right), None];
+	let mut sizes = [render_target_size, render_target_size, window_size];
 
 	//Load the font and create the glyph cache
 	let font = Font::from_bytes(include_bytes!("../fonts/Constantia.ttf") as &[u8]).unwrap();
@@ -469,6 +466,11 @@ fn main() {
 			match event {
 				WindowEvent::Close => {
 					window.set_should_close(true);
+				}
+				WindowEvent::FramebufferSize(width, height) => {
+					window_size = (width as u32, height as u32);
+					sizes[2] = window_size;
+					aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
 				}
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
@@ -755,9 +757,6 @@ fn main() {
 			//Bind the 2D glsl program
 			gl::UseProgram(overlay_shader);
 
-			//Send uniforms
-			gl::UniformMatrix4fv(p_mat_location, 1, gl::FALSE, &flatten_glm(&p_matrices[2]) as *const GLfloat);
-
 			//Bind the letter's vao
 			gl::BindVertexArray(capital_a_vao);
 
@@ -765,7 +764,7 @@ fn main() {
 			gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
 
 			//Draw call
-			gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
+			//gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
 		}
 
 		window.render_context().swap_buffers();
