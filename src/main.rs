@@ -343,25 +343,27 @@ fn main() {
 
 	//Load the font and create the glyph cache
 	let font = Font::from_bytes(include_bytes!("../fonts/Constantia.ttf") as &[u8]).unwrap();
-	let mut glyph_cache = Cache::builder().build();
+	let mut glyph_cache = Cache::builder().dimensions(window_size.0, window_size.1).build();
 
 	let capital_a = {
 		let position = rusttype::Point {
 			x: 0.0,
 			y: 0.0
 		};
-		font.glyph('A').scaled(rusttype::Scale::uniform(200.0)).positioned(position)
+		font.glyph('A').scaled(rusttype::Scale::uniform(24.0)).positioned(position)
 	};
 	glyph_cache.queue_glyph(0, capital_a.clone());
 
 	glyph_cache.cache_queued(|rect, data| {
-		println!("{}\n{:?}", data.len(), rect);
-
+		println!("{:?}", rect);
 		let mut data_vec = Vec::new();
 		data_vec.extend_from_slice(data);
 
+		//let width = 512;
+		//let height = 512;
 		let width = rect.max.x - rect.min.x;
 		let height = rect.max.y - rect.min.y;
+		println!("data.len(): {}\nwidth: {}\nheight: {}", data.len(), width, height);
 
 		glyph_texture = unsafe { load_texture_from_data((data_vec, width, height)) };
 	}).unwrap();
@@ -370,6 +372,7 @@ fn main() {
 	let capital_a_vao = {
 		let mut temp = 0;
 		if let Ok(Some((uvs, screen_rect))) = glyph_cache.rect_for(0, &capital_a) {
+			/*
 			let vertices = [
 				-0.5f32, -0.5,			uvs.min.x, uvs.max.y,
 				0.5, -0.5,				uvs.max.x, uvs.max.y,
@@ -382,20 +385,19 @@ fn main() {
 				0, 2, 3
 			];
 			println!("{:?}", screen_rect);
+			*/
 
-			/*
 			let vertices = [
-				screen_rect.min.x, screen_rect.min.y,			uvs.min.x, uvs.min.y,
-				screen_rect.max.x, screen_rect.min.y,			uvs.max.x, uvs.min.y,
-				screen_rect.min.x, screen_rect.max.y,			uvs.min.x, uvs.max.y,
-				screen_rect.max.x, screen_rect.max.y,			uvs.max.x, uvs.max.y
+				-0.5f32 / aspect_ratio, -0.5,			0.0, 1.0,
+				0.5 / aspect_ratio, -0.5,				1.0, 1.0,
+				0.5 / aspect_ratio, 0.5,				1.0, 0.0,
+				-0.5 / aspect_ratio, 0.5,				0.0, 0.0
 			];
 
 			let indices = [
-				2u16, 1, 0,
-				3, 1, 2
+				2u16, 0, 1,
+				2, 3, 0
 			];
-			*/
 
 			temp = unsafe { create_vertex_array_object(&vertices, &indices, &[2, 2]) };
 		}
@@ -616,7 +618,7 @@ fn main() {
 
 						//If the controller just collided with it this frame
 						if is_colliding && !controllers.was_colliding[i] {
-							//sys.trigger_haptic_pulse(device_index, 0, 2000);
+							sys.trigger_haptic_pulse(device_index, 0, 2000);
 						}
 
 						if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) && is_colliding {
@@ -788,7 +790,7 @@ fn main() {
 			gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
 
 			//Draw call
-			gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
+			//gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
 		}
 
 		window.render_context().swap_buffers();
