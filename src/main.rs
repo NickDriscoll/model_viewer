@@ -10,6 +10,7 @@ use std::thread;
 use std::time::Instant;
 use std::sync::mpsc;
 use std::ptr;
+use std::os::raw::c_void;
 use obj;
 use rand::random;
 use rusttype::gpu_cache::Cache;
@@ -343,60 +344,77 @@ fn main() {
 
 	//Load the font and create the glyph cache
 	let font = Font::from_bytes(include_bytes!("../fonts/Constantia.ttf") as &[u8]).unwrap();
-	let mut glyph_cache = Cache::builder().dimensions(window_size.0, window_size.1).build();
+	let mut glyph_cache = Cache::builder().build();
 
 	let capital_a = {
+		let scale = 24.0;
+		let v_metrics = font.v_metrics(rusttype::Scale::uniform(scale));
+		let base_glyph = font.glyph('A');
+
 		let position = rusttype::Point {
 			x: 0.0,
 			y: 0.0
 		};
-		font.glyph('A').scaled(rusttype::Scale::uniform(24.0)).positioned(position)
+
+		base_glyph.scaled(rusttype::Scale::uniform(scale)).positioned(position)
 	};
 	glyph_cache.queue_glyph(0, capital_a.clone());
 
 	glyph_cache.cache_queued(|rect, data| {
 		println!("{:?}", rect);
-		let mut data_vec = Vec::new();
+		let mut data_vec = Vec::with_capacity(data.len());
 		data_vec.extend_from_slice(data);
 
-		//let width = 512;
-		//let height = 512;
-		let width = rect.max.x - rect.min.x;
-		let height = rect.max.y - rect.min.y;
-		println!("data.len(): {}\nwidth: {}\nheight: {}", data.len(), width, height);
+		unsafe {
+			gl::GenTextures(1, &mut glyph_texture);
+			gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
+			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
+			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
+			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
 
-		glyph_texture = unsafe { load_texture_from_data((data_vec, width, height)) };
+			gl::TexImage2D(gl::TEXTURE_2D,
+				   0,
+				   gl::R8 as i32,
+				   rect.width() as i32,
+				   rect.height() as i32,
+				   0,
+				   gl::RED,
+				   gl::UNSIGNED_BYTE,
+				   &data[0] as *const u8 as *const c_void);
+			gl::GenerateMipmap(gl::TEXTURE_2D);
+		};
 	}).unwrap();
 
 	//Create a square to draw the letter on
 	let capital_a_vao = {
 		let mut temp = 0;
-		if let Ok(Some((uvs, screen_rect))) = glyph_cache.rect_for(0, &capital_a) {
+		if let Ok(Some((uv_rect, screen_rect))) = glyph_cache.rect_for(0, &capital_a) {
+			println!("screen_rect: {:?}", screen_rect);
+			let minx = screen_rect.min.x as f32 / window_size.0 as f32 - 0.5;
+			let miny = screen_rect.min.y as f32 / window_size.1 as f32 - 0.5;
+			let maxx = screen_rect.max.x as f32 / window_size.0 as f32 - 0.5;
+			let maxy = screen_rect.max.y as f32 / window_size.1 as f32 - 0.5;
+
 			/*
 			let vertices = [
-				-0.5f32, -0.5,			uvs.min.x, uvs.max.y,
-				0.5, -0.5,				uvs.max.x, uvs.max.y,
-				0.5, 0.5,				uvs.max.x, uvs.min.y,
-				-0.5, 0.5,				uvs.min.x, uvs.min.y
+				minx, miny,			uv_rect.min.x, uv_rect.min.y,
+				minx, maxy,			uv_rect.min.x, uv_rect.max.y,
+				maxx, miny,			uv_rect.max.x, uv_rect.min.y,
+				maxx, maxy,			uv_rect.max.x, uv_rect.max.y
 			];
-
-			let indices = [
-				0u16, 1, 2,
-				0, 2, 3
-			];
-			println!("{:?}", screen_rect);
 			*/
-
+			
 			let vertices = [
-				-0.5f32 / aspect_ratio, -0.5,			0.0, 1.0,
-				0.5 / aspect_ratio, -0.5,				1.0, 1.0,
-				0.5 / aspect_ratio, 0.5,				1.0, 0.0,
-				-0.5 / aspect_ratio, 0.5,				0.0, 0.0
+				minx, miny,			0.0, 1.0,
+				minx, maxy,			0.0, 0.0,
+				maxx, miny,			1.0, 1.0,
+				maxx, maxy,			1.0, 0.0
 			];
 
 			let indices = [
-				2u16, 0, 1,
-				2, 3, 0
+				0u16, 2, 1,
+				1, 2, 3
 			];
 
 			temp = unsafe { create_vertex_array_object(&vertices, &indices, &[2, 2]) };
@@ -460,14 +478,12 @@ fn main() {
 		}
 
 		//Check if a new model has been loaded
-		if let Ok(package) = load_rx.try_recv() {
-			if let Some(pack) = package {
-				let vao = unsafe { create_vertex_array_object(&pack.0, &pack.1, &[3, 3, 2]) };
-				let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), brick_texture, pack.1.len() as i32);
-				model_indices.push(Some(meshes.insert(mesh)));
-				bound_controller_indices.push(None);
-				model_to_controller_matrices.push(glm::identity());
-			}
+		if let Ok(Some(package)) = load_rx.try_recv() {
+			let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
+			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), brick_texture, package.1.len() as i32);
+			model_indices.push(Some(meshes.insert(mesh)));
+			bound_controller_indices.push(None);
+			model_to_controller_matrices.push(glm::identity());
 		}
 
 		//Check if there are any textures to be received from the worker thread
@@ -790,7 +806,7 @@ fn main() {
 			gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
 
 			//Draw call
-			//gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
+			gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
 		}
 
 		window.render_context().swap_buffers();

@@ -9,6 +9,7 @@ use std::os::raw::c_void;
 use image::GenericImageView;
 use openvr::{Compositor, Eye};
 
+//pub type ImageData = (Vec<u8>, u32, u32);
 pub type ImageData = (Vec<u8>, u32, u32);
 const INFO_LOG_SIZE: usize = 512;
 
@@ -154,8 +155,8 @@ pub unsafe fn load_texture_from_data(image_data: ImageData) -> GLuint {
 	gl::BindTexture(gl::TEXTURE_2D, tex);
 	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
 	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
-	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
-	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
 
 	gl::TexImage2D(gl::TEXTURE_2D,
 				   0,
