@@ -13,8 +13,8 @@ use std::ptr;
 use std::os::raw::c_void;
 use obj;
 use rand::random;
-use rusttype::gpu_cache::Cache;
-use rusttype::Font;
+use glyph_brush::{BrushAction, BrushError, GlyphBrushBuilder, GlyphVertex, Section};
+use glyph_brush::rusttype::Rect;
 use crate::structs::*;
 use crate::glutil::*;
 use self::gl::types::*;
@@ -309,7 +309,7 @@ fn main() {
 			Some(obj) => {
 				let vao = create_vertex_array_object(&obj.0, &obj.1, &[3, 3, 2]);
 				let t = glm::vec4_to_vec3(&light_position);
-				let mesh = Mesh::new(vao, glm::translation(&t) * uniform_scale(0.1), 0, obj.1.len() as i32);
+				let mesh = Mesh::new(vao, glm::translation(&t) * uniform_scale(0.05), 0, obj.1.len() as i32);
 				Some(meshes.insert(mesh))
 			}
 			None => {
@@ -343,84 +343,12 @@ fn main() {
 	let mut sizes = [render_target_size, render_target_size, window_size];
 
 	//Load the font and create the glyph cache
-	let font = Font::from_bytes(include_bytes!("../fonts/Constantia.ttf") as &[u8]).unwrap();
-	let mut glyph_cache = Cache::builder().build();
+	let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(include_bytes!("../fonts/Constantia.ttf") as &[u8]).build();
 
-	let capital_a = {
-		let scale = 24.0;
-		let v_metrics = font.v_metrics(rusttype::Scale::uniform(scale));
-		let base_glyph = font.glyph('A');
-
-		let position = rusttype::Point {
-			x: 0.0,
-			y: 0.0
-		};
-
-		base_glyph.scaled(rusttype::Scale::uniform(scale)).positioned(position)
-	};
-	glyph_cache.queue_glyph(0, capital_a.clone());
-
-	glyph_cache.cache_queued(|rect, data| {
-		println!("{:?}", rect);
-		let mut data_vec = Vec::with_capacity(data.len());
-		data_vec.extend_from_slice(data);
-
-		unsafe {
-			gl::GenTextures(1, &mut glyph_texture);
-			gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
-			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
-			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
-			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
-			gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
-
-			gl::TexImage2D(gl::TEXTURE_2D,
-				   0,
-				   gl::R8 as i32,
-				   rect.width() as i32,
-				   rect.height() as i32,
-				   0,
-				   gl::RED,
-				   gl::UNSIGNED_BYTE,
-				   &data[0] as *const u8 as *const c_void);
-			gl::GenerateMipmap(gl::TEXTURE_2D);
-		};
-	}).unwrap();
-
-	//Create a square to draw the letter on
-	let capital_a_vao = {
-		let mut temp = 0;
-		if let Ok(Some((uv_rect, screen_rect))) = glyph_cache.rect_for(0, &capital_a) {
-			println!("screen_rect: {:?}", screen_rect);
-			let minx = screen_rect.min.x as f32 / window_size.0 as f32 - 0.5;
-			let miny = screen_rect.min.y as f32 / window_size.1 as f32 - 0.5;
-			let maxx = screen_rect.max.x as f32 / window_size.0 as f32 - 0.5;
-			let maxy = screen_rect.max.y as f32 / window_size.1 as f32 - 0.5;
-
-			/*
-			let vertices = [
-				minx, miny,			uv_rect.min.x, uv_rect.min.y,
-				minx, maxy,			uv_rect.min.x, uv_rect.max.y,
-				maxx, miny,			uv_rect.max.x, uv_rect.min.y,
-				maxx, maxy,			uv_rect.max.x, uv_rect.max.y
-			];
-			*/
-			
-			let vertices = [
-				minx, miny,			0.0, 1.0,
-				minx, maxy,			0.0, 0.0,
-				maxx, miny,			1.0, 1.0,
-				maxx, maxy,			1.0, 0.0
-			];
-
-			let indices = [
-				0u16, 2, 1,
-				1, 2, 3
-			];
-
-			temp = unsafe { create_vertex_array_object(&vertices, &indices, &[2, 2]) };
-		}
-		temp
-	};
+	glyph_brush.queue(Section {
+		text: "Please actually work",
+		..Section::default()
+	});
 
 	//Main loop
 	while !window.should_close() {
@@ -794,19 +722,48 @@ fn main() {
 				submit_to_hmd(eyes[i], &openvr_compositor, &openvr_texture_handle);
 			}
 
+			let update_glyph_texture = |rect: Rect<u32>, tex_data: &[u8]| {
+				gl::GenTextures(1, &mut glyph_texture);
+				gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
+				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
+				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
+				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+
+				gl::TexImage2D(gl::TEXTURE_2D,
+							   0,
+							   gl::R8 as i32,
+							   rect.width() as i32,
+							   rect.height() as i32,
+							   0,
+							   gl::RED,
+							   gl::UNSIGNED_BYTE,
+							   &tex_data[0] as *const u8 as *const c_void);
+				gl::GenerateMipmap(gl::TEXTURE_2D);
+			};
+
+			let glyph_brush_to_vertex = |vertex_data: GlyphVertex| {
+				[
+					vertex_data.pixel_coords.min.x as f32 / window_size.0 as f32, vertex_data.pixel_coords.min.y as f32 / window_size.1 as f32, vertex_data.tex_coords.min.x, vertex_data.tex_coords.min.y, 
+					vertex_data.pixel_coords.max.x as f32 / window_size.0 as f32, vertex_data.pixel_coords.min.y as f32 / window_size.1 as f32, vertex_data.tex_coords.max.x, vertex_data.tex_coords.min.y, 
+					vertex_data.pixel_coords.min.x as f32 / window_size.0 as f32, vertex_data.pixel_coords.max.y as f32 / window_size.1 as f32, vertex_data.tex_coords.min.x, vertex_data.tex_coords.max.y, 
+					vertex_data.pixel_coords.max.x as f32 / window_size.0 as f32, vertex_data.pixel_coords.max.y as f32 / window_size.1 as f32, vertex_data.tex_coords.max.x, vertex_data.tex_coords.max.y
+				]
+			};
+
 			//Now that 3D rendering is over it's now time to render any 2D overlays
+			match glyph_brush.process_queued(update_glyph_texture, glyph_brush_to_vertex) {
+				Ok(BrushAction::Draw(verts)) => {
+					for vert in verts {
+						for i in (0..16).step_by(4) {
+							println!("{}\t{}\t{}\t{}", vert[0 + i], vert[1 + i], vert[2 + i], vert[3 + i])
+						}
+						println!("\n");
+					}
+				}
+				_ => {}
+			}
 
-			//Bind the 2D glsl program
-			gl::UseProgram(overlay_shader);
-
-			//Bind the letter's vao
-			gl::BindVertexArray(capital_a_vao);
-
-			//Bind the glyph cache texture
-			gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
-
-			//Draw call
-			gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
 		}
 
 		window.render_context().swap_buffers();
