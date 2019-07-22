@@ -10,11 +10,8 @@ use std::thread;
 use std::time::Instant;
 use std::sync::mpsc;
 use std::ptr;
-use std::os::raw::c_void;
 use obj;
 use rand::random;
-use glyph_brush::{BrushAction, BrushError, GlyphBrushBuilder, GlyphVertex, Section};
-use glyph_brush::rusttype::{Scale, Rect};
 use crate::structs::*;
 use crate::glutil::*;
 use self::gl::types::*;
@@ -246,9 +243,6 @@ fn main() {
 	let light_position_location = unsafe { get_uniform_location(nonluminous_shader, "light_position") };
 	let view_position_location = unsafe { get_uniform_location(nonluminous_shader, "view_position") };
 
-	//Compile 2D shaders
-	let overlay_shader = unsafe { compile_program_from_files("shaders/overlay_vertex.glsl", "shaders/overlay_fragment.glsl") };
-
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
 	let openvr_texture_handle = Texture {
@@ -278,7 +272,6 @@ fn main() {
 	//Textures
 	let checkerboard_texture = unsafe { load_texture("textures/checkerboard.jpg") };
 	let mut brick_texture = 0;
-	let mut glyph_texture = 0;
 
 	//OptionVec of meshes
 	let mut meshes = OptionVec::with_capacity(5);
@@ -341,16 +334,6 @@ fn main() {
 	let framebuffers = [vr_render_target, vr_render_target, 0];
 	let eyes = [Some(Eye::Left), Some(Eye::Right), None];
 	let mut sizes = [render_target_size, render_target_size, window_size];
-
-	//Load the font and create the glyph cache
-	let mut text_vao = 0;
-	let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(include_bytes!("../fonts/Constantia.ttf") as &[u8]).build();
-
-	glyph_brush.queue(Section {
-		text: "P",
-		scale: Scale::uniform(32.0),
-		..Section::default()
-	});
 
 	//Main loop
 	while !window.should_close() {
@@ -723,67 +706,6 @@ fn main() {
 				//Submit render to HMD
 				submit_to_hmd(eyes[i], &openvr_compositor, &openvr_texture_handle);
 			}
-
-			let update_glyph_texture = |rect: Rect<u32>, tex_data: &[u8]| {
-				gl::GenTextures(1, &mut glyph_texture);
-				gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
-				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
-				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
-				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
-				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
-
-				gl::TexImage2D(gl::TEXTURE_2D,
-							   0,
-							   gl::R8 as i32,
-							   rect.width() as i32,
-							   rect.height() as i32,
-							   0,
-							   gl::RED,
-							   gl::UNSIGNED_BYTE,
-							   &tex_data[0] as *const u8 as *const c_void);
-				gl::GenerateMipmap(gl::TEXTURE_2D);
-			};
-
-			let glyph_brush_to_vertex = |vertex_data: GlyphVertex| {
-				[
-					vertex_data.pixel_coords.min.x as f32 / window_size.0 as f32, vertex_data.pixel_coords.min.y as f32 / window_size.1 as f32, vertex_data.tex_coords.min.x, vertex_data.tex_coords.min.y, 
-					vertex_data.pixel_coords.max.x as f32 / window_size.0 as f32, vertex_data.pixel_coords.min.y as f32 / window_size.1 as f32, vertex_data.tex_coords.max.x, vertex_data.tex_coords.min.y, 
-					vertex_data.pixel_coords.min.x as f32 / window_size.0 as f32, vertex_data.pixel_coords.max.y as f32 / window_size.1 as f32, vertex_data.tex_coords.min.x, vertex_data.tex_coords.max.y, 
-					vertex_data.pixel_coords.max.x as f32 / window_size.0 as f32, vertex_data.pixel_coords.max.y as f32 / window_size.1 as f32, vertex_data.tex_coords.max.x, vertex_data.tex_coords.max.y
-				]
-			};
-
-			//Now that 3D rendering is over it's now time to render any 2D overlays
-			gl::UseProgram(overlay_shader);
-			match glyph_brush.process_queued(update_glyph_texture, glyph_brush_to_vertex) {
-				Ok(BrushAction::Draw(verts)) => {
-					let indices = [
-						1u16, 2, 0,
-						1, 3, 2
-					];
-
-					//Create the text's vao
-					println!("{:?}", verts);
-					if verts.len() > 0 {
-						text_vao = create_vertex_array_object(&verts[0], &indices, &[2, 2]);
-					}
-
-					//Draw the text
-					gl::BindVertexArray(text_vao);
-					gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
-					gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
-				}
-				Ok(BrushAction::ReDraw) => {
-					//Draw the text
-					gl::BindVertexArray(text_vao);
-					gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
-					gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
-				}
-				Err(e) => {
-					println!("{:?}", e);
-				}
-			}
-
 		}
 
 		window.render_context().swap_buffers();
