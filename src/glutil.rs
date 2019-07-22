@@ -93,8 +93,6 @@ pub unsafe fn submit_to_hmd(eye: Option<Eye>, openvr_compositor: &Option<Composi
 }
 
 pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16], attribute_strides: &[i32]) -> GLuint {
-	//let attribute_strides = [3, 3, 2];
-
 	let (mut vbo, mut vao, mut ebo) = (0, 0, 0);
 	gl::GenVertexArrays(1, &mut vao);
 	gl::GenBuffers(1, &mut vbo);

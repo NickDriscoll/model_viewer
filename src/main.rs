@@ -14,7 +14,7 @@ use std::os::raw::c_void;
 use obj;
 use rand::random;
 use glyph_brush::{BrushAction, BrushError, GlyphBrushBuilder, GlyphVertex, Section};
-use glyph_brush::rusttype::Rect;
+use glyph_brush::rusttype::{Scale, Rect};
 use crate::structs::*;
 use crate::glutil::*;
 use self::gl::types::*;
@@ -343,10 +343,12 @@ fn main() {
 	let mut sizes = [render_target_size, render_target_size, window_size];
 
 	//Load the font and create the glyph cache
+	let mut text_vao = 0;
 	let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(include_bytes!("../fonts/Constantia.ttf") as &[u8]).build();
 
 	glyph_brush.queue(Section {
-		text: "Please actually work",
+		text: "P",
+		scale: Scale::uniform(32.0),
 		..Section::default()
 	});
 
@@ -752,16 +754,34 @@ fn main() {
 			};
 
 			//Now that 3D rendering is over it's now time to render any 2D overlays
+			gl::UseProgram(overlay_shader);
 			match glyph_brush.process_queued(update_glyph_texture, glyph_brush_to_vertex) {
 				Ok(BrushAction::Draw(verts)) => {
-					for vert in verts {
-						for i in (0..16).step_by(4) {
-							println!("{}\t{}\t{}\t{}", vert[0 + i], vert[1 + i], vert[2 + i], vert[3 + i])
-						}
-						println!("\n");
+					let indices = [
+						1u16, 2, 0,
+						1, 3, 2
+					];
+
+					//Create the text's vao
+					println!("{:?}", verts);
+					if verts.len() > 0 {
+						text_vao = create_vertex_array_object(&verts[0], &indices, &[2, 2]);
 					}
+
+					//Draw the text
+					gl::BindVertexArray(text_vao);
+					gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
+					gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
 				}
-				_ => {}
+				Ok(BrushAction::ReDraw) => {
+					//Draw the text
+					gl::BindVertexArray(text_vao);
+					gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
+					gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
+				}
+				Err(e) => {
+					println!("{:?}", e);
+				}
 			}
 
 		}
