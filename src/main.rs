@@ -1,7 +1,7 @@
 extern crate gl;
 extern crate nalgebra_glm as glm;
 use glfw::{Action, Context, CursorMode, Key, MouseButton, WindowMode, WindowEvent};
-use openvr::{ApplicationType, button_id, ControllerState, Eye, System, RenderModels, TrackedControllerRole, TrackedDevicePose};
+use openvr::{ApplicationType, button_id, ControllerState, Eye, System, RenderModels, TrackedControllerRole};
 use openvr::compositor::texture::{ColorSpace, Handle, Texture};
 use nfd::Response;
 use std::fs::File;
@@ -19,7 +19,8 @@ use self::gl::types::*;
 mod structs;
 mod glutil;
 
-const NEAR_Z: f32 = 0.25;
+//The distances of the near and far clipping planes from the origin
+const NEAR_Z: f32 = 0.05;
 const FAR_Z: f32 = 50.0;
 
 type MeshArrays = (Vec<f32>, Vec<u16>);
@@ -54,17 +55,9 @@ fn get_projection_matrix(sys: &System, eye: Eye) -> glm::TMat4<f32> {
 		)
 }
 
-fn attach_mesh_to_controller(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevicePose], controller_index: &Option<u32>, mesh_index: Option<usize>) {
-	if let Some(index) = controller_index {
-		let controller_model_matrix = openvr_to_mat4(*poses[*index as usize].device_to_absolute_tracking());
-		if let Some(mesh) = get_mesh(meshes, mesh_index) {
-			mesh.model_matrix = controller_model_matrix;
-		}
-	}
-}
-
-fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, meshes: &mut OptionVec<Mesh>, index: u32) -> [Option<usize>; 2] {
-	let mut result = [None; 2];
+//This returns the vao and texture id of the mesh
+fn load_openvr_mesh<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, index: u32) -> Option<(GLuint, GLuint, GLsizei)> {
+	let mut result = None;
 	if let (Some(ref sys), Some(ref ren_mod)) = (&openvr_system, &openvr_rendermodels) {
 		let name = sys.string_tracked_device_property(index, openvr::property::RenderModelName_String).unwrap();
 		if let Some(model) = ren_mod.load_render_model(&name).unwrap() {
@@ -87,16 +80,10 @@ fn load_controller_meshes<'a>(openvr_system: &Option<System>, openvr_rendermodel
 					//Create vao
 					let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]) };
 
-					//Create texture on GPU
+					//Create texture
 					let t = unsafe { load_texture_from_data((tex.data().to_vec(), tex.dimensions().0 as u32, tex.dimensions().1 as u32)) };
 
-					let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), t, model.indices().len() as i32);
-					let left_index = Some(meshes.insert(mesh));
-
-					let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), t, model.indices().len() as i32);
-					let right_index = Some(meshes.insert(mesh));
-
-					result = [left_index, right_index];					
+					result = Some((vao, t, model.indices().len() as GLsizei));
 				}
 			}
 		}
@@ -359,16 +346,15 @@ fn main() {
 
 		//Load controller meshes if we haven't already
 		if let None = controllers.mesh_indices[0] {
-			for i in 0..controllers.device_indices.len() {
-				if let Some(index) = controllers.device_indices[i] {
-					controllers.mesh_indices = load_controller_meshes(&openvr_system,
-														  &openvr_rendermodels,
-														  &mut meshes,
-														  index);
+			if let Some(index) = controllers.device_indices[0] {
+				if let Some((vao, tex, ind_count)) = load_openvr_mesh(&openvr_system, &openvr_rendermodels, index) {					
+					println!("({}, {}, {})", vao, tex, ind_count);
 
-					//We break here because the models only need to be loaded once, but we still want to check both controller indices if necessary
-					//I should probably check if it is even possible for a higher controller index to be loaded first
-					break;
+					let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), tex, ind_count);
+					controllers.mesh_indices[0] = Some(meshes.insert(mesh));
+
+					let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), tex, ind_count);
+					controllers.mesh_indices[1] = Some(meshes.insert(mesh));
 				}
 			}
 		}
@@ -632,7 +618,12 @@ fn main() {
 		//Ensure controller meshes are drawn at each controller's position
 		if let Some(poses) = render_poses {
 			for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
-				attach_mesh_to_controller(&mut meshes, &poses, &controllers.device_indices[i], controllers.mesh_indices[i]);
+				if let Some(index) = &controllers.device_indices[i] {
+					let controller_model_matrix = openvr_to_mat4(*poses[*index as usize].device_to_absolute_tracking());
+					if let Some(mesh) = get_mesh(&mut meshes, controllers.mesh_indices[i]) {
+						mesh.model_matrix = controller_model_matrix;
+					}
+				}
 			}
 		}
 
