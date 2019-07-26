@@ -56,7 +56,7 @@ fn get_projection_matrix(sys: &System, eye: Eye) -> glm::TMat4<f32> {
 }
 
 //This returns the vao and texture id of the mesh
-fn load_openvr_mesh<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, index: u32) -> Option<(GLuint, GLuint, GLsizei)> {
+fn load_openvr_mesh<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, index: u32) -> Option<Mesh> {
 	let mut result = None;
 	if let (Some(ref sys), Some(ref ren_mod)) = (&openvr_system, &openvr_rendermodels) {
 		let name = sys.string_tracked_device_property(index, openvr::property::RenderModelName_String).unwrap();
@@ -83,7 +83,7 @@ fn load_openvr_mesh<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Op
 					//Create texture
 					let t = unsafe { load_texture_from_data((tex.data().to_vec(), tex.dimensions().0 as u32, tex.dimensions().1 as u32)) };
 
-					result = Some((vao, t, model.indices().len() as GLsizei));
+					result = Some(Mesh::new(vao, glm::identity(), t, model.indices().len() as GLsizei));
 				}
 			}
 		}
@@ -306,6 +306,8 @@ fn main() {
 	//Initialize the struct of arrays containing controller related state
 	let mut controllers = Controllers::new();
 
+	let mut hmd_mesh_index = None;
+
 	//Gameplay state
 	let mut ticks = 0.0;
 
@@ -347,15 +349,19 @@ fn main() {
 		//Load controller meshes if we haven't already
 		if let None = controllers.mesh_indices[0] {
 			if let Some(index) = controllers.device_indices[0] {
-				if let Some((vao, tex, ind_count)) = load_openvr_mesh(&openvr_system, &openvr_rendermodels, index) {					
-					println!("({}, {}, {})", vao, tex, ind_count);
-
-					let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), tex, ind_count);
-					controllers.mesh_indices[0] = Some(meshes.insert(mesh));
-
-					let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, -1.0, 0.0)), tex, ind_count);
+				if let Some(mesh) = load_openvr_mesh(&openvr_system, &openvr_rendermodels, index) {
+					controllers.mesh_indices[0] = Some(meshes.insert(mesh.clone()));
 					controllers.mesh_indices[1] = Some(meshes.insert(mesh));
 				}
+			}
+		}
+
+		//Load HMD mesh if we haven't already
+		if let None = hmd_mesh_index {
+			if let Some(mut mesh) = load_openvr_mesh(&openvr_system, &openvr_rendermodels, 0) {
+				//Make this model only visible to the companion window
+				mesh.render_pass_visibilities = [false, false, true];
+				hmd_mesh_index = Some(meshes.insert(mesh));
 			}
 		}
 
@@ -615,6 +621,14 @@ fn main() {
 		camera.position += glm::vec4_to_vec3(&(seconds_elapsed * (glm::affine_inverse(v_matrices[2]) * glm::vec3_to_vec4(&camera.velocity))));
 		camera.fov += camera.fov_delta * seconds_elapsed;
 
+		//Ensure HMD mesh is drawn at the HMD's actual position
+		if let Some(poses) = render_poses {
+			let hmd_to_absolute = openvr_to_mat4(*poses[0].device_to_absolute_tracking());
+			if let Some(mesh) = get_mesh(&mut meshes, hmd_mesh_index) {
+				mesh.model_matrix = hmd_to_absolute;
+			}
+		}
+
 		//Ensure controller meshes are drawn at each controller's position
 		if let Some(poses) = render_poses {
 			for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
@@ -665,32 +679,34 @@ fn main() {
 				gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 				for option_mesh in meshes.iter() {
 					if let Some(mesh) = option_mesh {
-						//Compute the model-view-projection matrix
-						let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
+						if mesh.render_pass_visibilities[i] {
+							//Compute the model-view-projection matrix
+							let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
 
-						//Send matrix uniforms to GPU
-						let mat_locs = [mvp_location, model_matrix_location];
-						let mats = [mvp, mesh.model_matrix];
-						for i in 0..mat_locs.len() {
-							gl::UniformMatrix4fv(mat_locs[i], 1, gl::FALSE, &flatten_glm(&mats[i]) as *const GLfloat);
+							//Send matrix uniforms to GPU
+							let mat_locs = [mvp_location, model_matrix_location];
+							let mats = [mvp, mesh.model_matrix];
+							for i in 0..mat_locs.len() {
+								gl::UniformMatrix4fv(mat_locs[i], 1, gl::FALSE, &flatten_glm(&mats[i]) as *const GLfloat);
+							}
+
+							//Send vector uniforms to GPU
+							let vec_locs = [light_position_location, view_position_location];
+							let vecs = [light_position, view_positions[i]];
+							for i in 0..vec_locs.len() {
+								let pos = [vecs[i].x, vecs[i].y, vecs[i].z, 1.0];
+								gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);
+							}
+
+							//Bind the mesh's texture
+							gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
+
+							//Bind the mesh's vertex array object
+							gl::BindVertexArray(mesh.vao);
+
+							//Draw call
+							gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
 						}
-
-						//Send vector uniforms to GPU
-						let vec_locs = [light_position_location, view_position_location];
-						let vecs = [light_position, view_positions[i]];
-						for i in 0..vec_locs.len() {
-							let pos = [vecs[i].x, vecs[i].y, vecs[i].z, 1.0];
-							gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);
-						}
-
-						//Bind the mesh's texture
-						gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
-
-						//Bind the mesh's vertex array object
-						gl::BindVertexArray(mesh.vao);
-
-						//Draw call
-						gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
 					}
 				}
 

@@ -4,11 +4,13 @@ use std::slice::Iter;
 use std::ops::{Index, IndexMut};
 
 //A renderable 3D thing
+#[derive(Clone)]
 pub struct Mesh {
 	pub vao: GLuint, //Vertex array object
 	pub model_matrix: glm::TMat4<f32>, //Matrix that transforms points in model space to world space
 	pub texture: GLuint, //Texture
-	pub indices_count: GLsizei //Number of indices in index array
+	pub indices_count: GLsizei, //Number of indices in index array
+	pub render_pass_visibilities: [bool; 3]
 }
 
 impl Mesh {
@@ -17,7 +19,8 @@ impl Mesh {
 			vao,
 			model_matrix,
 			texture,
-			indices_count
+			indices_count,
+			render_pass_visibilities: [true, true, true]
 		}
 	}
 }
@@ -48,24 +51,6 @@ impl Camera {
 		}
 	}
 }
-
-/*
-pub struct RenderContext {
-	program: GLuint,
-	mat4_locations: Vec<GLint>,
-	vec4_locations: Vec<GLint>
-}
-
-impl RenderContext {
-	pub fn new(program: GLuint, mat4_locations: Vec<GLint>, vec4_locations: Vec<GLint>) -> Self {
-		RenderContext {
-			program,
-			mat4_locations,
-			vec4_locations
-		}
-	}
-}
-*/
 
 //Struct of arrays that stores VR controller data.
 pub struct Controllers {
@@ -103,9 +88,8 @@ pub struct OptionVec<T> {
 
 impl<T> OptionVec<T> {
 	pub fn with_capacity(size: usize) -> Self {
-		let optionvec = Vec::with_capacity(size);
 		OptionVec {
-			optionvec
+			optionvec: Vec::with_capacity(size)
 		}
 	}
 
@@ -120,7 +104,7 @@ impl<T> OptionVec<T> {
 			}
 		}
 
-		//Fill the empty space if an index was found, push otherwise
+		//Fill an empty space if one was found, push onto the end otherwise
 		match index {
 			Some(i) => {
 				self.optionvec[i] = Some(element);
