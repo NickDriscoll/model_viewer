@@ -164,6 +164,22 @@ fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
 	glm::scaling(&glm::vec3(scale, scale, scale))
 }
 
+unsafe fn plane_mesh(model_matrix: glm::TMat4<f32>, texture: GLuint) -> Mesh {
+	let vertices = [
+		//Positions					//Normals							//Tex coords
+		-0.5f32, 0.0, -0.5,			0.0, 1.0, 0.0,						0.0, 0.0,
+		-0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						0.0, 8.0,
+		0.5, 0.0, -0.5,				0.0, 1.0, 0.0,						8.0, 0.0,
+		0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						8.0, 8.0
+	];
+	let indices = [
+		0u16, 1, 2,
+		1, 3, 2
+	];
+	let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
+	Mesh::new(vao, model_matrix, texture, indices.len() as i32)
+}
+
 fn main() {
 	//Initialize OpenVR
 	let openvr_context = unsafe {
@@ -263,24 +279,15 @@ fn main() {
 	//OptionVec of meshes
 	let mut meshes = OptionVec::with_capacity(5);
 
-	//Create the floor
-	unsafe {
-		let vertices = [
-			//Positions					//Normals							//Tex coords
-			-0.5f32, 0.0, -0.5,			0.0, 1.0, 0.0,						0.0, 0.0,
-			-0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						0.0, 8.0,
-			0.5, 0.0, -0.5,				0.0, 1.0, 0.0,						8.0, 0.0,
-			0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						8.0, 8.0
-		];
-		let indices = [
-			0u16, 1, 2,
-			1, 3, 2
-		];
-		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
-		let scale = 10.0;
-		let mesh = Mesh::new(vao, uniform_scale(scale), checkerboard_texture, indices.len() as i32);
-		meshes.insert(mesh);
-	}
+	//Create the walls, floor, and ceiling
+	let scale = 10.0;
+	unsafe { meshes.insert(plane_mesh(uniform_scale(scale), checkerboard_texture)); }
+	
+	let model_matrix = glm::translation(&glm::vec3(5.0, 5.0, 0.0)) * glm::rotation(glm::half_pi(), &glm::vec3(0.0, 0.0, 1.0)) * uniform_scale(scale);
+	unsafe { meshes.insert(plane_mesh(model_matrix, checkerboard_texture)); }
+	
+	let model_matrix = glm::translation(&glm::vec3(0.0, 5.0, -5.0)) * glm::rotation(glm::half_pi(), &glm::vec3(1.0, 0.0, 0.0)) * uniform_scale(scale);
+	unsafe { meshes.insert(plane_mesh(model_matrix, checkerboard_texture)); }
 
 	//Create the sphere that represents the light source
 	let mut light_position = glm::vec4(0.0, 1.0, 0.0, 1.0);
