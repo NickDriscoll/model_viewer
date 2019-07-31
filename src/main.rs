@@ -280,14 +280,20 @@ fn main() {
 	let mut meshes = OptionVec::with_capacity(5);
 
 	//Create the walls, floor, and ceiling
-	let scale = 10.0;
-	unsafe { meshes.insert(plane_mesh(uniform_scale(scale), checkerboard_texture)); }
-	
-	let model_matrix = glm::translation(&glm::vec3(5.0, 5.0, 0.0)) * glm::rotation(glm::half_pi(), &glm::vec3(0.0, 0.0, 1.0)) * uniform_scale(scale);
-	unsafe { meshes.insert(plane_mesh(model_matrix, checkerboard_texture)); }
-	
-	let model_matrix = glm::translation(&glm::vec3(0.0, 5.0, -5.0)) * glm::rotation(glm::half_pi(), &glm::vec3(1.0, 0.0, 0.0)) * uniform_scale(scale);
-	unsafe { meshes.insert(plane_mesh(model_matrix, checkerboard_texture)); }
+	unsafe {
+		let scale = 10.0;
+		let matrices = [
+			uniform_scale(scale),
+			glm::translation(&glm::vec3(5.0, 5.0, 0.0)) * glm::rotation(glm::half_pi(), &glm::vec3(0.0, 0.0, 1.0)) * uniform_scale(scale),
+			glm::translation(&glm::vec3(0.0, 5.0, -5.0)) * glm::rotation(glm::half_pi(), &glm::vec3(1.0, 0.0, 0.0)) * uniform_scale(scale),
+			glm::translation(&glm::vec3(0.0, 5.0, 5.0)) * glm::rotation(3.0 * glm::half_pi::<f32>(), &glm::vec3(1.0, 0.0, 0.0)) * uniform_scale(scale),
+			glm::translation(&glm::vec3(-5.0, 5.0, 0.0)) * glm::rotation(3.0 * glm::half_pi::<f32>(), &glm::vec3(0.0, 0.0, 1.0)) * uniform_scale(scale)
+		];
+
+		for matrix in &matrices {
+			meshes.insert(plane_mesh(*matrix, checkerboard_texture));
+		}
+	}
 
 	//Create the sphere that represents the light source
 	let mut light_position = glm::vec4(0.0, 1.0, 0.0, 1.0);
