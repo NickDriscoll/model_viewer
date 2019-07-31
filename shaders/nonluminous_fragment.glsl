@@ -21,6 +21,7 @@ void main() {
 	vec3 tex_color = texture(tex, v_tex_coords).rgb;
 
 	//Get light direction vector from light position
+	//From frag location to light source
 	vec4 light_direction = normalize(light_position - f_pos);
 
 	//Get ambient contribution
@@ -36,6 +37,9 @@ void main() {
 	float specular_angle = max(0.0, dot(norm, half_dir));
 	vec3 specular = pow(specular_angle, SHININESS) * LIGHT_COLOR;
 
-	vec3 result = tex_color * (ambient + diffuse + specular);
+	//Calculate distance attenuation
+	float attenuation = clamp(2.0 / length(light_position - f_pos), 0.0, 1.0);
+
+	vec3 result = attenuation * tex_color * (ambient + diffuse + specular);
 	frag_color = vec4(result, 1.0);
 }
