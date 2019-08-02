@@ -180,12 +180,13 @@ pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint
 	let mut vr_render_texture = 0;
 	gl::GenTextures(1, &mut vr_render_texture);
 	gl::BindTexture(gl::TEXTURE_2D, vr_render_texture);
-	gl::TexImage2D(gl::TEXTURE_2D, 0,
-					   gl::RGB as i32,
+	gl::TexImage2D(gl::TEXTURE_2D,
+					   0,
+					   gl::RGBA as i32,
 					   render_target_size.0 as GLsizei,
 					   render_target_size.1 as GLsizei,
 					   0,
-					   gl::RGB,
+					   gl::RGBA,
 					   gl::UNSIGNED_BYTE,
 					   0 as *const c_void);
 	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
