@@ -83,7 +83,10 @@ fn load_openvr_mesh<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Op
 					//Create texture
 					let t = unsafe { load_texture_from_data((tex.data().to_vec(), tex.dimensions().0 as u32, tex.dimensions().1 as u32)) };
 
-					result = Some(Mesh::new(vao, glm::identity(), t, model.indices().len() as GLsizei));
+					let mut mesh = Mesh::new(vao, glm::identity(), t, model.indices().len() as GLsizei);
+					mesh.attached_to_tracking_space = true;
+
+					result = Some(mesh);
 				}
 			}
 		}
@@ -220,9 +223,6 @@ fn main() {
 	glfw.window_hint(glfw::WindowHint::ContextVersion(3, 3));
 	glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
 
-	//Disable window resizing
-	//glfw.window_hint(glfw::WindowHint::Resizable(false));
-
 	//Create window
 	let mut window_size = (1280, 720);
 	let (mut window, events) = glfw.create_window(window_size.0, window_size.1, "Model viewer", WindowMode::Windowed).unwrap();
@@ -277,17 +277,17 @@ fn main() {
 	let mut brick_texture = 0;
 
 	//OptionVec of meshes
-	let mut meshes = OptionVec::with_capacity(5);
+	let mut meshes = OptionVec::with_capacity(10);
 
 	//Create the walls, floor, and ceiling
 	unsafe {
-		let scale = 10.0;
+		let scale = 5.0;
 		let matrices = [
 			uniform_scale(scale),
-			glm::translation(&glm::vec3(5.0, 5.0, 0.0)) * glm::rotation(glm::half_pi(), &glm::vec3(0.0, 0.0, 1.0)) * uniform_scale(scale),
-			glm::translation(&glm::vec3(0.0, 5.0, -5.0)) * glm::rotation(glm::half_pi(), &glm::vec3(1.0, 0.0, 0.0)) * uniform_scale(scale),
-			glm::translation(&glm::vec3(0.0, 5.0, 5.0)) * glm::rotation(3.0 * glm::half_pi::<f32>(), &glm::vec3(1.0, 0.0, 0.0)) * uniform_scale(scale),
-			glm::translation(&glm::vec3(-5.0, 5.0, 0.0)) * glm::rotation(3.0 * glm::half_pi::<f32>(), &glm::vec3(0.0, 0.0, 1.0)) * uniform_scale(scale)
+			glm::translation(&glm::vec3(scale/2.0, scale/2.0, 0.0)) * glm::rotation(glm::half_pi(), &glm::vec3(0.0, 0.0, 1.0)) * uniform_scale(scale),
+			glm::translation(&glm::vec3(0.0, scale/2.0, -scale/2.0)) * glm::rotation(glm::half_pi(), &glm::vec3(1.0, 0.0, 0.0)) * uniform_scale(scale),
+			glm::translation(&glm::vec3(0.0, scale/2.0, scale/2.0)) * glm::rotation(3.0 * glm::half_pi::<f32>(), &glm::vec3(1.0, 0.0, 0.0)) * uniform_scale(scale),
+			glm::translation(&glm::vec3(-scale/2.0, scale/2.0, 0.0)) * glm::rotation(3.0 * glm::half_pi::<f32>(), &glm::vec3(0.0, 0.0, 1.0)) * uniform_scale(scale)
 		];
 
 		for matrix in &matrices {
@@ -302,12 +302,10 @@ fn main() {
 			Some(obj) => {
 				let vao = create_vertex_array_object(&obj.0, &obj.1, &[3, 3, 2]);
 				let t = glm::vec4_to_vec3(&light_position);
-				let mesh = Mesh::new(vao, glm::translation(&t) * uniform_scale(0.05), 0, obj.1.len() as i32);
+				let mesh = Mesh::new(vao, glm::translation(&t) * uniform_scale(0.01), 0, obj.1.len() as i32);
 				Some(meshes.insert(mesh))
 			}
-			None => {
-				None
-			}
+			None => { None }
 		}
 	};
 
@@ -332,14 +330,14 @@ fn main() {
 	//The instant recorded at the beginning of last frame
 	let mut last_frame_instant = Instant::now();
 
-	//Set up rendering data for later
+	//Set up data for each render pass
 	let framebuffers = [vr_render_target, vr_render_target, 0];
 	let eyes = [Some(Eye::Left), Some(Eye::Right), None];
 	let mut sizes = [render_target_size, render_target_size, window_size];
 
 	//Main loop
 	while !window.should_close() {
-		//Calculate time since the last frame started		
+		//Calculate time since the last frame started
 		let seconds_elapsed = {
 			let frame_instant = Instant::now();
 			let dur = frame_instant.duration_since(last_frame_instant);
@@ -573,15 +571,11 @@ fn main() {
 					   		bound_controller_indices[j] = None;
 					   	}
 					}
-
-					//If the menu button was pushed this frame
-					//println!("{}\t{}", state.button_pressed, (1 as u64) << button_id::DASHBOARD_BACK);
-					if pressed_this_frame(&state, &p_state, button_id::DASHBOARD_BACK) {
-						println!("Yay");
-					}
 				}
 			}
 		}
+
+		let tracking_to_world = glm::translation(&glm::vec3(f32::sin(ticks), 0.0, 0.0)) * glm::rotation(ticks, &glm::vec3(0.0, 1.0, 0.0));
 
 		//Get view matrices
 		let v_matrices = match (&openvr_system, &render_poses) {
@@ -591,14 +585,14 @@ fn main() {
 					let right_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Right));
 
 					let companion_v_mat = if camera.attached_to_hmd { 
-						glm::affine_inverse(hmd_to_absolute)
+						glm::affine_inverse(tracking_to_world * hmd_to_absolute)
 					} else {
 						get_freecam_matrix(&camera)
 					};
 
 					//Need to return inverse(hmd_to_absolute * eye_to_hmd)
-					[glm::affine_inverse(hmd_to_absolute * left_eye_to_hmd),
-					 glm::affine_inverse(hmd_to_absolute * right_eye_to_hmd),
+					[glm::affine_inverse(tracking_to_world * hmd_to_absolute * left_eye_to_hmd),
+					 glm::affine_inverse(tracking_to_world * hmd_to_absolute * right_eye_to_hmd),
 					 companion_v_mat]
 			}
 			_ => {				
@@ -694,7 +688,13 @@ fn main() {
 					if let Some(mesh) = option_mesh {
 						if mesh.render_pass_visibilities[i] {
 							//Compute the model-view-projection matrix
-							let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
+							let mvp = if mesh.attached_to_tracking_space {
+								p_matrices[i] * v_matrices[i] * tracking_to_world * mesh.model_matrix
+							} else {
+								p_matrices[i] * v_matrices[i] * mesh.model_matrix
+							};
+
+							//let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
 
 							//Send matrix uniforms to GPU
 							let mat_locs = [mvp_location, model_matrix_location];

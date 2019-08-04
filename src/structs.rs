@@ -10,6 +10,7 @@ pub struct Mesh {
 	pub model_matrix: glm::TMat4<f32>, //Matrix that transforms points in model space to world space
 	pub texture: GLuint, //Texture
 	pub indices_count: GLsizei, //Number of indices in index array
+	pub attached_to_tracking_space: bool,
 	pub render_pass_visibilities: [bool; 3]
 }
 
@@ -20,6 +21,7 @@ impl Mesh {
 			model_matrix,
 			texture,
 			indices_count,
+			attached_to_tracking_space: false,
 			render_pass_visibilities: [true, true, true]
 		}
 	}

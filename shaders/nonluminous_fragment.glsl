@@ -12,7 +12,7 @@ uniform vec4 view_position;
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
 const float AMBIENT_STRENGTH = 0.1;
 const float SHININESS = 8.0;
-const float ATTENUATION_CONSTANT = 2.0;
+const float ATTENUATION_CONSTANT = 1.0;
 
 void main() {
 	//Normalize any vectors
