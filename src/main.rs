@@ -55,8 +55,8 @@ fn get_projection_matrix(sys: &System, eye: Eye) -> glm::TMat4<f32> {
 		)
 }
 
-//This returns the vao and texture id of the mesh
-fn load_openvr_mesh<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, index: u32) -> Option<Mesh> {
+//This returns the Mesh struct associated with the OpenVR model
+fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option<RenderModels>, index: u32) -> Option<Mesh> {
 	let mut result = None;
 	if let (Some(ref sys), Some(ref ren_mod)) = (&openvr_system, &openvr_rendermodels) {
 		let name = sys.string_tracked_device_property(index, openvr::property::RenderModelName_String).unwrap();
@@ -83,8 +83,7 @@ fn load_openvr_mesh<'a>(openvr_system: &Option<System>, openvr_rendermodels: &Op
 					//Create texture
 					let t = unsafe { load_texture_from_data((tex.data().to_vec(), tex.dimensions().0 as u32, tex.dimensions().1 as u32)) };
 
-					let mut mesh = Mesh::new(vao, glm::identity(), t, model.indices().len() as GLsizei);
-					mesh.attached_to_tracking_space = true;
+					let mesh = Mesh::new(vao, glm::identity(), t, model.indices().len() as GLsizei);
 
 					result = Some(mesh);
 				}
@@ -155,12 +154,6 @@ fn get_mesh(meshes: &mut OptionVec<Mesh>, index: Option<usize>) -> Option<&mut M
 		}
 		None => { None }
 	}
-}
-
-fn get_freecam_matrix(camera: &Camera) -> glm::TMat4<f32> {
-	glm::rotation(camera.pitch, &glm::vec3(1.0, 0.0, 0.0)) *
-	glm::rotation(camera.yaw, &glm::vec3(0.0, 1.0, 0.0)) *
-	glm::translation(&camera.position)
 }
 
 fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
@@ -575,29 +568,30 @@ fn main() {
 			}
 		}
 
-		let tracking_to_world = glm::translation(&glm::vec3(f32::sin(ticks), 0.0, 0.0)) * glm::rotation(ticks, &glm::vec3(0.0, 1.0, 0.0));
+		let tracking_to_world = glm::rotation(ticks, &glm::vec3(0.0, 1.0, 0.0));
+		//let tracking_to_world = glm::translation(&glm::vec3(f32::sin(ticks), 0.0, 0.0)) * glm::rotation(ticks, &glm::vec3(0.0, 1.0, 0.0));
 
 		//Get view matrices
 		let v_matrices = match (&openvr_system, &render_poses) {
 			(Some(sys), Some(poses)) => {
-					let hmd_to_absolute = openvr_to_mat4(*poses[0].device_to_absolute_tracking());
+					let hmd_to_tracking = openvr_to_mat4(*poses[0].device_to_absolute_tracking());
 					let left_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Left));
 					let right_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Right));
 
 					let companion_v_mat = if camera.attached_to_hmd { 
-						glm::affine_inverse(tracking_to_world * hmd_to_absolute)
+						glm::affine_inverse(tracking_to_world * hmd_to_tracking)
 					} else {
-						get_freecam_matrix(&camera)
+						camera.get_freecam_matrix()
 					};
 
-					//Need to return inverse(hmd_to_absolute * eye_to_hmd)
-					[glm::affine_inverse(tracking_to_world * hmd_to_absolute * left_eye_to_hmd),
-					 glm::affine_inverse(tracking_to_world * hmd_to_absolute * right_eye_to_hmd),
+					//Need to return inverse(tracking_to_world * hmd_to_tracking * eye_to_hmd)
+					[glm::affine_inverse(tracking_to_world * hmd_to_tracking * left_eye_to_hmd),
+					 glm::affine_inverse(tracking_to_world * hmd_to_tracking * right_eye_to_hmd),
 					 companion_v_mat]
 			}
 			_ => {				
 				//Create a matrix that gets a decent view of the scene
-				[glm::identity(), glm::identity(), get_freecam_matrix(&camera)]
+				[glm::identity(), glm::identity(), camera.get_freecam_matrix()]
 			}
 		};
 
@@ -632,7 +626,7 @@ fn main() {
 		if let Some(poses) = render_poses {
 			let hmd_to_absolute = openvr_to_mat4(*poses[0].device_to_absolute_tracking());
 			if let Some(mesh) = get_mesh(&mut meshes, hmd_mesh_index) {
-				mesh.model_matrix = hmd_to_absolute;
+				mesh.model_matrix = tracking_to_world * hmd_to_absolute;
 			}
 		}
 
@@ -642,7 +636,7 @@ fn main() {
 				if let Some(index) = &controllers.device_indices[i] {
 					let controller_model_matrix = openvr_to_mat4(*poses[*index as usize].device_to_absolute_tracking());
 					if let Some(mesh) = get_mesh(&mut meshes, controllers.mesh_indices[i]) {
-						mesh.model_matrix = controller_model_matrix;
+						mesh.model_matrix = tracking_to_world * controller_model_matrix;
 					}
 				}
 			}
@@ -688,13 +682,7 @@ fn main() {
 					if let Some(mesh) = option_mesh {
 						if mesh.render_pass_visibilities[i] {
 							//Compute the model-view-projection matrix
-							let mvp = if mesh.attached_to_tracking_space {
-								p_matrices[i] * v_matrices[i] * tracking_to_world * mesh.model_matrix
-							} else {
-								p_matrices[i] * v_matrices[i] * mesh.model_matrix
-							};
-
-							//let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
+							let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
 
 							//Send matrix uniforms to GPU
 							let mat_locs = [mvp_location, model_matrix_location];
