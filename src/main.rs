@@ -322,6 +322,8 @@ fn main() {
 	//The instant recorded at the beginning of last frame
 	let mut last_frame_instant = Instant::now();
 
+	let mut tracking_to_world: glm::TMat4<f32> = glm::identity();
+
 	//Set up data for each render pass
 	let framebuffers = [vr_render_target, vr_render_target, 0];
 	let eyes = [Some(Eye::Left), Some(Eye::Right), None];
@@ -456,12 +458,8 @@ fn main() {
 				}
 				WindowEvent::Key(key, _, Action::Release, ..) => {
 					match key {
-						Key::A | Key::D => {
-							camera.velocity.x = 0.0;
-						}
-						Key::W | Key::S => {
-							camera.velocity.z = 0.0;
-						}
+						Key::A | Key::D => { camera.velocity.x = 0.0; }
+						Key::W | Key::S => { camera.velocity.z = 0.0; }
 						Key::O | Key::P => {
 							camera.fov_delta = 0.0;
 							println!("Field of view is now {} degrees", camera.fov);
@@ -511,14 +509,13 @@ fn main() {
 					Some(mesh_index),
 					Some(state),
 					Some(p_state),
-					Some(sys)) = (	  controllers.device_indices[i],
+					Some(sys),
+					Some(poses)) = (	  controllers.device_indices[i],
 									  controllers.mesh_indices[i],
 									  controllers.states[i],
 									  controllers.previous_states[i],
-									  &openvr_system) {
-
-				let hands = ["Left", "Right"];
-				println!("{}: {:?}\n", hands[i], state.axis);
+									  &openvr_system,
+									  render_poses) {
 
 				controllers.collided_with[i].clear();
 				for j in 0..model_indices.len() {
@@ -555,6 +552,16 @@ fn main() {
 					   	}
 					}
 				}
+
+				//Handle trackpad
+				if i == 0 {
+					let controller_model_matrix = openvr_to_mat4(*poses[device_index as usize].device_to_absolute_tracking());
+					let scale = 0.05;
+					let movement_vector = scale * tracking_to_world * controller_model_matrix * glm::vec4(state.axis[0].x, 0.0, -state.axis[0].y, 0.0);
+					println!("{}", movement_vector);
+
+					tracking_to_world = glm::translation(&glm::vec4_to_vec3(&movement_vector)) * tracking_to_world;
+				}
 			}
 
 
@@ -567,8 +574,6 @@ fn main() {
 		}
 
 		controllers.previous_states = controllers.states;
-
-		let tracking_to_world: glm::TMat4<f32> = glm::identity();
 
 		//Get view matrices
 		let v_matrices = match (&openvr_system, &render_poses) {
