@@ -172,8 +172,7 @@ unsafe fn plane_mesh(model_matrix: glm::TMat4<f32>, texture: GLuint) -> Mesh {
 		0u16, 1, 2,
 		1, 3, 2
 	];
-	let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
-	Mesh::new(vao, model_matrix, texture, indices.len() as i32)
+	Mesh::new(create_vertex_array_object(&vertices, &indices, &[3, 3, 2]), model_matrix, texture, indices.len() as i32)
 }
 
 fn main() {
@@ -363,8 +362,7 @@ fn main() {
 		//Load HMD mesh if we haven't already
 		if let None = hmd_mesh_index {
 			if let Some(mut mesh) = load_openvr_mesh(&openvr_system, &openvr_rendermodels, 0) {
-				//Make this model only visible to the companion window
-				mesh.render_pass_visibilities = [false, false, true];
+				mesh.render_pass_visibilities = [false, false, !camera.attached_to_hmd];
 				hmd_mesh_index = Some(meshes.insert(mesh));
 			}
 		}
@@ -425,27 +423,14 @@ fn main() {
 				}
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
-						Key::W => {
-							camera.velocity = glm::vec3(0.0, 0.0, Camera::SPEED);
-						}
-						Key::S => {
-							camera.velocity = glm::vec3(0.0, 0.0, -Camera::SPEED);
-						}
-						Key::A => {
-							camera.velocity = glm::vec3(Camera::SPEED, 0.0, 0.0);
-						}
-						Key::D => {
-							camera.velocity = glm::vec3(-Camera::SPEED, 0.0, 0.0);
-						}
-						Key::O => {
-							camera.fov_delta = -Camera::FOV_SPEED;
-						}
-						Key::P => {
-							camera.fov_delta = Camera::FOV_SPEED;
-						}
-						Key::I => {
-							camera.fov = 90.0;
-						}
+						Key::W => { camera.velocity = glm::vec3(0.0, 0.0, Camera::SPEED); }
+						Key::S => { camera.velocity = glm::vec3(0.0, 0.0, -Camera::SPEED); }
+						Key::A => { camera.velocity = glm::vec3(Camera::SPEED, 0.0, 0.0); }
+						Key::D => { camera.velocity = glm::vec3(-Camera::SPEED, 0.0, 0.0); }
+						Key::O => { camera.fov_delta = -Camera::FOV_SPEED; }
+						Key::P => { camera.fov_delta = Camera::FOV_SPEED; }
+						Key::I => { camera.fov = 90.0; }
+						Key::Escape => { window.set_should_close(true); }
 						Key::L => {
 							let tx = load_tx.clone();
 							thread::spawn( move || {
@@ -461,13 +446,12 @@ fn main() {
 						}
 						Key::Space => {
 							camera.attached_to_hmd = !camera.attached_to_hmd;
+
+							if let Some(mesh) = get_mesh(&mut meshes, hmd_mesh_index) {
+								mesh.render_pass_visibilities[2] = !camera.attached_to_hmd;
+							}
 						}
-						Key::Escape => {
-							window.set_should_close(true);
-						}
-						_ => {
-							println!("You pressed the unbound key: {:?}", key);
-						}
+						_ => { println!("You pressed the unbound key: {:?}", key); }
 					}
 				}
 				WindowEvent::Key(key, _, Action::Release, ..) => {
@@ -533,17 +517,24 @@ fn main() {
 									  controllers.previous_states[i],
 									  &openvr_system) {
 
+				let hands = ["Left", "Right"];
+				println!("{}: {:?}\n", hands[i], state.axis);
+
+				controllers.collided_with[i].clear();
 				for j in 0..model_indices.len() {
 					//If the trigger was pulled this frame, grab the object the controller is currently touching, if there is one
 					if let Some(loaded_index) = model_indices[j] {
 						//Make controller vibrate if it collides with something
-						let controller_origin = get_mesh_origin(&meshes[mesh_index as usize]);
-						let loaded_origin = get_mesh_origin(&meshes[loaded_index]);
-						let is_colliding = glm::distance(&controller_origin, &loaded_origin) < model_bounding_sphere_radius;
+						let is_colliding = glm::distance(&get_mesh_origin(&meshes[mesh_index as usize]), &get_mesh_origin(&meshes[loaded_index])) < model_bounding_sphere_radius;
 
-						//If the controller just collided with it this frame
-						if is_colliding && !controllers.was_colliding[i] {
-							sys.trigger_haptic_pulse(device_index, 0, 2000);
+						if is_colliding {
+							controllers.colliding_with[i].push(loaded_index);
+
+							//Check if controller was colliding with that model last frame
+							if !controllers.collided_with[i].contains(&loaded_index) {
+								println!("Triggering pulse");
+								sys.trigger_haptic_pulse(device_index, 0, 3999);
+							}
 						}
 
 						if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) && is_colliding {
@@ -555,7 +546,6 @@ fn main() {
 								model_to_controller_matrices[j] = glm::affine_inverse(cont_mesh.model_matrix) * loaded_mesh.model_matrix;
 							}
 						}
-						controllers.was_colliding[i] = is_colliding;
 					}
 					
 					//If the trigger was released this frame
@@ -566,10 +556,19 @@ fn main() {
 					}
 				}
 			}
+
+
+
+			//Clear collided_with and move all of the elements from colliding_with into it
+			controllers.collided_with[i].clear();
+			for index in controllers.colliding_with[i].drain(0..controllers.colliding_with[i].len()) {
+				controllers.collided_with[i].push(index);
+			}
 		}
 
-		let tracking_to_world = glm::rotation(ticks, &glm::vec3(0.0, 1.0, 0.0));
-		//let tracking_to_world = glm::translation(&glm::vec3(f32::sin(ticks), 0.0, 0.0)) * glm::rotation(ticks, &glm::vec3(0.0, 1.0, 0.0));
+		controllers.previous_states = controllers.states;
+
+		let tracking_to_world: glm::TMat4<f32> = glm::identity();
 
 		//Get view matrices
 		let v_matrices = match (&openvr_system, &render_poses) {
@@ -615,7 +614,7 @@ fn main() {
 			}
 		};
 
-		//Update simulation
+		//Just a scaled time value
 		ticks += 2.0 * seconds_elapsed;
 
 		//Update the camera
@@ -658,9 +657,6 @@ fn main() {
 			mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks*0.2) + 0.8, 0.0)) * uniform_scale(0.1);
 			light_position = get_frame_origin(&mesh.model_matrix);
 		}
-
-		//End of frame updates
-		controllers.previous_states = controllers.states;
 
 		//Rendering code
 		unsafe {
