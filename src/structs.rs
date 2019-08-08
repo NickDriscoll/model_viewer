@@ -1,6 +1,6 @@
 use gl::types::*;
 use openvr::ControllerState;
-use std::slice::Iter;
+use std::slice::{Iter, IterMut};
 use std::ops::{Index, IndexMut};
 
 //A renderable 3D thing
@@ -9,16 +9,20 @@ pub struct Mesh {
 	pub vao: GLuint, //Vertex array object
 	pub model_matrix: glm::TMat4<f32>, //Matrix that transforms points in model space to world space
 	pub texture: GLuint, //Texture
+	pub texture_path: String,
+	pub shininess: f32,
 	pub indices_count: GLsizei, //Number of indices in index array
 	pub render_pass_visibilities: [bool; 3]
 }
 
 impl Mesh {
-	pub fn new(vao: GLuint, model_matrix: glm::TMat4<f32>, texture: GLuint, indices_count: GLsizei) -> Self {
+	pub fn new(vao: GLuint, model_matrix: glm::TMat4<f32>, path: &str, indices_count: GLsizei) -> Self {
 		Mesh {
 			vao,
 			model_matrix,
-			texture,
+			texture: 0,
+			texture_path: path.to_string(),
+			shininess: 8.0,
 			indices_count,
 			render_pass_visibilities: [true, true, true]
 		}
@@ -141,11 +145,9 @@ impl<T> OptionVec<T> {
 		self.optionvec.iter()
 	}
 
-	/*
 	pub fn iter_mut(&mut self) -> IterMut<Option<T>> {
 		self.optionvec.iter_mut()
 	}
-	*/
 }
 
 impl<T> Index<usize> for OptionVec<T> {

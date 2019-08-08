@@ -8,10 +8,11 @@ out vec4 frag_color;
 uniform sampler2D tex;
 uniform vec4 light_position;
 uniform vec4 view_position;
+uniform float shininess;
 
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
 const float AMBIENT_STRENGTH = 0.1;
-const float SHININESS = 8.0;
+//const float SHININESS = 8.0;
 const float ATTENUATION_CONSTANT = 1.0;
 
 void main() {
@@ -36,7 +37,7 @@ void main() {
 	vec4 view_direction = normalize(view_position - f_pos);
 	vec4 half_dir = normalize(light_direction + view_direction);
 	float specular_angle = max(0.0, dot(norm, half_dir));
-	vec3 specular = pow(specular_angle, SHININESS) * LIGHT_COLOR;
+	vec3 specular = pow(specular_angle, shininess) * LIGHT_COLOR;
 
 	//Calculate distance attenuation
 	float attenuation = clamp(ATTENUATION_CONSTANT / length(light_position - f_pos), 0.0, 1.0);

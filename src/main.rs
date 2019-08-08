@@ -26,6 +26,10 @@ const FAR_Z: f32 = 50.0;
 
 type MeshArrays = (Vec<f32>, Vec<u16>);
 
+enum WorkOrder<'a> {
+	Image(&'a str)
+}
+
 fn openvr_to_mat4(mat: [[f32; 4]; 3]) -> glm::TMat4<f32> {
 	glm::mat4(
 			mat[0][0], mat[0][1], mat[0][2], mat[0][3],
@@ -62,38 +66,7 @@ fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option
 	if let (Some(ref sys), Some(ref ren_mod)) = (&openvr_system, &openvr_rendermodels) {
 		let name = sys.string_tracked_device_property(index, openvr::property::RenderModelName_String).unwrap();
 		if let Some(model) = ren_mod.load_render_model(&name).unwrap() {
-			/*
-			if let Some(tex_id) = model.diffuse_texture_id() {
-				if let Some(tex) = ren_mod.load_texture(tex_id).unwrap() {
-					//Flatten each vertex into a simple &[f32]
-					const ELEMENT_STRIDE: usize = 8;
-					let mut vertices = Vec::with_capacity(ELEMENT_STRIDE * model.vertices().len());
-					for vertex in model.vertices() {
-						vertices.push(vertex.position[0]);
-						vertices.push(vertex.position[1]);
-						vertices.push(vertex.position[2]);
-						vertices.push(vertex.normal[0]);
-						vertices.push(vertex.normal[1]);
-						vertices.push(vertex.normal[2]);
-						vertices.push(vertex.texture_coord[0]);
-						vertices.push(vertex.texture_coord[1]);
-					}
 
-					//Create vao
-					let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]) };
-
-					//Create texture
-					let t = unsafe { load_texture_from_data((tex.data().to_vec(), tex.dimensions().0 as u32, tex.dimensions().1 as u32)) };
-
-					let mesh = Mesh::new(vao, glm::identity(), t, model.indices().len() as GLsizei);
-
-					result = Some(mesh);
-				}
-			}
-			*/
-			
-
-			
 			//Flatten each vertex into a simple &[f32]
 			const ELEMENT_STRIDE: usize = 8;
 			let mut vertices = Vec::with_capacity(ELEMENT_STRIDE * model.vertices().len());
@@ -114,10 +87,10 @@ fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option
 			//Create texture
 			let t = unsafe { load_texture_from_data(([128, 128, 128].to_vec(), 1, 1)) };
 
-			let mesh = Mesh::new(vao, glm::identity(), t, model.indices().len() as GLsizei);
+			let mut mesh = Mesh::new(vao, glm::identity(), "na", model.indices().len() as GLsizei);
+			mesh.texture = t;
 
 			result = Some(mesh);
-			
 		}
 	}
 	result
@@ -240,7 +213,14 @@ fn main() {
 	//Load all OpenGL function pointers
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
-	//Compile 3D shaders
+	//Enable and configure depth testing and enable backface culling
+	unsafe {
+		gl::Enable(gl::DEPTH_TEST);
+		gl::DepthFunc(gl::LESS);
+		gl::Enable(gl::CULL_FACE);
+	}
+
+	//Compile shader program
 	let nonluminous_shader = unsafe { compile_program_from_files("shaders/nonluminous_vertex.glsl", "shaders/nonluminous_fragment.glsl") };
 
 	//Get locations of program uniforms
@@ -248,6 +228,7 @@ fn main() {
 	let model_matrix_location = unsafe { get_uniform_location(nonluminous_shader, "model_matrix") };
 	let light_position_location = unsafe { get_uniform_location(nonluminous_shader, "light_position") };
 	let view_position_location = unsafe { get_uniform_location(nonluminous_shader, "view_position") };
+	let shininess_location = unsafe { get_uniform_location(nonluminous_shader, "shininess") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -256,29 +237,31 @@ fn main() {
 		color_space: ColorSpace::Auto
 	};
 
-	//Enable and configure depth testing and enable backface culling
-	unsafe {
-		gl::Enable(gl::DEPTH_TEST);
-		gl::DepthFunc(gl::LESS);
-		gl::Enable(gl::CULL_FACE);
-	}
-
 	//Texture loading channel
-	let (texture_tx, texture_rx) = mpsc::channel::<ImageData>();
+	let (texture_tx, texture_rx) = mpsc::channel::<(&str, ImageData)>();
+	let (order_tx, order_rx) = mpsc::channel::<WorkOrder>();
 
 	//The channel for sending 3D models between threads
 	let (load_tx, load_rx) = mpsc::channel::<Option<MeshArrays>>();
 
-	//Spawn thread to load brick texture
-	thread::spawn( move || {
-		texture_tx.send(image_data_from_path("textures/bricks.jpg")).unwrap();
-	});
-
-	//Textures
-	let checkerboard_texture = unsafe { load_texture("textures/checkerboard.jpg") };
-	let mut brick_texture = 0;
-
+	//Map of texture paths to texture ids
 	let mut textures: HashMap<String, GLuint> = HashMap::new();
+
+	//Spawn thread to load textures
+	thread::spawn( move || {
+		loop {
+			match order_rx.recv() {
+				Ok(WorkOrder::Image(path)) => {
+					texture_tx.send((path, image_data_from_path(path))).unwrap();
+				}
+				Err(e) => {
+					return;
+				}
+			}
+		}
+	});
+	order_tx.send(WorkOrder::Image("textures/checkerboard.jpg")).unwrap();
+	order_tx.send(WorkOrder::Image("textures/bricks.jpg")).unwrap();
 
 	//OptionVec of meshes
 	let mut meshes = OptionVec::with_capacity(10);
@@ -294,21 +277,22 @@ fn main() {
 			glm::translation(&glm::vec3(-scale/2.0, scale/2.0, 0.0)) * glm::rotation(3.0 * glm::half_pi::<f32>(), &glm::vec3(0.0, 0.0, 1.0)) * uniform_scale(scale)
 		];
 
-		for matrix in &matrices {
-			let vertices = [
-				//Positions					//Normals							//Tex coords
-				-0.5f32, 0.0, -0.5,			0.0, 1.0, 0.0,						0.0, 0.0,
-				-0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						0.0, 8.0,
-				0.5, 0.0, -0.5,				0.0, 1.0, 0.0,						8.0, 0.0,
-				0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						8.0, 8.0
-			];
-			let indices = [
-				0u16, 1, 2,
-				1, 3, 2
-			];
-			let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
+		let vertices = [
+			//Positions					//Normals							//Tex coords
+			-0.5f32, 0.0, -0.5,			0.0, 1.0, 0.0,						0.0, 0.0,
+			-0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						0.0, 8.0,
+			0.5, 0.0, -0.5,				0.0, 1.0, 0.0,						8.0, 0.0,
+			0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						8.0, 8.0
+		];
+		let indices = [
+			0u16, 1, 2,
+			1, 3, 2
+		];
 
-			meshes.insert(Mesh::new(vao, *matrix, checkerboard_texture, indices.len() as i32));
+		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
+
+		for matrix in &matrices {
+			meshes.insert(Mesh::new(vao, *matrix, "textures/checkerboard.jpg", indices.len() as i32));
 		}
 	}
 
@@ -319,7 +303,7 @@ fn main() {
 			Some(obj) => {
 				let vao = create_vertex_array_object(&obj.0, &obj.1, &[3, 3, 2]);
 				let t = glm::vec4_to_vec3(&light_position);
-				let mesh = Mesh::new(vao, glm::translation(&t) * uniform_scale(0.01), 0, obj.1.len() as i32);
+				let mesh = Mesh::new(vao, glm::translation(&t) * uniform_scale(0.01), "textures/bricks.jpg", obj.1.len() as i32);
 				Some(meshes.insert(mesh))
 			}
 			None => { None }
@@ -348,7 +332,6 @@ fn main() {
 	let mut last_frame_instant = Instant::now();
 
 	let mut tracking_to_world: glm::TMat4<f32> = glm::identity();
-	let mut tracking_space_position = glm::vec4(0.0, 0.0, 0.0, 1.0);
 
 	//Set up data for each render pass
 	let framebuffers = [vr_render_target, vr_render_target, 0];
@@ -391,6 +374,7 @@ fn main() {
 		if let None = hmd_mesh_index {
 			if let Some(mut mesh) = load_openvr_mesh(&openvr_system, &openvr_rendermodels, 0) {
 				mesh.render_pass_visibilities = [false, false, !camera.attached_to_hmd];
+				mesh.shininess = 128.0;
 				hmd_mesh_index = Some(meshes.insert(mesh));
 			}
 		}
@@ -415,25 +399,25 @@ fn main() {
 		//Check if a new model has been loaded
 		if let Ok(Some(package)) = load_rx.try_recv() {
 			let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
-			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), brick_texture, package.1.len() as i32);
+			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), "textures/bricks.jpg", package.1.len() as i32);
 			model_indices.push(Some(meshes.insert(mesh)));
 			bound_controller_indices.push(None);
 			model_to_controller_matrices.push(glm::identity());
 		}
 
 		//Check if there are any textures to be received from the worker thread
-		if let Ok(image_data) = texture_rx.try_recv() {
-			brick_texture = unsafe { load_texture_from_data(image_data) };
+		if let Ok(texture_data) = texture_rx.try_recv() {
+			let tex_id = unsafe { load_texture_from_data(texture_data.1) };
+			textures.insert(texture_data.0.to_string(), tex_id);
+		}
 
-			let mut mesh_indices = Vec::with_capacity(model_indices.len() + 1);
-			for i in 0..model_indices.len() {
-				mesh_indices.push(model_indices[i]);
-			}
-			mesh_indices.push(sphere_index);
-
-			for index in &mesh_indices {
-				if let Some(mesh) = get_mesh(&mut meshes, *index) {
-					mesh.texture = brick_texture;
+		//Connect all meshes to their textures
+		for option_mesh in meshes.iter_mut() {
+			if let Some(mesh) = option_mesh {
+				if mesh.texture == 0 {
+					if let Some(tex_id) = textures.get(&mesh.texture_path) {
+						mesh.texture = *tex_id;
+					}
 				}
 			}
 		}
@@ -556,11 +540,11 @@ fn main() {
 							//Check if controller was colliding with that model last frame
 							if !controllers.collided_with[i].contains(&loaded_index) {
 								println!("Triggering pulse");
-								sys.trigger_haptic_pulse(device_index, 0, 3999);
+								//sys.trigger_haptic_pulse(device_index, 0, 3999);
 							}
 						}
 
-						if pressed_this_frame(&state, &p_state, button_id::GRIP) && is_colliding && i == 1 {
+						if pressed_this_frame(&state, &p_state, button_id::GRIP) && is_colliding {
 							//Set the controller's mesh as the mesh the cube mesh is "bound" to
 							bound_controller_indices[j] = Some(i);
 
@@ -719,7 +703,7 @@ fn main() {
 				gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 				for option_mesh in meshes.iter() {
 					if let Some(mesh) = option_mesh {
-						if mesh.render_pass_visibilities[i] {
+						if mesh.render_pass_visibilities[i] && mesh.texture != 0 {
 							//Compute the model-view-projection matrix
 							let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
 
@@ -737,6 +721,9 @@ fn main() {
 								let pos = [vecs[i].x, vecs[i].y, vecs[i].z, 1.0];
 								gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);
 							}
+
+							//Send float uniform to GPU
+							gl::Uniform1f(shininess_location, mesh.shininess);
 
 							//Bind the mesh's texture
 							gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
