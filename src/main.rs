@@ -4,6 +4,7 @@ use glfw::{Action, Context, CursorMode, Key, MouseButton, WindowMode, WindowEven
 use openvr::{ApplicationType, button_id, ControllerState, Eye, System, RenderModels, TrackedControllerRole};
 use openvr::compositor::texture::{ColorSpace, Handle, Texture};
 use nfd::Response;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::thread;
@@ -160,21 +161,6 @@ fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
 	glm::scaling(&glm::vec3(scale, scale, scale))
 }
 
-unsafe fn plane_mesh(model_matrix: glm::TMat4<f32>, texture: GLuint) -> Mesh {
-	let vertices = [
-		//Positions					//Normals							//Tex coords
-		-0.5f32, 0.0, -0.5,			0.0, 1.0, 0.0,						0.0, 0.0,
-		-0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						0.0, 8.0,
-		0.5, 0.0, -0.5,				0.0, 1.0, 0.0,						8.0, 0.0,
-		0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						8.0, 8.0
-	];
-	let indices = [
-		0u16, 1, 2,
-		1, 3, 2
-	];
-	Mesh::new(create_vertex_array_object(&vertices, &indices, &[3, 3, 2]), model_matrix, texture, indices.len() as i32)
-}
-
 fn main() {
 	//Initialize OpenVR
 	let openvr_context = unsafe {
@@ -200,12 +186,8 @@ fn main() {
 
 	//Calculate render target size
 	let render_target_size = match openvr_system {
-		Some(ref sys) => {
-			sys.recommended_render_target_size()
-		}
-		None => {
-			(1280, 720)
-		}
+		Some(ref sys) => { sys.recommended_render_target_size() }
+		None => { (1280, 720) }
 	};
 
 	//Init glfw
@@ -259,14 +241,15 @@ fn main() {
 	let (load_tx, load_rx) = mpsc::channel::<Option<MeshArrays>>();
 
 	//Spawn thread to load brick texture
-	let tx = texture_tx.clone();
 	thread::spawn( move || {
-		tx.send(image_data_from_path("textures/bricks.jpg")).unwrap();
+		texture_tx.send(image_data_from_path("textures/bricks.jpg")).unwrap();
 	});
 
 	//Textures
 	let checkerboard_texture = unsafe { load_texture("textures/checkerboard.jpg") };
 	let mut brick_texture = 0;
+
+	let mut textures: HashMap<String, GLuint> = HashMap::new();
 
 	//OptionVec of meshes
 	let mut meshes = OptionVec::with_capacity(10);
@@ -283,7 +266,20 @@ fn main() {
 		];
 
 		for matrix in &matrices {
-			meshes.insert(plane_mesh(*matrix, checkerboard_texture));
+			let vertices = [
+				//Positions					//Normals							//Tex coords
+				-0.5f32, 0.0, -0.5,			0.0, 1.0, 0.0,						0.0, 0.0,
+				-0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						0.0, 8.0,
+				0.5, 0.0, -0.5,				0.0, 1.0, 0.0,						8.0, 0.0,
+				0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						8.0, 8.0
+			];
+			let indices = [
+				0u16, 1, 2,
+				1, 3, 2
+			];
+			let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
+
+			meshes.insert(Mesh::new(vao, *matrix, checkerboard_texture, indices.len() as i32));
 		}
 	}
 
@@ -323,6 +319,7 @@ fn main() {
 	let mut last_frame_instant = Instant::now();
 
 	let mut tracking_to_world: glm::TMat4<f32> = glm::identity();
+	let mut tracking_space_position = glm::vec4(0.0, 0.0, 0.0, 1.0);
 
 	//Set up data for each render pass
 	let framebuffers = [vr_render_target, vr_render_target, 0];
@@ -510,7 +507,7 @@ fn main() {
 					Some(state),
 					Some(p_state),
 					Some(sys),
-					Some(poses)) = (	  controllers.device_indices[i],
+					Some(poses)) = (  controllers.device_indices[i],
 									  controllers.mesh_indices[i],
 									  controllers.states[i],
 									  controllers.previous_states[i],
@@ -534,7 +531,7 @@ fn main() {
 							}
 						}
 
-						if pressed_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) && is_colliding {
+						if pressed_this_frame(&state, &p_state, button_id::GRIP) && is_colliding && i == 1 {
 							//Set the controller's mesh as the mesh the cube mesh is "bound" to
 							bound_controller_indices[j] = Some(i);
 
@@ -546,25 +543,37 @@ fn main() {
 					}
 					
 					//If the trigger was released this frame
-					if released_this_frame(&state, &p_state, button_id::STEAM_VR_TRIGGER) {
+					if released_this_frame(&state, &p_state, button_id::GRIP) {
 					   	if Some(i) == bound_controller_indices[j] {
 					   		bound_controller_indices[j] = None;
 					   	}
 					}
 				}
 
-				//Handle trackpad
+				let scale = 0.05;				
+				let yvel = if i == 0 {
+					scale * glm::vec4(0.0, -glm::clamp_scalar(state.axis[1].x * 4.0, 0.0, 1.0), 0.0, 0.0)
+				} else {
+					scale * glm::vec4(0.0, glm::clamp_scalar(state.axis[1].x * 4.0, 0.0, 1.0), 0.0, 0.0)
+				};
+
+				let mut movement_vector = yvel;
+
+				//Handle left-hand/movement controls
 				if i == 0 {
-					let controller_model_matrix = openvr_to_mat4(*poses[device_index as usize].device_to_absolute_tracking());
-					let scale = 0.05;
-					let movement_vector = scale * tracking_to_world * controller_model_matrix * glm::vec4(state.axis[0].x, 0.0, -state.axis[0].y, 0.0);
-					println!("{}", movement_vector);
+					let controller_to_tracking = openvr_to_mat4(*poses[device_index as usize].device_to_absolute_tracking());
 
-					tracking_to_world = glm::translation(&glm::vec4_to_vec3(&movement_vector)) * tracking_to_world;
+					if state.axis[0].x != 0.0 || state.axis[0].y != 0.0 {
+						let mut temp = tracking_to_world * controller_to_tracking * glm::vec4(state.axis[0].x, 0.0, -state.axis[0].y, 0.0);
+						let len = glm::length(&temp);
+						temp.y = 0.0;
+						temp *= len / glm::length(&temp);
+						movement_vector += scale * temp;
+					}
 				}
+				
+				tracking_to_world = glm::translation(&glm::vec4_to_vec3(&movement_vector)) * tracking_to_world;
 			}
-
-
 
 			//Clear collided_with and move all of the elements from colliding_with into it
 			controllers.collided_with[i].clear();
@@ -626,7 +635,7 @@ fn main() {
 		camera.position += glm::vec4_to_vec3(&(seconds_elapsed * (glm::affine_inverse(v_matrices[2]) * glm::vec3_to_vec4(&camera.velocity))));
 		camera.fov += camera.fov_delta * seconds_elapsed;
 
-		//Ensure HMD mesh is drawn at the HMD's actual position
+		//Update HMD Mesh's model matrix
 		if let Some(poses) = render_poses {
 			let hmd_to_absolute = openvr_to_mat4(*poses[0].device_to_absolute_tracking());
 			if let Some(mesh) = get_mesh(&mut meshes, hmd_mesh_index) {
@@ -634,7 +643,7 @@ fn main() {
 			}
 		}
 
-		//Ensure controller meshes are drawn at each controller's position
+		//Update the controller's model matrices
 		if let Some(poses) = render_poses {
 			for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
 				if let Some(index) = &controllers.device_indices[i] {

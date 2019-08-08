@@ -125,7 +125,13 @@ pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16], attr
 	//Configure and enable the vertex attributes
 	let mut cumulative_size = 0;
 	for i in 0..attribute_strides.len() {
-		gl::VertexAttribPointer(i as u32, attribute_strides[i], gl::FLOAT, gl::FALSE, byte_stride, (cumulative_size * mem::size_of::<GLfloat>() as u32) as *const c_void);
+		gl::VertexAttribPointer(i as u32,
+								attribute_strides[i],
+								gl::FLOAT,
+								gl::FALSE,
+								byte_stride,
+								(cumulative_size * mem::size_of::<GLfloat>() as u32) as *const c_void);
+		
 		gl::EnableVertexAttribArray(i as u32);
 		cumulative_size += attribute_strides[i] as u32;
 	}
