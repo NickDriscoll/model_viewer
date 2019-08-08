@@ -62,6 +62,7 @@ fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option
 	if let (Some(ref sys), Some(ref ren_mod)) = (&openvr_system, &openvr_rendermodels) {
 		let name = sys.string_tracked_device_property(index, openvr::property::RenderModelName_String).unwrap();
 		if let Some(model) = ren_mod.load_render_model(&name).unwrap() {
+			/*
 			if let Some(tex_id) = model.diffuse_texture_id() {
 				if let Some(tex) = ren_mod.load_texture(tex_id).unwrap() {
 					//Flatten each vertex into a simple &[f32]
@@ -89,6 +90,34 @@ fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option
 					result = Some(mesh);
 				}
 			}
+			*/
+			
+
+			
+			//Flatten each vertex into a simple &[f32]
+			const ELEMENT_STRIDE: usize = 8;
+			let mut vertices = Vec::with_capacity(ELEMENT_STRIDE * model.vertices().len());
+			for vertex in model.vertices() {
+				vertices.push(vertex.position[0]);
+				vertices.push(vertex.position[1]);
+				vertices.push(vertex.position[2]);
+				vertices.push(vertex.normal[0]);
+				vertices.push(vertex.normal[1]);
+				vertices.push(vertex.normal[2]);
+				vertices.push(vertex.texture_coord[0]);
+				vertices.push(vertex.texture_coord[1]);
+			}
+
+			//Create vao
+			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]) };
+
+			//Create texture
+			let t = unsafe { load_texture_from_data(([128, 128, 128].to_vec(), 1, 1)) };
+
+			let mesh = Mesh::new(vao, glm::identity(), t, model.indices().len() as GLsizei);
+
+			result = Some(mesh);
+			
 		}
 	}
 	result
