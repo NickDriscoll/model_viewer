@@ -8,11 +8,12 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::thread;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::sync::mpsc;
 use std::ptr;
 use obj;
 use rand::random;
+use noise::{NoiseFn, OpenSimplex, Seedable};
 use crate::structs::*;
 use crate::glutil::*;
 use self::gl::types::*;
@@ -269,43 +270,19 @@ fn main() {
 	//OptionVec of meshes
 	let mut meshes = OptionVec::with_capacity(10);
 
-	/*
-	//Create the walls, floor, and ceiling
-	unsafe {
-		let scale = 5.0;
-		let matrices = [
-			uniform_scale(scale),
-			glm::translation(&glm::vec3(scale/2.0, scale/2.0, 0.0)) * glm::rotation(glm::half_pi(), &glm::vec3(0.0, 0.0, 1.0)) * uniform_scale(scale),
-			glm::translation(&glm::vec3(0.0, scale/2.0, -scale/2.0)) * glm::rotation(glm::half_pi(), &glm::vec3(1.0, 0.0, 0.0)) * uniform_scale(scale),
-			glm::translation(&glm::vec3(0.0, scale/2.0, scale/2.0)) * glm::rotation(3.0 * glm::half_pi::<f32>(), &glm::vec3(1.0, 0.0, 0.0)) * uniform_scale(scale),
-			glm::translation(&glm::vec3(-scale/2.0, scale/2.0, 0.0)) * glm::rotation(3.0 * glm::half_pi::<f32>(), &glm::vec3(0.0, 0.0, 1.0)) * uniform_scale(scale)
-		];
-
-		let vertices = [
-			//Positions					//Normals							//Tex coords
-			-0.5f32, 0.0, -0.5,			0.0, 1.0, 0.0,						0.0, 0.0,
-			-0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						0.0, 8.0,
-			0.5, 0.0, -0.5,				0.0, 1.0, 0.0,						8.0, 0.0,
-			0.5, 0.0, 0.5,				0.0, 1.0, 0.0,						8.0, 8.0
-		];
-		let indices = [
-			0u16, 1, 2,
-			1, 3, 2
-		];
-
-		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
-
-		for matrix in &matrices {
-			meshes.insert(Mesh::new(vao, *matrix, "textures/checkerboard.jpg", indices.len() as i32));
-		}
-	}
-	*/
+	//Set up the simplex noise generator
+	let mut simplex_generator = OpenSimplex::new();
+	let simplex_seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000;
+	println!("Seed used for simplex noise: {}", simplex_seed);
+	simplex_generator = simplex_generator.set_seed(simplex_seed as u32);
 
 	//Create the large tessellated plane
 	unsafe {
 		const ELEMENT_STRIDE: usize = 8;
-		const WIDTH: usize = 16;
+		//const WIDTH: usize = 100;
+		const WIDTH: usize = 8;
 		const TRIS: usize = (WIDTH - 1) * (WIDTH - 1) * 2;
+		const AMPLITUDE: f32 = 20.0;
 
 		//Buffers to be filled
 		let mut verts = [0.0; WIDTH*WIDTH*ELEMENT_STRIDE];
@@ -315,14 +292,14 @@ fn main() {
 			let xpos: usize = (i / ELEMENT_STRIDE) % WIDTH;
 			let ypos: usize = (i / ELEMENT_STRIDE) / WIDTH;
 
-			verts[i + 0] = (xpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
-			verts[i + 1] = 0.0;
+			verts[i] = (xpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
 			verts[i + 2] = (ypos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
+			//verts[i + 1] = AMPLITUDE * simplex_generator.get([verts[i] as f64, verts[i + 2] as f64]) as f32;			
 			verts[i + 3] = 0.0;
 			verts[i + 4] = 1.0;
 			verts[i + 5] = 0.0;
-			verts[i + 6] = (xpos as f32 / (WIDTH - 1) as f32) as f32;
-			verts[i + 7] = (ypos as f32 / (WIDTH - 1) as f32) as f32;
+			verts[i + 6] = WIDTH as f32 * (xpos as f32 / (WIDTH - 1) as f32) as f32;
+			verts[i + 7] = WIDTH as f32 * (ypos as f32 / (WIDTH - 1) as f32) as f32;
 		}
 
 		//This loop executes once per subsquare on the plane
@@ -342,7 +319,7 @@ fn main() {
 		}
 
 		let vao = create_vertex_array_object(&verts, &indices, &[3, 3, 2]);
-		let model_matrix = glm::scaling(&glm::vec3(5.0, 5.0, 5.0));
+		let model_matrix = glm::scaling(&glm::vec3(WIDTH as f32, 1.0, WIDTH as f32));
 		meshes.insert(Mesh::new(vao, model_matrix, "textures/checkerboard.jpg", indices.len() as i32));
 	};
 

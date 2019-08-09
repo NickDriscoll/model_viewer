@@ -10,6 +10,7 @@ uniform vec4 light_position;
 uniform vec4 view_position;
 uniform float shininess;
 
+const vec4 LIGHT_DIRECTION = normalize(vec4(0.5, 1.0, 0.0, 0.0));
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
 const float AMBIENT_STRENGTH = 0.1;
 const float ATTENUATION_CONSTANT = 1.0;
@@ -42,5 +43,6 @@ void main() {
 	float attenuation = clamp(ATTENUATION_CONSTANT / length(light_position - f_pos), 0.0, 1.0);
 
 	vec3 result = attenuation * tex_color * (ambient + diffuse + specular);
-	frag_color = vec4(result, 1.0);
+	//frag_color = vec4(result, 1.0);
+	frag_color = vec4(tex_color, 1.0);
 }
