@@ -218,6 +218,7 @@ fn main() {
 		gl::Enable(gl::DEPTH_TEST);
 		gl::DepthFunc(gl::LESS);
 		gl::Enable(gl::CULL_FACE);
+		gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
 	}
 
 	//Compile shader program
@@ -268,6 +269,7 @@ fn main() {
 	//OptionVec of meshes
 	let mut meshes = OptionVec::with_capacity(10);
 
+	/*
 	//Create the walls, floor, and ceiling
 	unsafe {
 		let scale = 5.0;
@@ -297,6 +299,52 @@ fn main() {
 			meshes.insert(Mesh::new(vao, *matrix, "textures/checkerboard.jpg", indices.len() as i32));
 		}
 	}
+	*/
+
+	//Create the large tessellated plane
+	unsafe {
+		const ELEMENT_STRIDE: usize = 8;
+		const WIDTH: usize = 16;
+		const TRIS: usize = (WIDTH - 1) * (WIDTH - 1) * 2;
+
+		//Buffers to be filled
+		let mut verts = [0.0; WIDTH*WIDTH*ELEMENT_STRIDE];
+		let mut indices: Vec<u16> = Vec::with_capacity(TRIS * 3);
+
+		for i in (0..verts.len()).step_by(ELEMENT_STRIDE) {
+			let xpos: usize = (i / ELEMENT_STRIDE) % WIDTH;
+			let ypos: usize = (i / ELEMENT_STRIDE) / WIDTH;
+
+			verts[i + 0] = (xpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
+			verts[i + 1] = 0.0;
+			verts[i + 2] = (ypos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
+			verts[i + 3] = 0.0;
+			verts[i + 4] = 1.0;
+			verts[i + 5] = 0.0;
+			verts[i + 6] = (xpos as f32 / (WIDTH - 1) as f32) as f32;
+			verts[i + 7] = (ypos as f32 / (WIDTH - 1) as f32) as f32;
+		}
+
+		//This loop executes once per subsquare on the plane
+		for i in 0..((WIDTH-1)*(WIDTH-1)) {
+			let xpos = i % (WIDTH-1);
+			let ypos = i / (WIDTH-1);
+
+			//Push indices for bottom-left triangle
+			indices.push((xpos + ypos * WIDTH) as u16);
+			indices.push((xpos + ypos * WIDTH + WIDTH) as u16);
+			indices.push((xpos + ypos * WIDTH + 1) as u16);
+			
+			//Push indices for top-right triangle
+			indices.push((xpos + ypos * WIDTH + 1) as u16);
+			indices.push((xpos + ypos * WIDTH + WIDTH) as u16);
+			indices.push((xpos + ypos * WIDTH + WIDTH + 1) as u16);
+		}
+
+		let vao = create_vertex_array_object(&verts, &indices, &[3, 3, 2]);
+		let model_matrix = glm::scaling(&glm::vec3(5.0, 5.0, 5.0));
+		meshes.insert(Mesh::new(vao, model_matrix, "textures/checkerboard.jpg", indices.len() as i32));
+	};
 
 	//Create the sphere that represents the light source
 	let mut light_position = glm::vec4(0.0, 1.0, 0.0, 1.0);
