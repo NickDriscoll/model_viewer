@@ -252,9 +252,11 @@ fn main() {
 		loop {
 			match order_rx.recv() {
 				Ok(WorkOrder::Image(path)) => {
+					println!("[Worker]\tLoading image: {}...", path);
 					texture_tx.send((path, image_data_from_path(path))).unwrap();
+					println!("[Worker]\tDone!");
 				}
-				Err(e) => {
+				Err(_) => {
 					return;
 				}
 			}
