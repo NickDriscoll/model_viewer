@@ -85,7 +85,7 @@ fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option
 			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]) };
 
 			//Create texture
-			let t = unsafe { load_texture_from_data(([128, 128, 128].to_vec(), 1, 1)) };
+			let t = unsafe { load_texture_from_data(([128, 128, 128].to_vec(), 1, 1, gl::RGB)) };
 
 			let mut mesh = Mesh::new(vao, glm::identity(), "", model.indices().len() as GLsizei);
 			mesh.texture = t;

@@ -6,11 +6,10 @@ use std::fs::File;
 use std::{mem, process, ptr};
 use std::path::Path;
 use std::os::raw::c_void;
-use image::GenericImageView;
+use image::DynamicImage;
 use openvr::{Compositor, Eye};
 
-//pub type ImageData = (Vec<u8>, u32, u32);
-pub type ImageData = (Vec<u8>, u32, u32);
+pub type ImageData = (Vec<u8>, u32, u32, GLenum);
 const INFO_LOG_SIZE: usize = 512;
 
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
@@ -144,15 +143,26 @@ pub unsafe fn load_texture(path: &str) -> GLuint {
 }
 
 pub fn image_data_from_path(path: &str) -> ImageData {
-	let image = match image::open(&Path::new(path)) {
-		Ok(im) => {
-			im
+	match image::open(&Path::new(path)) {
+		Ok(DynamicImage::ImageRgb8(im)) => {
+			let width = im.width();
+			let height = im.height();
+			let raw = im.into_raw();
+			(raw, width, height, gl::RGB)
 		}
-		Err(_) => {
-			panic!("Unable to open {}", path);
+		Ok(DynamicImage::ImageRgba8(im)) => {
+			let width = im.width();
+			let height = im.height();
+			let raw = im.into_raw();
+			(raw, width, height, gl::RGBA)
 		}
-	};
-	(image.raw_pixels(), image.width(), image.height())
+		Ok(_) => {
+			panic!("{} is of unsupported image type", path);
+		}
+		Err(e) => {
+			panic!("Unable to open {}: {}", path, e);
+		}
+	}
 }
 
 pub unsafe fn load_texture_from_data(image_data: ImageData) -> GLuint {
@@ -166,11 +176,11 @@ pub unsafe fn load_texture_from_data(image_data: ImageData) -> GLuint {
 
 	gl::TexImage2D(gl::TEXTURE_2D,
 				   0,
-				   gl::RGB as i32,
+				   image_data.3 as i32,
 				   image_data.1 as i32,
 				   image_data.2 as i32,
 				   0,
-				   gl::RGB,
+				   image_data.3,
 				   gl::UNSIGNED_BYTE,
 				   &image_data.0[0] as *const u8 as *const c_void);
 	gl::GenerateMipmap(gl::TEXTURE_2D);
