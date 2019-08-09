@@ -12,7 +12,6 @@ uniform float shininess;
 
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
 const float AMBIENT_STRENGTH = 0.1;
-//const float SHININESS = 8.0;
 const float ATTENUATION_CONSTANT = 1.0;
 
 void main() {
