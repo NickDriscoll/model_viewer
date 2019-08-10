@@ -28,7 +28,13 @@ const FAR_Z: f32 = 500.0;
 type MeshArrays = (Vec<f32>, Vec<u16>);
 
 enum WorkOrder<'a> {
-	Image(&'a str)
+	Image(&'a str),
+	Model
+}
+
+enum WorkResult<'a> {
+	Image(&'a str, ImageData),
+	Model(Option<MeshArrays>)
 }
 
 fn openvr_to_mat4(mat: [[f32; 4]; 3]) -> glm::TMat4<f32> {
@@ -242,22 +248,32 @@ fn main() {
 		color_space: ColorSpace::Auto
 	};
 
-	//Texture loading channel
-	let (texture_tx, texture_rx) = mpsc::channel::<(&str, ImageData)>();
+	//Channels for communication with the worker thread
 	let (order_tx, order_rx) = mpsc::channel::<WorkOrder>();
+	let (result_tx, result_rx) = mpsc::channel::<WorkResult>();
 
 	//The channel for sending 3D models between threads
-	let (load_tx, load_rx) = mpsc::channel::<Option<MeshArrays>>();
+	//let (load_tx, load_rx) = mpsc::channel::<Option<MeshArrays>>();
 
 	//Map of texture paths to texture ids
 	let mut textures: HashMap<String, GLuint> = HashMap::new();
 
 	//Spawn thread to load textures
-	thread::spawn( move || {
+	thread::spawn(move || {
 		loop {
 			match order_rx.recv() {
 				Ok(WorkOrder::Image(path)) => {
-					texture_tx.send((path, image_data_from_path(path))).unwrap();
+					result_tx.send(WorkResult::Image(path, image_data_from_path(path))).unwrap();
+				}
+				Ok(WorkOrder::Model) => {
+					//Invoke file selection dialogue
+					let path = match nfd::open_file_dialog(None, None).unwrap() {
+						Response::Okay(filename) => { filename }
+						_ => { return }
+					};
+
+					//Send model data back to the main thread
+					result_tx.send(WorkResult::Model(load_wavefront_obj(&path))).unwrap();
 				}
 				Err(_) => {
 					return;
@@ -265,8 +281,6 @@ fn main() {
 			}
 		}
 	});
-	order_tx.send(WorkOrder::Image("textures/checkerboard.jpg")).unwrap();
-	order_tx.send(WorkOrder::Image("textures/bricks.jpg")).unwrap();
 
 	//OptionVec of meshes
 	let mut meshes = OptionVec::with_capacity(10);
@@ -294,10 +308,7 @@ fn main() {
 
 			vertices[i] = (xpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
 			vertices[i + 2] = (ypos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
-			vertices[i + 1] = simplex_generator.get([vertices[i] as f64, vertices[i + 2] as f64]) as f32;			
-			//vertices[i + 3] = 0.0;
-			//vertices[i + 4] = 1.0;
-			//vertices[i + 5] = 0.0;
+			vertices[i + 1] = simplex_generator.get([vertices[i] as f64, vertices[i + 2] as f64]) as f32;
 			vertices[i + 6] = WIDTH as f32 * (xpos as f32 / (WIDTH - 1) as f32) as f32;
 			vertices[i + 7] = WIDTH as f32 * (ypos as f32 / (WIDTH - 1) as f32) as f32;
 		}
@@ -362,7 +373,6 @@ fn main() {
 			}
 
 			//Write this vertex normal to the proper spot in the vertices array
-			println!("{:?}", averaged_vector);
 			vertices[i + 3] = averaged_vector.data[0];
 			vertices[i + 4] = averaged_vector.data[1];
 			vertices[i + 5] = averaged_vector.data[2];
@@ -370,7 +380,8 @@ fn main() {
 
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
 		let model_matrix = glm::scaling(&glm::vec3(WIDTH as f32, AMPLITUDE, WIDTH as f32));
-		meshes.insert(Mesh::new(vao, model_matrix, "textures/checkerboard.jpg", indices.len() as i32));
+		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", indices.len() as i32));
+		order_tx.send(WorkOrder::Image("textures/grass.jpg")).unwrap();
 	};
 
 	//Create the sphere that represents the light source
@@ -381,6 +392,7 @@ fn main() {
 				let vao = create_vertex_array_object(&obj.0, &obj.1, &[3, 3, 2]);
 				let t = glm::vec4_to_vec3(&light_position);
 				let mesh = Mesh::new(vao, glm::translation(&t) * uniform_scale(0.01), "textures/bricks.jpg", obj.1.len() as i32);
+				order_tx.send(WorkOrder::Image("textures/bricks.jpg")).unwrap();
 				Some(meshes.insert(mesh))
 			}
 			None => { None }
@@ -473,19 +485,23 @@ fn main() {
 			}
 		}
 
-		//Check if a new model has been loaded
-		if let Ok(Some(package)) = load_rx.try_recv() {
-			let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
-			let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), "textures/bricks.jpg", package.1.len() as i32);
-			model_indices.push(Some(meshes.insert(mesh)));
-			bound_controller_indices.push(None);
-			model_to_controller_matrices.push(glm::identity());
-		}
-
-		//Check if there are any textures to be received from the worker thread
-		if let Ok(texture_data) = texture_rx.try_recv() {
-			let tex_id = unsafe { load_texture_from_data(texture_data.1) };
-			textures.insert(texture_data.0.to_string(), tex_id);
+		//Check if the worker thread has new results for us
+		if let Ok(work_result) = result_rx.try_recv() {
+			match work_result {
+				WorkResult::Image(path, tex_data) => {
+					let tex_id = unsafe { load_texture_from_data(tex_data) };
+					textures.insert(path.to_string(), tex_id);
+				}
+				WorkResult::Model(option_mesh) => {
+					if let Some(package) = option_mesh {
+						let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
+						let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), "textures/bricks.jpg", package.1.len() as i32);
+						model_indices.push(Some(meshes.insert(mesh)));
+						bound_controller_indices.push(None);
+						model_to_controller_matrices.push(glm::identity());
+					}
+				}
+			}
 		}
 
 		//Connect all meshes to their textures
@@ -521,19 +537,7 @@ fn main() {
 						Key::I => { camera.fov = 90.0; }
 						Key::Escape => { window.set_should_close(true); }
 						Key::G => { is_lighting = !is_lighting; }
-						Key::L => {
-							let tx = load_tx.clone();
-							thread::spawn( move || {
-								//Invoke file selection dialogue
-								let path = match nfd::open_file_dialog(None, None).unwrap() {
-									Response::Okay(filename) => { filename }
-									_ => { return }
-								};
-
-								//Send model data back to the main thread
-								tx.send(load_wavefront_obj(&path)).unwrap();
-							});
-						}
+						Key::L => { order_tx.send(WorkOrder::Model).unwrap(); }
 						Key::Space => {
 							camera.attached_to_hmd = !camera.attached_to_hmd;
 
