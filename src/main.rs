@@ -23,7 +23,7 @@ mod glutil;
 
 //The distances of the near and far clipping planes from the origin
 const NEAR_Z: f32 = 0.05;
-const FAR_Z: f32 = 50.0;
+const FAR_Z: f32 = 500.0;
 
 type MeshArrays = (Vec<f32>, Vec<u16>);
 
@@ -86,7 +86,7 @@ fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option
 			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]) };
 
 			//Create texture
-			let t = unsafe { load_texture_from_data(([128, 128, 128].to_vec(), 1, 1, gl::RGB)) };
+			let t = unsafe { load_texture_from_data(([25, 140, 15].to_vec(), 1, 1, gl::RGB)) };
 
 			let mut mesh = Mesh::new(vao, glm::identity(), "", model.indices().len() as GLsizei);
 			mesh.texture = t;
@@ -219,7 +219,7 @@ fn main() {
 		gl::Enable(gl::DEPTH_TEST);
 		gl::DepthFunc(gl::LESS);
 		gl::Enable(gl::CULL_FACE);
-		gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
+		//gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
 	}
 
 	//Compile shader program
@@ -231,6 +231,9 @@ fn main() {
 	let light_position_location = unsafe { get_uniform_location(nonluminous_shader, "light_position") };
 	let view_position_location = unsafe { get_uniform_location(nonluminous_shader, "view_position") };
 	let shininess_location = unsafe { get_uniform_location(nonluminous_shader, "shininess") };
+	let lighting_location = unsafe { get_uniform_location(nonluminous_shader, "lighting") };
+
+	let mut is_lighting = true;
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -254,9 +257,7 @@ fn main() {
 		loop {
 			match order_rx.recv() {
 				Ok(WorkOrder::Image(path)) => {
-					println!("[Worker]\tLoading image: {}...", path);
 					texture_tx.send((path, image_data_from_path(path))).unwrap();
-					println!("[Worker]\tDone!");
 				}
 				Err(_) => {
 					return;
@@ -279,27 +280,26 @@ fn main() {
 	//Create the large tessellated plane
 	unsafe {
 		const ELEMENT_STRIDE: usize = 8;
-		//const WIDTH: usize = 100;
-		const WIDTH: usize = 8;
+		const AMPLITUDE: f32 = 25.0;
+		const WIDTH: usize = 100;
 		const TRIS: usize = (WIDTH - 1) * (WIDTH - 1) * 2;
-		const AMPLITUDE: f32 = 20.0;
 
 		//Buffers to be filled
-		let mut verts = [0.0; WIDTH*WIDTH*ELEMENT_STRIDE];
+		let mut vertices = [0.0; WIDTH*WIDTH*ELEMENT_STRIDE];
 		let mut indices: Vec<u16> = Vec::with_capacity(TRIS * 3);
 
-		for i in (0..verts.len()).step_by(ELEMENT_STRIDE) {
+		for i in (0..vertices.len()).step_by(ELEMENT_STRIDE) {
 			let xpos: usize = (i / ELEMENT_STRIDE) % WIDTH;
 			let ypos: usize = (i / ELEMENT_STRIDE) / WIDTH;
 
-			verts[i] = (xpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
-			verts[i + 2] = (ypos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
-			//verts[i + 1] = AMPLITUDE * simplex_generator.get([verts[i] as f64, verts[i + 2] as f64]) as f32;			
-			verts[i + 3] = 0.0;
-			verts[i + 4] = 1.0;
-			verts[i + 5] = 0.0;
-			verts[i + 6] = WIDTH as f32 * (xpos as f32 / (WIDTH - 1) as f32) as f32;
-			verts[i + 7] = WIDTH as f32 * (ypos as f32 / (WIDTH - 1) as f32) as f32;
+			vertices[i] = (xpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
+			vertices[i + 2] = (ypos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
+			vertices[i + 1] = simplex_generator.get([vertices[i] as f64, vertices[i + 2] as f64]) as f32;			
+			//vertices[i + 3] = 0.0;
+			//vertices[i + 4] = 1.0;
+			//vertices[i + 5] = 0.0;
+			vertices[i + 6] = WIDTH as f32 * (xpos as f32 / (WIDTH - 1) as f32) as f32;
+			vertices[i + 7] = WIDTH as f32 * (ypos as f32 / (WIDTH - 1) as f32) as f32;
 		}
 
 		//This loop executes once per subsquare on the plane
@@ -318,8 +318,58 @@ fn main() {
 			indices.push((xpos + ypos * WIDTH + WIDTH + 1) as u16);
 		}
 
-		let vao = create_vertex_array_object(&verts, &indices, &[3, 3, 2]);
-		let model_matrix = glm::scaling(&glm::vec3(WIDTH as f32, 1.0, WIDTH as f32));
+		//The ith vertex will be shared by each surface in vertex_surface_map[i]
+		let mut vertex_surface_map = Vec::with_capacity(vertices.len() / ELEMENT_STRIDE);
+		for _ in 0..(vertices.len() / ELEMENT_STRIDE) {
+			vertex_surface_map.push(Vec::new());
+		}
+
+		//Calculate surface normals
+		let surface_normals = {
+			const INDICES_PER_TRIANGLE: usize = 3;
+			let mut norms = Vec::with_capacity(indices.len() / INDICES_PER_TRIANGLE);
+
+			for i in (0..indices.len()).step_by(INDICES_PER_TRIANGLE) {
+				let mut tri_verts = [glm::zero(); INDICES_PER_TRIANGLE];
+
+				for j in 0..INDICES_PER_TRIANGLE {
+					let index = indices[i + j];
+					tri_verts[j] = glm::vec4(vertices[index as usize * ELEMENT_STRIDE],
+											 vertices[index as usize * ELEMENT_STRIDE + 1],
+											 vertices[index as usize * ELEMENT_STRIDE + 2],
+											 1.0);
+
+					vertex_surface_map[index as usize].push(i / INDICES_PER_TRIANGLE);
+				}
+
+				let u = glm::vec4_to_vec3(&(tri_verts[0] - tri_verts[1]));
+				let v = glm::vec4_to_vec3(&(tri_verts[1] - tri_verts[2]));
+
+				norms.push(glm::cross::<f32, glm::U3>(&u, &v));
+			}
+			norms
+		};
+
+		//Calculate vertex normals
+		for i in (0..vertices.len()).step_by(ELEMENT_STRIDE) {
+			let vertex_number = i / ELEMENT_STRIDE;
+
+			//Calculate the vertex normal itself
+			let mut averaged_vector: glm::TVec3<f32> = glm::zero();
+			for surface_id in vertex_surface_map[vertex_number].iter() {
+				let normal = surface_normals[*surface_id];
+				averaged_vector = glm::normalize(&(averaged_vector + normal));
+			}
+
+			//Write this vertex normal to the proper spot in the vertices array
+			println!("{:?}", averaged_vector);
+			vertices[i + 3] = averaged_vector.data[0];
+			vertices[i + 4] = averaged_vector.data[1];
+			vertices[i + 5] = averaged_vector.data[2];
+		}
+
+		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
+		let model_matrix = glm::scaling(&glm::vec3(WIDTH as f32, AMPLITUDE, WIDTH as f32));
 		meshes.insert(Mesh::new(vao, model_matrix, "textures/checkerboard.jpg", indices.len() as i32));
 	};
 
@@ -470,6 +520,7 @@ fn main() {
 						Key::P => { camera.fov_delta = Camera::FOV_SPEED; }
 						Key::I => { camera.fov = 90.0; }
 						Key::Escape => { window.set_should_close(true); }
+						Key::G => { is_lighting = !is_lighting; }
 						Key::L => {
 							let tx = load_tx.clone();
 							thread::spawn( move || {
@@ -546,7 +597,7 @@ fn main() {
 					Some(mesh_index),
 					Some(state),
 					Some(p_state),
-					Some(sys),
+					Some(_sys),
 					Some(poses)) = (  controllers.device_indices[i],
 									  controllers.mesh_indices[i],
 									  controllers.states[i],
@@ -751,6 +802,9 @@ fn main() {
 
 							//Send float uniform to GPU
 							gl::Uniform1f(shininess_location, mesh.shininess);
+
+							//Send bool uniform to GPU
+							gl::Uniform1i(lighting_location, is_lighting as i32);
 
 							//Bind the mesh's texture
 							gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
