@@ -11,10 +11,10 @@ uniform vec4 view_position;
 uniform float shininess;
 uniform bool lighting;
 
-const vec4 LIGHT_DIRECTION = normalize(vec4(0.5, 1.0, 0.0, 0.0));
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
 const float AMBIENT_STRENGTH = 0.1;
 const float ATTENUATION_CONSTANT = 1.0;
+const float BRIGHTNESS = 0.75;
 
 void main() {
 	//Normalize any vectors
@@ -25,7 +25,8 @@ void main() {
 
 	//Get light direction vector from light position
 	//From frag location to light source
-	vec4 light_direction = normalize(light_position - f_pos);
+	//vec4 light_direction = normalize(light_position - f_pos);
+	vec4 light_direction = normalize(vec4(0.0, 1.0, 0.0, 0.0));
 
 	//Get ambient contribution
 	vec3 ambient = AMBIENT_STRENGTH * LIGHT_COLOR;
@@ -41,9 +42,10 @@ void main() {
 	vec3 specular = pow(specular_angle, shininess) * LIGHT_COLOR;
 
 	//Calculate distance attenuation
-	float attenuation = clamp(ATTENUATION_CONSTANT / length(light_position - f_pos), 0.0, 1.0);
+	//float attenuation = clamp(ATTENUATION_CONSTANT / length(light_position - f_pos), 0.0, 1.0);
+	float attenuation = 1.0;
 
-	vec3 result = attenuation * tex_color * (ambient + diffuse + specular);
+	vec3 result = BRIGHTNESS * attenuation * tex_color * (ambient + diffuse + specular);
 	
 	if (lighting) {
 		frag_color = vec4(result, 1.0);
