@@ -7,6 +7,7 @@ use nfd::Response;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
+use std::mem::size_of;
 use std::thread;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::sync::mpsc;
@@ -224,9 +225,10 @@ fn main() {
 	unsafe {
 		gl::Enable(gl::DEPTH_TEST);
 		gl::DepthFunc(gl::LESS);
-		gl::Enable(gl::CULL_FACE);
-		//gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
+		gl::Enable(gl::CULL_FACE);		
 	}
+
+	let mut is_wireframe = false;
 
 	//Compile shader program
 	let nonluminous_shader = unsafe { compile_program_from_files("shaders/nonluminous_vertex.glsl", "shaders/nonluminous_fragment.glsl") };
@@ -251,9 +253,6 @@ fn main() {
 	//Channels for communication with the worker thread
 	let (order_tx, order_rx) = mpsc::channel::<WorkOrder>();
 	let (result_tx, result_rx) = mpsc::channel::<WorkResult>();
-
-	//The channel for sending 3D models between threads
-	//let (load_tx, load_rx) = mpsc::channel::<Option<MeshArrays>>();
 
 	//Map of texture paths to texture ids
 	let mut textures: HashMap<String, GLuint> = HashMap::new();
@@ -288,20 +287,22 @@ fn main() {
 	//Set up the simplex noise generator
 	let mut simplex_generator = OpenSimplex::new();
 	let simplex_seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000;
-	println!("Seed used for simplex noise: {}", simplex_seed);
+	println!("Seed used for terrain generation: {}", simplex_seed);
 	simplex_generator = simplex_generator.set_seed(simplex_seed as u32);
 
 	//Create the large tessellated plane
 	unsafe {
 		const ELEMENT_STRIDE: usize = 8;
 		const AMPLITUDE: f32 = 25.0;
+		const SCALE: f32 = 500.0;
 		const WIDTH: usize = 100;
 		const TRIS: usize = (WIDTH - 1) * (WIDTH - 1) * 2;
 
 		//Buffers to be filled
-		let mut vertices = [0.0; WIDTH*WIDTH*ELEMENT_STRIDE];
+		let mut vertices = vec![0.0; WIDTH * WIDTH * ELEMENT_STRIDE];
 		let mut indices: Vec<u16> = Vec::with_capacity(TRIS * 3);
 
+		//Calculate the positions and tex coords for each vertex
 		for i in (0..vertices.len()).step_by(ELEMENT_STRIDE) {
 			let xpos: usize = (i / ELEMENT_STRIDE) % WIDTH;
 			let ypos: usize = (i / ELEMENT_STRIDE) / WIDTH;
@@ -309,11 +310,11 @@ fn main() {
 			vertices[i] = (xpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
 			vertices[i + 2] = (ypos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
 			vertices[i + 1] = simplex_generator.get([vertices[i] as f64, vertices[i + 2] as f64]) as f32;
-			vertices[i + 6] = WIDTH as f32 * (xpos as f32 / (WIDTH - 1) as f32) as f32;
-			vertices[i + 7] = WIDTH as f32 * (ypos as f32 / (WIDTH - 1) as f32) as f32;
+			vertices[i + 6] = SCALE * (xpos as f32 / (WIDTH - 1) as f32) as f32;
+			vertices[i + 7] = SCALE * (ypos as f32 / (WIDTH - 1) as f32) as f32;
 		}
 
-		//This loop executes once per subsquare on the plane
+		//This loop executes once per subsquare on the plane, and pushes the indices of the two triangles that comprise said subsquare into the indices Vec
 		for i in 0..((WIDTH-1)*(WIDTH-1)) {
 			let xpos = i % (WIDTH-1);
 			let ypos = i / (WIDTH-1);
@@ -378,8 +379,9 @@ fn main() {
 			vertices[i + 5] = averaged_vector.data[2];
 		}
 
+		println!("The generated plane is {} bytes", vertices.len() * size_of::<f32>());
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
-		let model_matrix = glm::scaling(&glm::vec3(WIDTH as f32, AMPLITUDE, WIDTH as f32));
+		let model_matrix = glm::scaling(&glm::vec3(SCALE, AMPLITUDE, SCALE));
 		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", indices.len() as i32));
 		order_tx.send(WorkOrder::Image("textures/grass.jpg")).unwrap();
 	};
@@ -537,6 +539,14 @@ fn main() {
 						Key::I => { camera.fov = 90.0; }
 						Key::Escape => { window.set_should_close(true); }
 						Key::G => { is_lighting = !is_lighting; }
+						Key::Q => {
+							if is_wireframe {
+								unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL); }
+							} else {
+								unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE); }
+							}
+							is_wireframe = !is_wireframe;
+						}
 						Key::L => { order_tx.send(WorkOrder::Model).unwrap(); }
 						Key::Space => {
 							camera.attached_to_hmd = !camera.attached_to_hmd;
