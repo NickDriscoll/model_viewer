@@ -55,7 +55,6 @@ impl Camera {
 		}
 	}
 
-
 	pub fn get_freecam_matrix(&self) -> glm::TMat4<f32> {
 		glm::rotation(self.pitch, &glm::vec3(1.0, 0.0, 0.0)) *
 		glm::rotation(self.yaw, &glm::vec3(0.0, 1.0, 0.0)) *
@@ -88,7 +87,6 @@ impl Controllers {
 	}
 
 	pub fn pressed_this_frame(&self, controller_index: usize, flag: u32) -> bool {
-		//state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
 		if let (Some(state), Some(p_state)) = (self.states[controller_index], self.previous_states[controller_index]) {
 			state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
 		} else {
@@ -97,7 +95,6 @@ impl Controllers {
 	}
 
 	pub fn released_this_frame(&self, controller_index: usize, flag: u32) -> bool {
-		//state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
 		if let (Some(state), Some(p_state)) = (self.states[controller_index], self.previous_states[controller_index]) {
 			state.button_pressed & (1 as u64) << flag == 0 && p_state.button_pressed & (1 as u64) << flag != 0
 		} else {
@@ -140,6 +137,15 @@ impl<T> OptionVec<T> {
 				self.optionvec.len() - 1
 			}
 		}
+	}
+
+	pub fn get_element(&mut self, index: Option<usize>) -> Option<&mut T> {	
+		match index {
+			Some(i) => {
+				self[i].as_mut()
+			}
+			None => { None }
+		}	
 	}
 
 	pub fn two_mut_refs(&mut self, index1: usize, index2: usize) -> (&mut Option<T>, &mut Option<T>) {

@@ -104,14 +104,6 @@ fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option
 	result
 }
 
-fn pressed_this_frame(state: &ControllerState, p_state: &ControllerState, flag: u32) -> bool {
-	state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
-}
-
-fn released_this_frame(state: &ControllerState, p_state: &ControllerState, flag: u32) -> bool {
-	state.button_pressed & (1 as u64) << flag == 0 && p_state.button_pressed & (1 as u64) << flag != 0
-}
-
 fn get_frame_origin(model_matrix: &glm::TMat4<f32>) -> glm::TVec4<f32> {
 	model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
 }
@@ -153,18 +145,6 @@ fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
 		vert_data.push(random::<f32>());
 	}
 	Some((vert_data, model.indices))
-}
-
-fn get_mesh(meshes: &mut OptionVec<Mesh>, index: Option<usize>) -> Option<&mut Mesh> {
-	match index {
-		Some(i) => {
-			match &mut meshes[i] {
-				Some(mesh) => { Some(mesh) }
-				None => { None }
-			}
-		}
-		None => { None }
-	}
 }
 
 fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
@@ -639,7 +619,7 @@ fn main() {
 						Key::Space => {
 							camera.attached_to_hmd = !camera.attached_to_hmd;
 
-							if let Some(mesh) = get_mesh(&mut meshes, hmd_mesh_index) {
+							if let Some(mesh) = meshes.get_element(hmd_mesh_index) {
 								mesh.render_pass_visibilities[2] = !camera.attached_to_hmd;
 							}
 						}
@@ -831,7 +811,7 @@ fn main() {
 		//Update HMD Mesh's model matrix
 		if let Some(poses) = render_poses {
 			let hmd_to_absolute = openvr_to_mat4(*poses[0].device_to_absolute_tracking());
-			if let Some(mesh) = get_mesh(&mut meshes, hmd_mesh_index) {
+			if let Some(mesh) = meshes.get_element(hmd_mesh_index) {
 				mesh.model_matrix = tracking_to_world * hmd_to_absolute;
 			}
 		}
@@ -841,7 +821,7 @@ fn main() {
 			for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
 				if let Some(index) = &controllers.device_indices[i] {
 					let controller_model_matrix = openvr_to_mat4(*poses[*index as usize].device_to_absolute_tracking());
-					if let Some(mesh) = get_mesh(&mut meshes, controllers.mesh_indices[i]) {
+					if let Some(mesh) = meshes.get_element(controllers.mesh_indices[i]) {
 						mesh.model_matrix = tracking_to_world * controller_model_matrix;
 					}
 				}
@@ -860,7 +840,7 @@ fn main() {
 		}
 
 		//Make the light bob up and down
-		if let Some(mesh) = get_mesh(&mut meshes, sphere_index) {
+		if let Some(mesh) = meshes.get_element(sphere_index) {
 			mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks*0.2) + 0.8, 0.0)) * uniform_scale(0.1);
 			light_position = get_frame_origin(&mesh.model_matrix);
 		}
