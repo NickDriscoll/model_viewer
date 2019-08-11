@@ -7,7 +7,7 @@ use nfd::Response;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use std::mem::size_of;
+use std::os::raw::c_void;
 use std::thread;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::sync::mpsc;
@@ -24,7 +24,7 @@ mod glutil;
 
 //The distances of the near and far clipping planes from the origin
 const NEAR_Z: f32 = 0.05;
-const FAR_Z: f32 = 500.0;
+const FAR_Z: f32 = 800.0;
 
 type MeshArrays = (Vec<f32>, Vec<u16>);
 
@@ -225,13 +225,16 @@ fn main() {
 	unsafe {
 		gl::Enable(gl::DEPTH_TEST);
 		gl::DepthFunc(gl::LESS);
-		gl::Enable(gl::CULL_FACE);		
+		gl::Enable(gl::CULL_FACE);
 	}
 
 	let mut is_wireframe = false;
 
-	//Compile shader program
+	//Compile standard geometry shader
 	let nonluminous_shader = unsafe { compile_program_from_files("shaders/nonluminous_vertex.glsl", "shaders/nonluminous_fragment.glsl") };
+
+	//Compile skybox shader
+	let skybox_shader = unsafe { compile_program_from_files("shaders/skybox_vertex.glsl", "shaders/skybox_fragment.glsl") };
 
 	//Get locations of program uniforms
 	let mvp_location = unsafe { get_uniform_location(nonluminous_shader, "mvp") };
@@ -281,6 +284,84 @@ fn main() {
 		}
 	});
 
+	//Create the cube that will be user to render the skybox
+	let skybox_vao = unsafe {
+		let vertices = [
+			-1.0, -1.0, -1.0,
+			1.0, -1.0, -1.0,
+			-1.0, 1.0, -1.0,
+			1.0, 1.0, -1.0,
+			-1.0, -1.0, 1.0,
+			-1.0, 1.0, 1.0,
+			1.0, -1.0, 1.0,
+			1.0, 1.0, 1.0
+		];
+		let indices = [
+			//Front
+			0u16, 1, 2,
+			3, 2, 1,
+
+			//Left
+			0, 2, 4,
+			2, 5, 4,
+
+			//Right
+			3, 1, 6,
+			7, 3, 6,
+
+			//Back
+			5, 7, 4,
+			7, 6, 4,
+
+			//Bottom
+			4, 1, 0,
+			4, 6, 1,
+
+			//Top
+			7, 5, 2,
+			7, 2, 3
+		];
+
+		create_vertex_array_object(&vertices, &indices, &[3])
+	};
+
+	//Create the skybox cubemap
+	let skybox_cubemap = unsafe {
+		let mut cubemap = 0;
+		gl::GenTextures(1, &mut cubemap);
+		gl::BindTexture(gl::TEXTURE_CUBE_MAP, cubemap);
+		
+		//Configure texture
+		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
+		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
+		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as i32);
+		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+
+		const PATHS: [&str; 6] = ["textures/skybox/totality_rt.tga",
+								  "textures/skybox/totality_lf.tga",
+								  "textures/skybox/totality_up.tga",
+								  "textures/skybox/totality_dn.tga",
+								  "textures/skybox/totality_bk.tga",
+								  "textures/skybox/totality_ft.tga"];
+
+		//Place each piece of the skybox on the correct face
+		for i in 0..6 {
+			let image_data = image_data_from_path(PATHS[i]);
+			gl::TexImage2D(gl::TEXTURE_CUBE_MAP_POSITIVE_X + i as u32,
+						   0,
+						   image_data.3 as i32,
+						   image_data.1 as i32,
+						   image_data.2 as i32,
+						   0,
+						   image_data.3,
+						   gl::UNSIGNED_BYTE,
+				  		   &image_data.0[0] as *const u8 as *const c_void);
+		}
+		cubemap
+	};
+
+
 	//OptionVec of meshes
 	let mut meshes = OptionVec::with_capacity(10);
 
@@ -295,7 +376,7 @@ fn main() {
 		const ELEMENT_STRIDE: usize = 8;
 		const SCALE: f32 = 250.0;
 		const AMPLITUDE: f32 = SCALE / 5.0;
-		const WIDTH: usize = 200;
+		const WIDTH: usize = 100;
 		const TRIS: usize = (WIDTH - 1) * (WIDTH - 1) * 2;
 
 		//Buffers to be filled
@@ -385,7 +466,7 @@ fn main() {
 			vertices[i + 5] = averaged_vector.data[2];
 		}
 
-		println!("The generated plane is {} bytes", vertices.len() * size_of::<f32>());
+		println!("The generated plane contains {} vertices", vertices.len());
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
 		let model_matrix = glm::scaling(&glm::vec3(SCALE, AMPLITUDE, SCALE));
 		order_tx.send(WorkOrder::Image("textures/grass.jpg")).unwrap();
@@ -788,9 +869,6 @@ fn main() {
 		unsafe {
 			//Set clear color
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
-						
-			//Bind the program that will render the meshes
-			gl::UseProgram(nonluminous_shader);
 
 			//Render once per framebuffer (Left eye, Right eye, Companion window)
 			for i in 0..framebuffers.len() {
@@ -798,13 +876,26 @@ fn main() {
 				gl::BindFramebuffer(gl::FRAMEBUFFER, framebuffers[i]);
 				gl::Viewport(0, 0, sizes[i].0 as GLsizei, sizes[i].1 as GLsizei);
 
-				//Render the scene
+				//Clear the screen
 				gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+
+				//Compute the view-projection matrix
+				let view_projection = p_matrices[i] * v_matrices[i];
+
+				//Render the skybox
+				gl::UseProgram(skybox_shader);
+				gl::UniformMatrix4fv(get_uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&(view_projection * glm::scaling(&glm::vec3(400.0, 400.0, 400.0)))) as *const GLfloat);
+				gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_cubemap);
+				gl::BindVertexArray(skybox_vao);
+				gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_SHORT, ptr::null());
+
+				//Bind the program that will render the meshes
+				gl::UseProgram(nonluminous_shader);
 				for option_mesh in meshes.iter() {
 					if let Some(mesh) = option_mesh {
 						if mesh.render_pass_visibilities[i] && mesh.texture != 0 {
-							//Compute the model-view-projection matrix
-							let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
+							//Calculate model-view-projection for this mesh
+							let mvp = view_projection * mesh.model_matrix;
 
 							//Send matrix uniforms to GPU
 							let mat_locs = [mvp_location, model_matrix_location];

@@ -9,7 +9,7 @@ use std::os::raw::c_void;
 use image::DynamicImage;
 use openvr::{Compositor, Eye};
 
-pub type ImageData = (Vec<u8>, u32, u32, GLenum);
+pub type ImageData = (Vec<u8>, u32, u32, GLenum); //(data, width, height, format)
 const INFO_LOG_SIZE: usize = 512;
 
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
