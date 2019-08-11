@@ -880,7 +880,7 @@ fn main() {
 				gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
 				//Compute the view-projection matrix
-				let view_projection = p_matrices[i] * v_matrices[i];
+				let view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
 
 				//Render the skybox
 				gl::UseProgram(skybox_shader);
@@ -895,7 +895,7 @@ fn main() {
 					if let Some(mesh) = option_mesh {
 						if mesh.render_pass_visibilities[i] && mesh.texture != 0 {
 							//Calculate model-view-projection for this mesh
-							let mvp = view_projection * mesh.model_matrix;
+							let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
 
 							//Send matrix uniforms to GPU
 							let mat_locs = [mvp_location, model_matrix_location];
