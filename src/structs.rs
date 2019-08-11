@@ -40,7 +40,7 @@ pub struct Camera {
 }
 
 impl Camera {
-	pub const SPEED: f32 = 2.0;
+	pub const SPEED: f32 = 10.0;
 	pub const FOV_SPEED: f32 = 5.0;
 
 	pub fn new(position: glm::TVec3<f32>) -> Self {

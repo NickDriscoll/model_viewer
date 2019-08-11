@@ -291,11 +291,11 @@ fn main() {
 	simplex_generator = simplex_generator.set_seed(simplex_seed as u32);
 
 	//Create the large tessellated plane
-	unsafe {
+	let terrain_mesh_index = unsafe {
 		const ELEMENT_STRIDE: usize = 8;
-		const AMPLITUDE: f32 = 25.0;
-		const SCALE: f32 = 500.0;
-		const WIDTH: usize = 100;
+		const SCALE: f32 = 250.0;
+		const AMPLITUDE: f32 = SCALE / 5.0;
+		const WIDTH: usize = 200;
 		const TRIS: usize = (WIDTH - 1) * (WIDTH - 1) * 2;
 
 		//Buffers to be filled
@@ -307,9 +307,14 @@ fn main() {
 			let xpos: usize = (i / ELEMENT_STRIDE) % WIDTH;
 			let ypos: usize = (i / ELEMENT_STRIDE) / WIDTH;
 
+			//Calculate vertex position
 			vertices[i] = (xpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
 			vertices[i + 2] = (ypos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
-			vertices[i + 1] = simplex_generator.get([vertices[i] as f64, vertices[i + 2] as f64]) as f32;
+
+			const SIMPLEX_SCALE: f64 = 3.0;
+			vertices[i + 1] = simplex_generator.get([vertices[i] as f64 * SIMPLEX_SCALE, vertices[i + 2] as f64 * SIMPLEX_SCALE]) as f32;
+
+			//Calculate texture coordinates
 			vertices[i + 6] = SCALE * (xpos as f32 / (WIDTH - 1) as f32) as f32;
 			vertices[i + 7] = SCALE * (ypos as f32 / (WIDTH - 1) as f32) as f32;
 		}
@@ -357,6 +362,7 @@ fn main() {
 				let u = glm::vec4_to_vec3(&(tri_verts[0] - tri_verts[1]));
 				let v = glm::vec4_to_vec3(&(tri_verts[1] - tri_verts[2]));
 
+				//The cross product of 
 				norms.push(glm::cross::<f32, glm::U3>(&u, &v));
 			}
 			norms
@@ -366,12 +372,12 @@ fn main() {
 		for i in (0..vertices.len()).step_by(ELEMENT_STRIDE) {
 			let vertex_number = i / ELEMENT_STRIDE;
 
-			//Calculate the vertex normal itself
+			//Calculate the vertex normal itself by averaging the normal vector of each surface it's connected to, then normalizing the result
 			let mut averaged_vector: glm::TVec3<f32> = glm::zero();
 			for surface_id in vertex_surface_map[vertex_number].iter() {
-				let normal = surface_normals[*surface_id];
-				averaged_vector = glm::normalize(&(averaged_vector + normal));
+				averaged_vector += surface_normals[*surface_id];
 			}
+			averaged_vector = glm::normalize(&averaged_vector);
 
 			//Write this vertex normal to the proper spot in the vertices array
 			vertices[i + 3] = averaged_vector.data[0];
@@ -382,9 +388,10 @@ fn main() {
 		println!("The generated plane is {} bytes", vertices.len() * size_of::<f32>());
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
 		let model_matrix = glm::scaling(&glm::vec3(SCALE, AMPLITUDE, SCALE));
-		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", indices.len() as i32));
 		order_tx.send(WorkOrder::Image("textures/grass.jpg")).unwrap();
+		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", indices.len() as i32))
 	};
+	println!("terrain mesh index: {}", terrain_mesh_index);
 
 	//Create the sphere that represents the light source
 	let mut light_position = glm::vec4(0.0, 1.0, 0.0, 1.0);
