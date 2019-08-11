@@ -77,8 +77,6 @@ impl Controllers {
 	pub const NUMBER_OF_CONTROLLERS: usize = 2;
 
 	pub fn new() -> Self {
-
-
 		Controllers {
 			device_indices: [None; Self::NUMBER_OF_CONTROLLERS],
 			mesh_indices: [None; Self::NUMBER_OF_CONTROLLERS],
@@ -86,6 +84,24 @@ impl Controllers {
 			previous_states: [None; Self::NUMBER_OF_CONTROLLERS],
 			colliding_with: [Vec::new(), Vec::new()],
 			collided_with: [Vec::new(), Vec::new()]
+		}
+	}
+
+	pub fn pressed_this_frame(&self, controller_index: usize, flag: u32) -> bool {
+		//state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
+		if let (Some(state), Some(p_state)) = (self.states[controller_index], self.previous_states[controller_index]) {
+			state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
+		} else {
+			false
+		}
+	}
+
+	pub fn released_this_frame(&self, controller_index: usize, flag: u32) -> bool {
+		//state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
+		if let (Some(state), Some(p_state)) = (self.states[controller_index], self.previous_states[controller_index]) {
+			state.button_pressed & (1 as u64) << flag == 0 && p_state.button_pressed & (1 as u64) << flag != 0
+		} else {
+			false
 		}
 	}
 }

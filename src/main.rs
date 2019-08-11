@@ -724,7 +724,7 @@ fn main() {
 							}
 						}
 
-						if pressed_this_frame(&state, &p_state, button_id::GRIP) && is_colliding {
+						if controllers.pressed_this_frame(i, button_id::GRIP) && is_colliding {
 							//Set the controller's mesh as the mesh the cube mesh is "bound" to
 							bound_controller_indices[j] = Some(i);
 
@@ -736,7 +736,7 @@ fn main() {
 					}
 					
 					//If the trigger was released this frame
-					if released_this_frame(&state, &p_state, button_id::GRIP) {
+					if controllers.released_this_frame(i, button_id::GRIP) {
 					   	if Some(i) == bound_controller_indices[j] {
 					   		bound_controller_indices[j] = None;
 					   	}
