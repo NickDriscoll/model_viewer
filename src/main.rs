@@ -1,7 +1,7 @@
 extern crate gl;
 extern crate nalgebra_glm as glm;
 use glfw::{Action, Context, CursorMode, Key, MouseButton, WindowMode, WindowEvent};
-use openvr::{ApplicationType, button_id, ControllerState, Eye, System, RenderModels, TrackedControllerRole};
+use openvr::{ApplicationType, button_id, Eye, System, RenderModels, TrackedControllerRole};
 use openvr::compositor::texture::{ColorSpace, Handle, Texture};
 use nfd::Response;
 use std::collections::HashMap;
@@ -15,6 +15,7 @@ use std::ptr;
 use obj;
 use rand::random;
 use noise::{NoiseFn, OpenSimplex, Seedable};
+use rodio::source::Source;
 use crate::structs::*;
 use crate::glutil::*;
 use self::gl::types::*;
@@ -167,16 +168,15 @@ fn main() {
 
 	//Get the OpenVR submodules
 	let (openvr_system, openvr_compositor, openvr_rendermodels) = {
-		if let Some(ref ctxt) = openvr_context {
-			(Some(ctxt.system().unwrap()), Some(ctxt.compositor().unwrap()), Some(ctxt.render_models().unwrap()))
-		} else {
-			(None, None, None)
+		match &openvr_context {
+			Some(ctxt) => { (Some(ctxt.system().unwrap()), Some(ctxt.compositor().unwrap()), Some(ctxt.render_models().unwrap())) }
+			None => { (None, None, None) }
 		}
 	};
 
 	//Calculate render target size
-	let render_target_size = match openvr_system {
-		Some(ref sys) => { sys.recommended_render_target_size() }
+	let render_target_size = match &openvr_system {
+		Some(sys) => { sys.recommended_render_target_size() }
 		None => { (1280, 720) }
 	};
 
@@ -201,11 +201,11 @@ fn main() {
 	//Load all OpenGL function pointers
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
-	//Enable and configure depth testing and enable backface culling
+	//Configure the OpenGL context
 	unsafe {
-		gl::Enable(gl::DEPTH_TEST);
-		gl::DepthFunc(gl::LESS);
-		gl::Enable(gl::CULL_FACE);
+		gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
+		gl::DepthFunc(gl::LESS);	//Pass the fragment with the smallest z-value
+		gl::Enable(gl::CULL_FACE);	//Cull backfaces
 	}
 
 	let mut is_wireframe = false;
@@ -340,7 +340,6 @@ fn main() {
 		}
 		cubemap
 	};
-
 
 	//OptionVec of meshes
 	let mut meshes = OptionVec::with_capacity(10);
@@ -492,10 +491,10 @@ fn main() {
 
 	let mut tracking_to_world: glm::TMat4<f32> = glm::identity();
 
-	//Set up data for each render pass
-	let framebuffers = [vr_render_target, vr_render_target, 0];
-	let eyes = [Some(Eye::Left), Some(Eye::Right), None];
-	let mut sizes = [render_target_size, render_target_size, window_size];
+	//Play background music
+	let audio_device = rodio::default_output_device().unwrap();
+	let source = rodio::Decoder::new(BufReader::new(File::open("audio/woodlands.mp3").unwrap())).unwrap();
+	rodio::play_raw(&audio_device, source.convert_samples());
 
 	//Main loop
 	while !window.should_close() {
@@ -575,6 +574,8 @@ fn main() {
 		}
 
 		//Connect all meshes to their textures
+		//TODO: Change so that when a texture is loaded, all meshes are checked, and when a mesh is created, there's a check for the texture it needs
+		//instead of this check that just happens every frame indiscriminantly
 		for option_mesh in meshes.iter_mut() {
 			if let Some(mesh) = option_mesh {
 				if mesh.texture == 0 {
@@ -593,7 +594,6 @@ fn main() {
 				}
 				WindowEvent::FramebufferSize(width, height) => {
 					window_size = (width as u32, height as u32);
-					sizes[2] = window_size;
 					aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
 				}
 				WindowEvent::Key(key, _, Action::Press, ..) => {
@@ -678,12 +678,10 @@ fn main() {
 			if let (Some(device_index),
 					Some(mesh_index),
 					Some(state),
-					Some(p_state),
 					Some(_sys),
 					Some(poses)) = (  controllers.device_indices[i],
 									  controllers.mesh_indices[i],
 									  controllers.states[i],
-									  controllers.previous_states[i],
 									  &openvr_system,
 									  render_poses) {
 
@@ -844,6 +842,12 @@ fn main() {
 			mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks*0.2) + 0.8, 0.0)) * uniform_scale(0.1);
 			light_position = get_frame_origin(&mesh.model_matrix);
 		}
+
+
+		//Set up render data
+		let framebuffers = [vr_render_target, vr_render_target, 0];
+		let eyes = [Some(Eye::Left), Some(Eye::Right), None];
+		let sizes = [render_target_size, render_target_size, window_size];
 
 		//Rendering code
 		unsafe {
