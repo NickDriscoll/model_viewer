@@ -217,19 +217,9 @@ fn main() {
 
 	let mut is_wireframe = false;
 
-	//Compile standard geometry shader
+	//Compile shaders
 	let nonluminous_shader = unsafe { compile_program_from_files("shaders/nonluminous_vertex.glsl", "shaders/nonluminous_fragment.glsl") };
-
-	//Compile skybox shader
 	let skybox_shader = unsafe { compile_program_from_files("shaders/skybox_vertex.glsl", "shaders/skybox_fragment.glsl") };
-
-	//Get locations of program uniforms
-	let mvp_location = unsafe { get_uniform_location(nonluminous_shader, "mvp") };
-	let model_matrix_location = unsafe { get_uniform_location(nonluminous_shader, "model_matrix") };
-	let light_position_location = unsafe { get_uniform_location(nonluminous_shader, "light_position") };
-	let view_position_location = unsafe { get_uniform_location(nonluminous_shader, "view_position") };
-	let shininess_location = unsafe { get_uniform_location(nonluminous_shader, "shininess") };
-	let lighting_location = unsafe { get_uniform_location(nonluminous_shader, "lighting") };
 
 	let mut is_lighting = true;
 
@@ -264,9 +254,7 @@ fn main() {
 					//Send model data back to the main thread
 					result_tx.send(WorkResult::Model(load_wavefront_obj(&path))).unwrap();
 				}
-				Err(_) => {
-					return;
-				}
+				Err(_) => { return; }
 			}
 		}
 	});
@@ -352,17 +340,20 @@ fn main() {
 	let mut meshes = OptionVec::with_capacity(10);
 
 	//Set up the simplex noise generator
-	let mut simplex_generator = OpenSimplex::new();
 	let simplex_seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000;
-	println!("Seed used for terrain generation: {}", simplex_seed);
-	simplex_generator = simplex_generator.set_seed(simplex_seed as u32);
+	println!("Seed used for terrain generation: {}", simplex_seed as u32);
+	let simplex_generator = OpenSimplex::new().set_seed(simplex_seed as u32);
 
 	//Create the large tessellated plane
+	const SIMPLEX_SCALE: f64 = 3.0;
+	const TERRAIN_SCALE: f32 = 250.0;
+	let amplitude;
 	let terrain_mesh_index = unsafe {
 		const ELEMENT_STRIDE: usize = 8;
-		const SCALE: f32 = 250.0;
-		const AMPLITUDE: f32 = SCALE / 5.0;
 		const WIDTH: usize = 100;
+
+		//Dependent
+		amplitude = TERRAIN_SCALE / 5.0;
 		const TRIS: usize = (WIDTH - 1) * (WIDTH - 1) * 2;
 
 		//Buffers to be filled
@@ -378,12 +369,11 @@ fn main() {
 			vertices[i] = (xpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
 			vertices[i + 2] = (ypos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
 
-			const SIMPLEX_SCALE: f64 = 3.0;
 			vertices[i + 1] = simplex_generator.get([vertices[i] as f64 * SIMPLEX_SCALE, vertices[i + 2] as f64 * SIMPLEX_SCALE]) as f32;
 
 			//Calculate texture coordinates
-			vertices[i + 6] = SCALE * (xpos as f32 / (WIDTH - 1) as f32) as f32;
-			vertices[i + 7] = SCALE * (ypos as f32 / (WIDTH - 1) as f32) as f32;
+			vertices[i + 6] = TERRAIN_SCALE * (xpos as f32 / (WIDTH - 1) as f32) as f32;
+			vertices[i + 7] = TERRAIN_SCALE * (ypos as f32 / (WIDTH - 1) as f32) as f32;
 		}
 
 		//This loop executes once per subsquare on the plane, and pushes the indices of the two triangles that comprise said subsquare into the indices Vec
@@ -455,7 +445,7 @@ fn main() {
 
 		println!("The generated plane contains {} vertices", vertices.len());
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
-		let model_matrix = glm::scaling(&glm::vec3(SCALE, AMPLITUDE, SCALE));
+		let model_matrix = glm::scaling(&glm::vec3(TERRAIN_SCALE, amplitude, TERRAIN_SCALE));
 		order_tx.send(WorkOrder::Image("textures/grass.jpg")).unwrap();
 		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", indices.len() as i32))
 	};
@@ -497,6 +487,7 @@ fn main() {
 	let mut last_frame_instant = Instant::now();
 
 	let mut tracking_to_world: glm::TMat4<f32> = glm::identity();
+	let mut tracking_position: glm::TVec4<f32> = glm::zero();
 
 	//Play background music
 	let audio_device = rodio::default_output_device().unwrap();
@@ -721,13 +712,13 @@ fn main() {
 					}
 				}
 
-				let scale = 0.05;				
+				let scale = 0.05;		
 				let yvel = if i == 0 {
 					scale * glm::vec4(0.0, -glm::clamp_scalar(state.axis[1].x * 4.0, 0.0, 1.0), 0.0, 0.0)
 				} else {
 					scale * glm::vec4(0.0, glm::clamp_scalar(state.axis[1].x * 4.0, 0.0, 1.0), 0.0, 0.0)
 				};
-
+				
 				let mut movement_vector = yvel;
 
 				//Handle left-hand/movement controls
@@ -743,8 +734,14 @@ fn main() {
 					}
 				}
 				
-				tracking_to_world = glm::translation(&glm::vec4_to_vec3(&movement_vector)) * tracking_to_world;
+				//tracking_to_world = glm::translation(&glm::vec4_to_vec3(&movement_vector)) * tracking_to_world;
+				tracking_position += movement_vector;
+				tracking_position.y = amplitude * simplex_generator.get([tracking_position.x as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64,
+																		 tracking_position.z as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64]) as f32;
+				
+				println!("{:?}", tracking_position);
 			}
+			tracking_to_world = glm::translation(&glm::vec4_to_vec3(&tracking_position));
 
 			//Clear collided_with and move all of the elements from colliding_with into it
 			controllers.collided_with[i].clear();
@@ -798,7 +795,6 @@ fn main() {
 		//The process here is, for the camera's velocity vector: View Space -> World Space -> scale by seconds_elapsed -> Make into vec4
 		camera.position += glm::vec4_to_vec3(&(seconds_elapsed * (glm::affine_inverse(v_matrices[2]) * glm::vec3_to_vec4(&camera.velocity))));
 		camera.fov += camera.fov_delta * seconds_elapsed;
-
 		
 		//Update the OpenVR meshes
 		if let Some(poses) = render_poses {
@@ -827,7 +823,6 @@ fn main() {
 			light_position = get_frame_origin(&mesh.model_matrix);
 		}
 
-
 		//Set up render data
 		let framebuffers = [vr_render_target, vr_render_target, 0];
 		let eyes = [Some(Eye::Left), Some(Eye::Right), None];
@@ -844,7 +839,7 @@ fn main() {
 				gl::BindFramebuffer(gl::FRAMEBUFFER, framebuffers[i]);
 				gl::Viewport(0, 0, sizes[i].0 as GLsizei, sizes[i].1 as GLsizei);
 
-				//Clear the screen
+				//Clear the framebuffer's color buffer and depth buffer
 				gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
 				//Compute the view-projection matrix
@@ -861,19 +856,21 @@ fn main() {
 				gl::UseProgram(nonluminous_shader);
 				for option_mesh in meshes.iter() {
 					if let Some(mesh) = option_mesh {
-						if mesh.render_pass_visibilities[i] && mesh.texture != 0 {
+						if mesh.render_pass_visibilities[i] && true {
 							//Calculate model-view-projection for this mesh
 							let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
 
 							//Send matrix uniforms to GPU
-							let mat_locs = [mvp_location, model_matrix_location];
+							let mat_locs = [get_uniform_location(nonluminous_shader, "mvp"),
+											get_uniform_location(nonluminous_shader, "model_matrix")];
 							let mats = [mvp, mesh.model_matrix];
 							for i in 0..mat_locs.len() {
 								gl::UniformMatrix4fv(mat_locs[i], 1, gl::FALSE, &flatten_glm(&mats[i]) as *const GLfloat);
 							}
 
 							//Send vector uniforms to GPU
-							let vec_locs = [light_position_location, view_position_location];
+							let vec_locs = [get_uniform_location(nonluminous_shader, "light_position"),
+											get_uniform_location(nonluminous_shader, "view_position")];
 							let vecs = [light_position, view_positions[i]];
 							for i in 0..vec_locs.len() {
 								let pos = [vecs[i].x, vecs[i].y, vecs[i].z, 1.0];
@@ -881,10 +878,10 @@ fn main() {
 							}
 
 							//Send float uniform to GPU
-							gl::Uniform1f(shininess_location, mesh.shininess);
+							gl::Uniform1f(get_uniform_location(nonluminous_shader, "shininess"), mesh.shininess);
 
 							//Send bool uniform to GPU
-							gl::Uniform1i(lighting_location, is_lighting as i32);
+							gl::Uniform1i(get_uniform_location(nonluminous_shader, "lighting"), is_lighting as i32);
 
 							//Bind the mesh's texture
 							gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
