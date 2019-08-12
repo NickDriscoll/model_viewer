@@ -1,7 +1,7 @@
 extern crate gl;
 extern crate nalgebra_glm as glm;
 use glfw::{Action, Context, CursorMode, Key, MouseButton, WindowMode, WindowEvent};
-use openvr::{ApplicationType, button_id, Eye, System, RenderModels, TrackedControllerRole};
+use openvr::{ApplicationType, button_id, Eye, System, RenderModels, TrackedControllerRole, TrackedDevicePose};
 use openvr::compositor::texture::{ColorSpace, Handle, Texture};
 use nfd::Response;
 use std::collections::HashMap;
@@ -105,8 +105,8 @@ fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option
 	result
 }
 
-fn get_frame_origin(model_matrix: &glm::TMat4<f32>) -> glm::TVec4<f32> {
-	model_matrix * glm::vec4(0.0, 0.0, 0.0, 1.0)
+fn get_frame_origin(something_to_world: &glm::TMat4<f32>) -> glm::TVec4<f32> {
+	something_to_world * glm::vec4(0.0, 0.0, 0.0, 1.0)
 }
 
 fn get_mesh_origin(mesh: &Option<Mesh>) -> glm::TVec4<f32> {
@@ -150,6 +150,13 @@ fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
 
 fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
 	glm::scaling(&glm::vec3(scale, scale, scale))
+}
+
+fn update_openvr_mesh(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevicePose], tracking_to_world: &glm::TMat4<f32>, device_index: usize, mesh_index: Option<usize>) {
+	let ovr_to_absolute = openvr_to_mat4(*poses[device_index].device_to_absolute_tracking());
+	if let Some(mesh) = meshes.get_element(mesh_index) {
+		mesh.model_matrix = tracking_to_world * ovr_to_absolute;
+	}
 }
 
 fn main() {
@@ -419,10 +426,11 @@ fn main() {
 					vertex_surface_map[index as usize].push(i / INDICES_PER_TRIANGLE);
 				}
 
+				//Vectors representing two edges of the triangle
 				let u = glm::vec4_to_vec3(&(tri_verts[0] - tri_verts[1]));
 				let v = glm::vec4_to_vec3(&(tri_verts[1] - tri_verts[2]));
 
-				//The cross product of 
+				//The cross product of two edges of a surface must be normal to that surface
 				norms.push(glm::cross::<f32, glm::U3>(&u, &v));
 			}
 			norms
@@ -451,7 +459,6 @@ fn main() {
 		order_tx.send(WorkOrder::Image("textures/grass.jpg")).unwrap();
 		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", indices.len() as i32))
 	};
-	println!("terrain mesh index: {}", terrain_mesh_index);
 
 	//Create the sphere that represents the light source
 	let mut light_position = glm::vec4(0.0, 1.0, 0.0, 1.0);
@@ -493,7 +500,7 @@ fn main() {
 
 	//Play background music
 	let audio_device = rodio::default_output_device().unwrap();
-	let source = rodio::Decoder::new(BufReader::new(File::open("audio/woodlands.mp3").unwrap())).unwrap();
+	let source = rodio::Decoder::new(BufReader::new(File::open("audio/woodlands.mp3").unwrap())).unwrap().repeat_infinite();
 	rodio::play_raw(&audio_device, source.convert_samples());
 
 	//Main loop
@@ -539,12 +546,8 @@ fn main() {
 
 		//Get VR pose data
 		let render_poses = match &openvr_compositor {
-			Some(comp) => {
-				Some(comp.wait_get_poses().unwrap().render)
-			}
-			None => {
-				None
-			}
+			Some(comp) => {	Some(comp.wait_get_poses().unwrap().render)	}
+			None => { None }
 		};
 
 		//Get controller state structs
@@ -589,9 +592,7 @@ fn main() {
 		//Handle window and keyboard events
 		for (_, event) in glfw::flush_messages(&events) {
 			match event {
-				WindowEvent::Close => {
-					window.set_should_close(true);
-				}
+				WindowEvent::Close => {	window.set_should_close(true); }
 				WindowEvent::FramebufferSize(width, height) => {
 					window_size = (width as u32, height as u32);
 					aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
@@ -618,7 +619,6 @@ fn main() {
 						Key::L => { order_tx.send(WorkOrder::Model).unwrap(); }
 						Key::Space => {
 							camera.attached_to_hmd = !camera.attached_to_hmd;
-
 							if let Some(mesh) = meshes.get_element(hmd_mesh_index) {
 								mesh.render_pass_visibilities[2] = !camera.attached_to_hmd;
 							}
@@ -752,7 +752,6 @@ fn main() {
 				controllers.collided_with[i].push(index);
 			}
 		}
-
 		controllers.previous_states = controllers.states;
 
 		//Get view matrices
@@ -773,13 +772,10 @@ fn main() {
 					 glm::affine_inverse(tracking_to_world * hmd_to_tracking * right_eye_to_hmd),
 					 companion_v_mat]
 			}
-			_ => {				
-				//Create a matrix that gets a decent view of the scene
-				[glm::identity(), glm::identity(), camera.get_freecam_matrix()]
-			}
+			_ => { [glm::identity(), glm::identity(), camera.get_freecam_matrix()] }
 		};
 
-		//Get view positions
+		//Get view positions (origin of view space with respect to world space)
 		let view_positions = {
 			let mut temp = Vec::with_capacity(v_matrices.len());
 			for matrix in &v_matrices {
@@ -790,38 +786,26 @@ fn main() {
 
 		//Get projection matrices
 		let p_mat = glm::perspective(aspect_ratio, f32::to_radians(camera.fov), NEAR_Z, FAR_Z);
-		let p_matrices = match openvr_system {
-			Some(ref sys) => {
-				[get_projection_matrix(sys, Eye::Left), get_projection_matrix(sys, Eye::Right), p_mat]
-			}
-			None => {
-				[glm::identity(), glm::identity(), p_mat]
-			}
+		let p_matrices = match &openvr_system {
+			Some(sys) => { [get_projection_matrix(sys, Eye::Left), get_projection_matrix(sys, Eye::Right), p_mat] }
+			None => { [glm::identity(), glm::identity(), p_mat] }
 		};
 
 		//Just a scaled time value
 		ticks += 2.0 * seconds_elapsed;
 
 		//Update the camera
+		//The process here is, for the camera's velocity vector: View Space -> World Space -> scale by seconds_elapsed -> Make into vec4
 		camera.position += glm::vec4_to_vec3(&(seconds_elapsed * (glm::affine_inverse(v_matrices[2]) * glm::vec3_to_vec4(&camera.velocity))));
 		camera.fov += camera.fov_delta * seconds_elapsed;
 
-		//Update HMD Mesh's model matrix
+		
+		//Update the OpenVR meshes
 		if let Some(poses) = render_poses {
-			let hmd_to_absolute = openvr_to_mat4(*poses[0].device_to_absolute_tracking());
-			if let Some(mesh) = meshes.get_element(hmd_mesh_index) {
-				mesh.model_matrix = tracking_to_world * hmd_to_absolute;
-			}
-		}
-
-		//Update the controller's model matrices
-		if let Some(poses) = render_poses {
+			update_openvr_mesh(&mut meshes, &poses, &tracking_to_world, 0, hmd_mesh_index);
 			for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
 				if let Some(index) = &controllers.device_indices[i] {
-					let controller_model_matrix = openvr_to_mat4(*poses[*index as usize].device_to_absolute_tracking());
-					if let Some(mesh) = meshes.get_element(controllers.mesh_indices[i]) {
-						mesh.model_matrix = tracking_to_world * controller_model_matrix;
-					}
+					update_openvr_mesh(&mut meshes, &poses, &tracking_to_world, *index as usize, controllers.mesh_indices[i]);
 				}
 			}
 		}
