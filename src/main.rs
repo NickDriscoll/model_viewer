@@ -347,13 +347,10 @@ fn main() {
 	//Create the large tessellated plane
 	const SIMPLEX_SCALE: f64 = 3.0;
 	const TERRAIN_SCALE: f32 = 250.0;
-	let amplitude;
+	const TERRAIN_AMPLITUDE: f32 = TERRAIN_SCALE / 5.0;
 	let terrain_mesh_index = unsafe {
 		const ELEMENT_STRIDE: usize = 8;
 		const WIDTH: usize = 100;
-
-		//Dependent
-		amplitude = TERRAIN_SCALE / 5.0;
 		const TRIS: usize = (WIDTH - 1) * (WIDTH - 1) * 2;
 
 		//Buffers to be filled
@@ -445,7 +442,7 @@ fn main() {
 
 		println!("The generated plane contains {} vertices", vertices.len());
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
-		let model_matrix = glm::scaling(&glm::vec3(TERRAIN_SCALE, amplitude, TERRAIN_SCALE));
+		let model_matrix = glm::scaling(&glm::vec3(TERRAIN_SCALE, TERRAIN_AMPLITUDE, TERRAIN_SCALE));
 		order_tx.send(WorkOrder::Image("textures/grass.jpg")).unwrap();
 		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", indices.len() as i32))
 	};
@@ -736,7 +733,7 @@ fn main() {
 				
 				//tracking_to_world = glm::translation(&glm::vec4_to_vec3(&movement_vector)) * tracking_to_world;
 				tracking_position += movement_vector;
-				tracking_position.y = amplitude * simplex_generator.get([tracking_position.x as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64,
+				tracking_position.y = TERRAIN_AMPLITUDE * simplex_generator.get([tracking_position.x as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64,
 																		 tracking_position.z as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64]) as f32;
 				
 				println!("{:?}", tracking_position);
