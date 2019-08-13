@@ -30,7 +30,7 @@ impl Mesh {
 }
 
 pub struct Camera {	
-	pub position: glm::TVec3<f32>,	//In view space
+	pub position: glm::TVec3<f32>,	//In world space
 	pub velocity: glm::TVec3<f32>,	//In view space
 	pub yaw: f32, 					//In radians
 	pub pitch: f32, 				//In radians

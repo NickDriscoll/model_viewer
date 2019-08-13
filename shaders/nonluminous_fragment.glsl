@@ -6,7 +6,7 @@ in vec2 v_tex_coords;
 out vec4 frag_color;
 
 uniform sampler2D tex;
-uniform vec4 light_position;
+//uniform vec4 light_position;
 uniform vec4 view_position;
 uniform float shininess;
 uniform bool lighting;
@@ -21,7 +21,17 @@ void main() {
 	vec4 norm = normalize(f_normal);
 
 	//Get raw texel
-	vec3 tex_color = texture(tex, v_tex_coords).rgb;
+	vec4 tex_color = texture(tex, v_tex_coords);
+
+	//Discard transparent fragments
+	if (tex_color.a == 0.0)
+		discard;
+
+	//Exit early if we're not doing lighting calculations
+	if (!lighting) {
+		frag_color = vec4(tex_color.rgb, 1.0);
+		return;
+	}
 
 	//Get light direction vector from light position
 	//From frag location to light source
@@ -45,11 +55,7 @@ void main() {
 	//float attenuation = clamp(ATTENUATION_CONSTANT / length(light_position - f_pos), 0.0, 1.0);
 	float attenuation = 1.0;
 
-	vec3 result = BRIGHTNESS * attenuation * tex_color * (ambient + diffuse + specular);
+	vec3 result = BRIGHTNESS * attenuation * tex_color.rgb * (ambient + diffuse + specular);
 	
-	if (lighting) {
-		frag_color = vec4(result, 1.0);
-	} else {
-		frag_color = vec4(tex_color, 1.0);
-	}
+	frag_color = vec4(result, 1.0);
 }

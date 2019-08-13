@@ -208,13 +208,6 @@ fn main() {
 	//Load all OpenGL function pointers
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
-	//Configure the OpenGL context
-	unsafe {
-		gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
-		gl::DepthFunc(gl::LESS);	//Pass the fragment with the smallest z-value
-		gl::Enable(gl::CULL_FACE);	//Cull backfaces
-	}
-
 	let mut is_wireframe = false;
 
 	//Compile shaders
@@ -339,6 +332,9 @@ fn main() {
 	//OptionVec of meshes
 	let mut meshes = OptionVec::with_capacity(10);
 
+	//OptionVec of flora
+	let mut flora = OptionVec::with_capacity(1);
+
 	//Set up the simplex noise generator
 	let simplex_seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000;
 	println!("Seed used for terrain generation: {}", simplex_seed as u32);
@@ -346,11 +342,11 @@ fn main() {
 
 	//Create the large tessellated plane
 	const SIMPLEX_SCALE: f64 = 3.0;
-	const TERRAIN_SCALE: f32 = 250.0;
+	const TERRAIN_SCALE: f32 = 500.0;
 	const TERRAIN_AMPLITUDE: f32 = TERRAIN_SCALE / 5.0;
 	let terrain_mesh_index = unsafe {
 		const ELEMENT_STRIDE: usize = 8;
-		const WIDTH: usize = 100;
+		const WIDTH: usize = 100; //Width (and height) in vertices
 		const TRIS: usize = (WIDTH - 1) * (WIDTH - 1) * 2;
 
 		//Buffers to be filled
@@ -447,21 +443,32 @@ fn main() {
 		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", indices.len() as i32))
 	};
 
-	//Create the sphere that represents the light source
-	let mut light_position = glm::vec4(0.0, 1.0, 0.0, 1.0);
-	let sphere_index = unsafe {
-		match load_wavefront_obj("models/sphere.obj") {
-			Some(obj) => {
-				let vao = create_vertex_array_object(&obj.0, &obj.1, &[3, 3, 2]);
-				let t = glm::vec4_to_vec3(&light_position);
-				let mesh = Mesh::new(vao, glm::translation(&t) * uniform_scale(0.01), "textures/bricks.jpg", obj.1.len() as i32);
-				order_tx.send(WorkOrder::Image("textures/bricks.jpg")).unwrap();
-				Some(meshes.insert(mesh))
-			}
-			None => { None }
-		}
+	//Create the grass billboard
+	let grass_texture = unsafe { load_texture("textures/billboardgrass.png") };
+	let grass_mesh_index = unsafe {
+		let vertices = [
+			-0.5, 0.0, -0.5,		0.0, 1.0, 0.0,			0.0, 0.0,
+			0.5, 0.0, -0.5,			0.0, 1.0, 0.0,			1.0, 0.0,
+			-0.5, 0.0, 0.5,			0.0, 1.0, 0.0,			0.0, 1.0,
+			0.5, 0.0, 0.5,			0.0, 1.0, 0.0,			1.0, 1.0,
+		];
+		let indices = [
+			0u16, 2, 1,
+			3, 1, 2
+		];
+		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
+		let model_matrix = glm::translation(&glm::vec3(0.0, 1.0, 0.0)) *
+						   glm::rotation(glm::half_pi(), &glm::vec3(1.0, 0.0, 0.0)) *
+						   uniform_scale(0.75);
+		let mut mesh = Mesh::new(vao, model_matrix, "", indices.len() as i32);
+		mesh.texture = grass_texture;
+		flora.insert(mesh);
 	};
 
+	//Plant grass
+
+
+	//Variables to keep track of the loaded models
 	let model_bounding_sphere_radius = 0.20;
 	let mut bound_controller_indices = Vec::new();
 	let mut model_indices = Vec::new();
@@ -472,9 +479,6 @@ fn main() {
 
 	let mut hmd_mesh_index = None;
 
-	//Gameplay state
-	let mut ticks = 0.0;
-
 	//Camera state
 	let mut camera = Camera::new(glm::vec3(0.0, -1.0, -1.0));
 
@@ -483,6 +487,7 @@ fn main() {
 	//The instant recorded at the beginning of last frame
 	let mut last_frame_instant = Instant::now();
 
+	//Tracking space position information
 	let mut tracking_to_world: glm::TMat4<f32> = glm::identity();
 	let mut tracking_position: glm::TVec4<f32> = glm::zero();
 
@@ -734,7 +739,7 @@ fn main() {
 				//tracking_to_world = glm::translation(&glm::vec4_to_vec3(&movement_vector)) * tracking_to_world;
 				tracking_position += movement_vector;
 				tracking_position.y = TERRAIN_AMPLITUDE * simplex_generator.get([tracking_position.x as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64,
-																		 tracking_position.z as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64]) as f32;
+																		 		 tracking_position.z as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64]) as f32;
 				
 				println!("{:?}", tracking_position);
 			}
@@ -785,9 +790,6 @@ fn main() {
 			None => { [glm::identity(), glm::identity(), p_mat] }
 		};
 
-		//Just a scaled time value
-		ticks += 2.0 * seconds_elapsed;
-
 		//Update the camera
 		//The process here is, for the camera's velocity vector: View Space -> World Space -> scale by seconds_elapsed -> Make into vec4
 		camera.position += glm::vec4_to_vec3(&(seconds_elapsed * (glm::affine_inverse(v_matrices[2]) * glm::vec3_to_vec4(&camera.velocity))));
@@ -814,12 +816,6 @@ fn main() {
 			}
 		}
 
-		//Make the light bob up and down
-		if let Some(mesh) = meshes.get_element(sphere_index) {
-			mesh.model_matrix = glm::translation(&glm::vec3(0.0, 0.5*f32::sin(ticks*0.2) + 0.8, 0.0)) * uniform_scale(0.1);
-			light_position = get_frame_origin(&mesh.model_matrix);
-		}
-
 		//Set up render data
 		let framebuffers = [vr_render_target, vr_render_target, 0];
 		let eyes = [Some(Eye::Left), Some(Eye::Right), None];
@@ -827,6 +823,9 @@ fn main() {
 
 		//Rendering code
 		unsafe {
+			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
+			gl::DepthFunc(gl::LESS);	//Pass the fragment with the smallest z-value
+
 			//Set clear color
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
@@ -839,7 +838,7 @@ fn main() {
 				//Clear the framebuffer's color buffer and depth buffer
 				gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-				//Compute the view-projection matrix
+				//Compute the view-projection matrix (the conversion functions are just there to nullify the translation component of the view matrix)
 				let view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
 
 				//Render the skybox
@@ -851,9 +850,12 @@ fn main() {
 
 				//Bind the program that will render the meshes
 				gl::UseProgram(nonluminous_shader);
+
+				//Render 3D meshes
+				gl::Enable(gl::CULL_FACE);	//Cull backfaces
 				for option_mesh in meshes.iter() {
 					if let Some(mesh) = option_mesh {
-						if mesh.render_pass_visibilities[i] && true {
+						if mesh.render_pass_visibilities[i] {
 							//Calculate model-view-projection for this mesh
 							let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
 
@@ -866,9 +868,50 @@ fn main() {
 							}
 
 							//Send vector uniforms to GPU
-							let vec_locs = [get_uniform_location(nonluminous_shader, "light_position"),
-											get_uniform_location(nonluminous_shader, "view_position")];
-							let vecs = [light_position, view_positions[i]];
+							let vec_locs = [get_uniform_location(nonluminous_shader, "view_position")];
+							let vecs = [view_positions[i]];
+							for i in 0..vec_locs.len() {
+								let pos = [vecs[i].x, vecs[i].y, vecs[i].z, 1.0];
+								gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);
+							}
+
+							//Send float uniform to GPU
+							gl::Uniform1f(get_uniform_location(nonluminous_shader, "shininess"), mesh.shininess);
+
+							//Send bool uniform to GPU
+							gl::Uniform1i(get_uniform_location(nonluminous_shader, "lighting"), is_lighting as i32);
+
+							//Bind the mesh's texture
+							gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
+
+							//Bind the mesh's vertex array object
+							gl::BindVertexArray(mesh.vao);
+
+							//Draw call
+							gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
+						}
+					}
+				}
+
+				//Render flora
+				gl::Disable(gl::CULL_FACE);
+				for option_flora in flora.iter() {
+					if let Some(mesh) = option_flora {
+						if mesh.render_pass_visibilities[i] {
+							//Calculate model-view-projection for this mesh
+							let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
+
+							//Send matrix uniforms to GPU
+							let mat_locs = [get_uniform_location(nonluminous_shader, "mvp"),
+											get_uniform_location(nonluminous_shader, "model_matrix")];
+							let mats = [mvp, mesh.model_matrix];
+							for i in 0..mat_locs.len() {
+								gl::UniformMatrix4fv(mat_locs[i], 1, gl::FALSE, &flatten_glm(&mats[i]) as *const GLfloat);
+							}
+
+							//Send vector uniforms to GPU
+							let vec_locs = [get_uniform_location(nonluminous_shader, "view_position")];
+							let vecs = [view_positions[i]];
 							for i in 0..vec_locs.len() {
 								let pos = [vecs[i].x, vecs[i].y, vecs[i].z, 1.0];
 								gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);
