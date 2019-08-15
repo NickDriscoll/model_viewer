@@ -338,8 +338,7 @@ fn main() {
 	let mut flora = OptionVec::with_capacity(1);
 
 	//Set up the simplex noise generator
-	//let simplex_seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000;
-	let simplex_seed = 2462320256u32;
+	let simplex_seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000;
 	println!("Seed used for terrain generation: {}", simplex_seed as u32);
 	let simplex_generator = OpenSimplex::new().set_seed(simplex_seed as u32);
 
