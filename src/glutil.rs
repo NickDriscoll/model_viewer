@@ -8,6 +8,7 @@ use std::path::Path;
 use std::os::raw::c_void;
 use image::DynamicImage;
 use openvr::{Compositor, Eye};
+use crate::*;
 
 pub type ImageData = (Vec<u8>, u32, u32, GLenum); //(data, width, height, format)
 const INFO_LOG_SIZE: usize = 512;
@@ -229,4 +230,46 @@ pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint
 	gl::BindTexture(gl::TEXTURE_2D, 0);
 	gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 	render_target
+}
+
+pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pass: usize, context: &RenderContext) {
+	for option_mesh in meshes.iter() {
+		if let Some(mesh) = option_mesh {
+			if mesh.render_pass_visibilities[render_pass] {
+				//Calculate model-view-projection for this mesh
+				let mvp = context.p_matrices[render_pass] * context.v_matrices[render_pass] * mesh.model_matrix;
+
+				//Send matrix uniforms to GPU
+				let mat_locs = [get_uniform_location(program, "mvp"),
+								get_uniform_location(program, "model_matrix")];
+				let mats = [mvp, mesh.model_matrix];
+				for i in 0..mat_locs.len() {
+					gl::UniformMatrix4fv(mat_locs[i], 1, gl::FALSE, &flatten_glm(&mats[i]) as *const GLfloat);
+				}
+
+				//Send vector uniforms to GPU
+				let vec_locs = [get_uniform_location(program, "view_position")];
+				let vecs = [context.view_positions[render_pass]];
+				for i in 0..vec_locs.len() {
+					let pos = [vecs[i].x, vecs[i].y, vecs[i].z, 1.0];
+					gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);
+				}
+
+				//Send float uniform to GPU
+				gl::Uniform1f(get_uniform_location(program, "shininess"), mesh.shininess);
+
+				//Send bool uniform to GPU
+				gl::Uniform1i(get_uniform_location(program, "lighting"), context.is_lighting as i32);
+
+				//Bind the mesh's texture
+				gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
+
+				//Bind the mesh's vertex array object
+				gl::BindVertexArray(mesh.vao);
+
+				//Draw call
+				gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
+			}
+		}
+	}
 }

@@ -27,6 +27,8 @@ mod glutil;
 const NEAR_Z: f32 = 0.05;
 const FAR_Z: f32 = 800.0;
 
+const RENDER_PASSES: usize = 3;
+
 type MeshArrays = (Vec<f32>, Vec<u16>);
 
 enum WorkOrder<'a> {
@@ -336,7 +338,8 @@ fn main() {
 	let mut flora = OptionVec::with_capacity(1);
 
 	//Set up the simplex noise generator
-	let simplex_seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000;
+	//let simplex_seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000;
+	let simplex_seed = 2462320256u32;
 	println!("Seed used for terrain generation: {}", simplex_seed as u32);
 	let simplex_generator = OpenSimplex::new().set_seed(simplex_seed as u32);
 
@@ -740,8 +743,6 @@ fn main() {
 				tracking_position += movement_vector;
 				tracking_position.y = TERRAIN_AMPLITUDE * simplex_generator.get([tracking_position.x as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64,
 																		 		 tracking_position.z as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64]) as f32;
-				
-				println!("{:?}", tracking_position);
 			}
 			tracking_to_world = glm::translation(&glm::vec4_to_vec3(&tracking_position));
 
@@ -772,15 +773,6 @@ fn main() {
 					 companion_v_mat]
 			}
 			_ => { [glm::identity(), glm::identity(), camera.get_freecam_matrix()] }
-		};
-
-		//Get view positions (origin of view space with respect to world space)
-		let view_positions = {
-			let mut temp = Vec::with_capacity(v_matrices.len());
-			for matrix in &v_matrices {
-				temp.push(get_frame_origin(&glm::affine_inverse(*matrix)));
-			}
-			temp
 		};
 
 		//Get projection matrices
@@ -822,6 +814,7 @@ fn main() {
 		let sizes = [render_target_size, render_target_size, window_size];
 
 		//Rendering code
+		let render_context = RenderContext::new(&p_matrices, &v_matrices);
 		unsafe {
 			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
 			gl::DepthFunc(gl::LESS);	//Pass the fragment with the smallest z-value
@@ -850,90 +843,11 @@ fn main() {
 
 				//Bind the program that will render the meshes
 				gl::UseProgram(nonluminous_shader);
-
-				//Render 3D meshes
-				gl::Enable(gl::CULL_FACE);	//Cull backfaces
-				for option_mesh in meshes.iter() {
-					if let Some(mesh) = option_mesh {
-						if mesh.render_pass_visibilities[i] {
-							//Calculate model-view-projection for this mesh
-							let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
-
-							//Send matrix uniforms to GPU
-							let mat_locs = [get_uniform_location(nonluminous_shader, "mvp"),
-											get_uniform_location(nonluminous_shader, "model_matrix")];
-							let mats = [mvp, mesh.model_matrix];
-							for i in 0..mat_locs.len() {
-								gl::UniformMatrix4fv(mat_locs[i], 1, gl::FALSE, &flatten_glm(&mats[i]) as *const GLfloat);
-							}
-
-							//Send vector uniforms to GPU
-							let vec_locs = [get_uniform_location(nonluminous_shader, "view_position")];
-							let vecs = [view_positions[i]];
-							for i in 0..vec_locs.len() {
-								let pos = [vecs[i].x, vecs[i].y, vecs[i].z, 1.0];
-								gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);
-							}
-
-							//Send float uniform to GPU
-							gl::Uniform1f(get_uniform_location(nonluminous_shader, "shininess"), mesh.shininess);
-
-							//Send bool uniform to GPU
-							gl::Uniform1i(get_uniform_location(nonluminous_shader, "lighting"), is_lighting as i32);
-
-							//Bind the mesh's texture
-							gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
-
-							//Bind the mesh's vertex array object
-							gl::BindVertexArray(mesh.vao);
-
-							//Draw call
-							gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
-						}
-					}
-				}
+				render_meshes(&meshes, nonluminous_shader, i, &render_context);
 
 				//Render flora
-				gl::Disable(gl::CULL_FACE);
-				for option_flora in flora.iter() {
-					if let Some(mesh) = option_flora {
-						if mesh.render_pass_visibilities[i] {
-							//Calculate model-view-projection for this mesh
-							let mvp = p_matrices[i] * v_matrices[i] * mesh.model_matrix;
-
-							//Send matrix uniforms to GPU
-							let mat_locs = [get_uniform_location(nonluminous_shader, "mvp"),
-											get_uniform_location(nonluminous_shader, "model_matrix")];
-							let mats = [mvp, mesh.model_matrix];
-							for i in 0..mat_locs.len() {
-								gl::UniformMatrix4fv(mat_locs[i], 1, gl::FALSE, &flatten_glm(&mats[i]) as *const GLfloat);
-							}
-
-							//Send vector uniforms to GPU
-							let vec_locs = [get_uniform_location(nonluminous_shader, "view_position")];
-							let vecs = [view_positions[i]];
-							for i in 0..vec_locs.len() {
-								let pos = [vecs[i].x, vecs[i].y, vecs[i].z, 1.0];
-								gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);
-							}
-
-							//Send float uniform to GPU
-							gl::Uniform1f(get_uniform_location(nonluminous_shader, "shininess"), mesh.shininess);
-
-							//Send bool uniform to GPU
-							gl::Uniform1i(get_uniform_location(nonluminous_shader, "lighting"), is_lighting as i32);
-
-							//Bind the mesh's texture
-							gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
-
-							//Bind the mesh's vertex array object
-							gl::BindVertexArray(mesh.vao);
-
-							//Draw call
-							gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
-						}
-					}
-				}
+				gl::Disable(gl::CULL_FACE);	//We disable backface culling because we actually want the grass to be visible on both sides
+				render_meshes(&flora, nonluminous_shader, i, &render_context);
 
 				//Submit render to HMD
 				submit_to_hmd(eyes[i], &openvr_compositor, &openvr_texture_handle);

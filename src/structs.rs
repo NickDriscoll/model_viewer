@@ -2,6 +2,7 @@ use gl::types::*;
 use openvr::ControllerState;
 use std::slice::{Iter, IterMut};
 use std::ops::{Index, IndexMut};
+use crate::*;
 
 //A renderable 3D thing
 #[derive(Clone)]
@@ -12,7 +13,7 @@ pub struct Mesh {
 	pub texture_path: String,
 	pub shininess: f32,
 	pub indices_count: GLsizei, //Number of indices in index array
-	pub render_pass_visibilities: [bool; 3]
+	pub render_pass_visibilities: [bool; RENDER_PASSES]
 }
 
 impl Mesh {
@@ -183,5 +184,28 @@ impl<T> Index<usize> for OptionVec<T> {
 impl<T> IndexMut<usize> for OptionVec<T> {
 	fn index_mut(&mut self, index: usize) -> &mut Self::Output {
 		&mut self.optionvec[index]
+	}
+}
+
+pub struct RenderContext<'a> {
+	pub p_matrices: &'a [glm::TMat4<f32>],			//The projection matrices for a given frame
+	pub v_matrices: &'a [glm::TMat4<f32>],			//The view matrices for a given frame
+	pub view_positions: [glm::TVec4<f32>; RENDER_PASSES],		//The origins of the v_matrices, respectively
+	pub is_lighting: bool										//Flag that determines whether or not to apply the lighting model
+}
+
+impl<'a> RenderContext<'a> {
+	pub fn new(p_matrices: &'a [glm::TMat4<f32>], v_matrices: &'a [glm::TMat4<f32>]) -> Self {
+		let mut view_positions = [glm::zero(); RENDER_PASSES];
+		for i in 0..v_matrices.len() {
+			view_positions[i] = get_frame_origin(&glm::affine_inverse(v_matrices[i]));
+		}
+
+		RenderContext {
+			p_matrices,
+			v_matrices,
+			view_positions,
+			is_lighting: true
+		}
 	}
 }
