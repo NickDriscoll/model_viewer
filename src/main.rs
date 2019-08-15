@@ -494,9 +494,19 @@ fn main() {
 	let mut tracking_position: glm::TVec4<f32> = glm::zero();
 
 	//Play background music
-	let audio_device = rodio::default_output_device().unwrap();
-	let source = rodio::Decoder::new(BufReader::new(File::open("audio/woodlands.mp3").unwrap())).unwrap().repeat_infinite();
-	rodio::play_raw(&audio_device, source.convert_samples());
+	match rodio::default_output_device() {
+		Some(device) => {
+			let source = rodio::Decoder::new(BufReader::new(File::open("audio/woodlands.mp3").unwrap())).unwrap().repeat_infinite();
+			rodio::play_raw(&device, source.convert_samples());
+		}
+		None => {
+			println!("Unable to locate audio device.");
+		}
+	}
+
+	order_tx.send(WorkOrder::Image("textures/bricks.jpg")).unwrap();
+
+	let mut is_flying = false;
 
 	//Main loop
 	while !window.should_close() {
@@ -725,10 +735,11 @@ fn main() {
 				
 				let mut movement_vector = yvel;
 
-				//Handle left-hand/movement controls
+				//Handle left-hand controls
 				if i == 0 {
 					let controller_to_tracking = openvr_to_mat4(*poses[device_index as usize].device_to_absolute_tracking());
 
+					//We check to make sure at least one axis isn't zero in order to ensure no division by zero
 					if state.axis[0].x != 0.0 || state.axis[0].y != 0.0 {
 						let mut temp = tracking_to_world * controller_to_tracking * glm::vec4(state.axis[0].x, 0.0, -state.axis[0].y, 0.0);
 						let len = glm::length(&temp);
@@ -737,11 +748,22 @@ fn main() {
 						movement_vector += scale * temp;
 					}
 				}
+
+				//Handle right hand controls
+				if i == 1 {
+					//Check if the user toggled flying controls
+					if controllers.released_this_frame(i, button_id::APPLICATION_MENU) {
+						is_flying = !is_flying;
+					}
+				}
 				
 				//tracking_to_world = glm::translation(&glm::vec4_to_vec3(&movement_vector)) * tracking_to_world;
 				tracking_position += movement_vector;
-				tracking_position.y = TERRAIN_AMPLITUDE * simplex_generator.get([tracking_position.x as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64,
-																		 		 tracking_position.z as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64]) as f32;
+
+				if !is_flying {
+					tracking_position.y = TERRAIN_AMPLITUDE * simplex_generator.get([tracking_position.x as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64,
+																			 		 tracking_position.z as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64]) as f32;
+				}
 			}
 			tracking_to_world = glm::translation(&glm::vec4_to_vec3(&tracking_position));
 
@@ -830,7 +852,7 @@ fn main() {
 				//Clear the framebuffer's color buffer and depth buffer
 				gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-				//Compute the view-projection matrix (the conversion functions are just there to nullify the translation component of the view matrix)
+				//Compute the view-projection matrix for the skybox (the conversion functions are just there to nullify the translation component of the view matrix)
 				let view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
 
 				//Render the skybox
@@ -840,12 +862,14 @@ fn main() {
 				gl::BindVertexArray(skybox_vao);
 				gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_SHORT, ptr::null());
 
-				//Bind the program that will render the meshes
 				gl::UseProgram(nonluminous_shader);
+
+				//Render the regular meshes
+				gl::Enable(gl::CULL_FACE);
 				render_meshes(&meshes, nonluminous_shader, i, &render_context);
 
 				//Render flora
-				gl::Disable(gl::CULL_FACE);	//We disable backface culling because we actually want the grass to be visible on both sides
+				gl::Disable(gl::CULL_FACE);	//We disable backface culling because we actually want the flora to be visible on both sides
 				render_meshes(&flora, nonluminous_shader, i, &render_context);
 
 				//Submit render to HMD
