@@ -87,6 +87,7 @@ impl Controllers {
 		}
 	}
 
+	//Flag should be one of the constants defined in openvr::button_id
 	pub fn pressed_this_frame(&self, controller_index: usize, flag: u32) -> bool {
 		if let (Some(state), Some(p_state)) = (self.states[controller_index], self.previous_states[controller_index]) {
 			state.button_pressed & (1 as u64) << flag != 0 && p_state.button_pressed & (1 as u64) << flag == 0
@@ -95,6 +96,16 @@ impl Controllers {
 		}
 	}
 
+	//Flag should be one of the constants defined in openvr::button_id
+	pub fn holding_button(&self, controller_index: usize, flag: u32) -> bool {
+		if let Some(state) = self.states[controller_index] {
+			state.button_pressed & (1 as u64) << flag != 0
+		} else {
+			false
+		}
+	}
+
+	//Flag should be one of the constants defined in openvr::button_id
 	pub fn released_this_frame(&self, controller_index: usize, flag: u32) -> bool {
 		if let (Some(state), Some(p_state)) = (self.states[controller_index], self.previous_states[controller_index]) {
 			state.button_pressed & (1 as u64) << flag == 0 && p_state.button_pressed & (1 as u64) << flag != 0
@@ -196,7 +207,7 @@ pub struct RenderContext<'a> {
 }
 
 impl<'a> RenderContext<'a> {
-	pub fn new(p_matrices: &'a [glm::TMat4<f32>], v_matrices: &'a [glm::TMat4<f32>]) -> Self {
+	pub fn new(p_matrices: &'a [glm::TMat4<f32>], v_matrices: &'a [glm::TMat4<f32>], is_lighting: bool) -> Self {
 		let mut view_positions = [glm::zero(); RENDER_PASSES];
 		for i in 0..v_matrices.len() {
 			view_positions[i] = get_frame_origin(&glm::affine_inverse(v_matrices[i]));
@@ -206,7 +217,7 @@ impl<'a> RenderContext<'a> {
 			p_matrices,
 			v_matrices,
 			view_positions,
-			is_lighting: true
+			is_lighting
 		}
 	}
 }

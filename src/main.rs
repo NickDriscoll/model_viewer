@@ -15,7 +15,6 @@ use std::ptr;
 use obj;
 use rand::random;
 use noise::{NoiseFn, OpenSimplex, Seedable};
-use rodio::source::Source;
 use crate::structs::*;
 use crate::glutil::*;
 use self::gl::types::*;
@@ -213,7 +212,7 @@ fn main() {
 	let mut is_wireframe = false;
 
 	//Compile shaders
-	let nonluminous_shader = unsafe { compile_program_from_files("shaders/nonluminous_vertex.glsl", "shaders/nonluminous_fragment.glsl") };
+	let model_shader = unsafe { compile_program_from_files("shaders/model_vertex.glsl", "shaders/model_fragment.glsl") };
 	let skybox_shader = unsafe { compile_program_from_files("shaders/skybox_vertex.glsl", "shaders/skybox_fragment.glsl") };
 
 	let mut is_lighting = true;
@@ -334,18 +333,18 @@ fn main() {
 	//OptionVec of meshes
 	let mut meshes = OptionVec::with_capacity(10);
 
-	//OptionVec of flora
-	let mut flora = OptionVec::with_capacity(1);
-
 	//Set up the simplex noise generator
-	let simplex_seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000;
-	println!("Seed used for terrain generation: {}", simplex_seed as u32);
-	let simplex_generator = OpenSimplex::new().set_seed(simplex_seed as u32);
+	let simplex_generator = {
+		let seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000;
+		println!("Seed used for terrain generation: {}", seed as u32);
+		OpenSimplex::new().set_seed(seed as u32)
+	};
 
 	//Create the large tessellated plane
 	const SIMPLEX_SCALE: f64 = 3.0;
 	const TERRAIN_SCALE: f32 = 500.0;
 	const TERRAIN_AMPLITUDE: f32 = TERRAIN_SCALE / 5.0;
+	let surface_normals;
 	let terrain_mesh_index = unsafe {
 		const ELEMENT_STRIDE: usize = 8;
 		const WIDTH: usize = 100; //Width (and height) in vertices
@@ -394,7 +393,7 @@ fn main() {
 		}
 
 		//Calculate surface normals
-		let surface_normals = {
+		surface_normals = {
 			const INDICES_PER_TRIANGLE: usize = 3;
 			let mut norms = Vec::with_capacity(indices.len() / INDICES_PER_TRIANGLE);
 
@@ -445,9 +444,14 @@ fn main() {
 		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", indices.len() as i32))
 	};
 
-	//Create the grass billboard
+	//Create the grass billboards
+	const GRASS_COUNT: usize = 10000;
+
+	//OptionVec of flora
+	let mut flora = OptionVec::with_capacity(GRASS_COUNT);
+
 	let grass_texture = unsafe { load_texture("textures/billboardgrass.png") };
-	let grass_mesh_index = unsafe {
+	unsafe {
 		let vertices = [
 			-0.5, 0.0, -0.5,		0.0, 1.0, 0.0,			0.0, 0.0,
 			0.5, 0.0, -0.5,			0.0, 1.0, 0.0,			1.0, 0.0,
@@ -459,16 +463,30 @@ fn main() {
 			3, 1, 2
 		];
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
-		let model_matrix = glm::translation(&glm::vec3(0.0, 1.0, 0.0)) *
-						   glm::rotation(glm::half_pi(), &glm::vec3(1.0, 0.0, 0.0)) *
-						   uniform_scale(0.75);
-		let mut mesh = Mesh::new(vao, model_matrix, "", indices.len() as i32);
-		mesh.texture = grass_texture;
-		flora.insert(mesh);
-	};
 
-	//Plant grass
+		for _ in 0..GRASS_COUNT {
+			let x = random::<f32>() - 0.5;
+			let z = random::<f32>() - 0.5;
+			let height = TERRAIN_AMPLITUDE * simplex_generator.get([SIMPLEX_SCALE * x as f64, SIMPLEX_SCALE * z as f64]) as f32;
+			let translation_vec = glm::translation(&glm::vec3(x * TERRAIN_SCALE, height + 0.75/2.0, z * TERRAIN_SCALE));
 
+			let model_matrix = translation_vec *
+							   glm::rotation(glm::half_pi(), &glm::vec3(1.0, 0.0, 0.0)) *
+							   uniform_scale(0.75);
+			let mut mesh = Mesh::new(vao, model_matrix, "", indices.len() as i32);
+			mesh.texture = grass_texture;
+			flora.insert(mesh);
+			
+			let model_matrix = translation_vec *
+							   glm::rotation(glm::half_pi(), &glm::vec3(0.0, 1.0, 0.0)) *
+							   glm::rotation(glm::half_pi(), &glm::vec3(1.0, 0.0, 0.0)) *
+							   uniform_scale(0.75);
+			let mut mesh = Mesh::new(vao, model_matrix, "", indices.len() as i32);
+			mesh.texture = grass_texture;
+			flora.insert(mesh);
+			
+		}
+	}
 
 	//Variables to keep track of the loaded models
 	let model_bounding_sphere_radius = 0.20;
@@ -492,21 +510,25 @@ fn main() {
 	//Tracking space position information
 	let mut tracking_to_world: glm::TMat4<f32> = glm::identity();
 	let mut tracking_position: glm::TVec4<f32> = glm::zero();
+	let mut is_flying = false;
 
 	//Play background music
-	match rodio::default_output_device() {
+	let mut is_muted = false;
+	let mut bgm_sink = match rodio::default_output_device() {
 		Some(device) => {
-			let source = rodio::Decoder::new(BufReader::new(File::open("audio/woodlands.mp3").unwrap())).unwrap().repeat_infinite();
-			rodio::play_raw(&device, source.convert_samples());
+			let sink = rodio::Sink::new(&device);
+			let source = rodio::Decoder::new(BufReader::new(File::open("audio/woodlands.mp3").unwrap())).unwrap();
+			sink.append(source);
+			sink.play();
+			Some(sink)
 		}
 		None => {
-			println!("Unable to locate audio device.");
+			println!("Unable to find audio device.");
+			None
 		}
-	}
+	};
 
 	order_tx.send(WorkOrder::Image("textures/bricks.jpg")).unwrap();
-
-	let mut is_flying = false;
 
 	//Main loop
 	while !window.should_close() {
@@ -613,6 +635,13 @@ fn main() {
 						Key::I => { camera.fov = 90.0; }
 						Key::Escape => { window.set_should_close(true); }
 						Key::G => { is_lighting = !is_lighting; }
+						Key::L => { order_tx.send(WorkOrder::Model).unwrap(); }
+						Key::M => {
+							if let Some(sink) = &mut bgm_sink {
+								sink.set_volume(1.0 * is_muted as u32 as f32);
+								is_muted = !is_muted;
+							}
+						}
 						Key::Q => {
 							if is_wireframe {
 								unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL); }
@@ -621,7 +650,6 @@ fn main() {
 							}
 							is_wireframe = !is_wireframe;
 						}
-						Key::L => { order_tx.send(WorkOrder::Model).unwrap(); }
 						Key::Space => {
 							camera.attached_to_hmd = !camera.attached_to_hmd;
 							if let Some(mesh) = meshes.get_element(hmd_mesh_index) {
@@ -747,6 +775,10 @@ fn main() {
 						temp *= len / glm::length(&temp);
 						movement_vector += scale * temp;
 					}
+
+					if controllers.holding_button(i, button_id::STEAM_VR_TOUCHPAD) {
+						movement_vector *= 3.0;
+					}
 				}
 
 				//Handle right hand controls
@@ -835,7 +867,7 @@ fn main() {
 		let sizes = [render_target_size, render_target_size, window_size];
 
 		//Rendering code
-		let render_context = RenderContext::new(&p_matrices, &v_matrices);
+		let render_context = RenderContext::new(&p_matrices, &v_matrices, is_lighting);
 		unsafe {
 			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
 			gl::DepthFunc(gl::LESS);	//Pass the fragment with the smallest z-value
@@ -857,20 +889,20 @@ fn main() {
 
 				//Render the skybox
 				gl::UseProgram(skybox_shader);
-				gl::UniformMatrix4fv(get_uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&(view_projection * glm::scaling(&glm::vec3(400.0, 400.0, 400.0)))) as *const GLfloat);
+				gl::UniformMatrix4fv(get_uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&(view_projection * uniform_scale(400.0))) as *const GLfloat);
 				gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_cubemap);
 				gl::BindVertexArray(skybox_vao);
 				gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_SHORT, ptr::null());
 
-				gl::UseProgram(nonluminous_shader);
+				gl::UseProgram(model_shader);
 
 				//Render the regular meshes
 				gl::Enable(gl::CULL_FACE);
-				render_meshes(&meshes, nonluminous_shader, i, &render_context);
+				render_meshes(&meshes, model_shader, i, &render_context);
 
 				//Render flora
 				gl::Disable(gl::CULL_FACE);	//We disable backface culling because we actually want the flora to be visible on both sides
-				render_meshes(&flora, nonluminous_shader, i, &render_context);
+				render_meshes(&flora, model_shader, i, &render_context);
 
 				//Submit render to HMD
 				submit_to_hmd(eyes[i], &openvr_compositor, &openvr_texture_handle);
@@ -883,8 +915,6 @@ fn main() {
 
 	//Shut down OpenVR
 	if let Some(ctxt) = openvr_context {
-		unsafe {
-			ctxt.shutdown();
-		}
+		unsafe { ctxt.shutdown(); }
 	}
 }

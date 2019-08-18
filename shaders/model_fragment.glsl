@@ -39,7 +39,8 @@ void main() {
 	vec4 light_direction = normalize(vec4(0.0, 1.0, 0.0, 0.0));
 
 	//Get ambient contribution
-	vec3 ambient = AMBIENT_STRENGTH * LIGHT_COLOR;
+	//vec3 ambient = AMBIENT_STRENGTH * LIGHT_COLOR;
+	vec3 ambient = vec3(0.0, 0.0, 0.0);
 
 	//Get diffuse contribution
 	float diff = max(0.0, dot(norm, light_direction));
