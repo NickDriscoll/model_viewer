@@ -483,8 +483,7 @@ fn main() {
 							   uniform_scale(0.75);
 			let mut mesh = Mesh::new(vao, model_matrix, "", indices.len() as i32);
 			mesh.texture = grass_texture;
-			flora.insert(mesh);
-			
+			flora.insert(mesh);			
 		}
 	}
 
