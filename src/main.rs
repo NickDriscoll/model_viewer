@@ -458,48 +458,6 @@ fn main() {
 		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", indices.len() as i32))
 	};
 
-	//Create the grass billboards
-	const GRASS_COUNT: usize = 10;
-
-	let mut flora = OptionVec::with_capacity(GRASS_COUNT);
-
-	let grass_texture = unsafe { load_texture("textures/billboardgrass.png") };
-	unsafe {
-		let vertices = [
-			-0.5, 0.0, -0.5,		0.0, 1.0, 0.0,			0.0, 0.0,
-			0.5, 0.0, -0.5,			0.0, 1.0, 0.0,			1.0, 0.0,
-			-0.5, 0.0, 0.5,			0.0, 1.0, 0.0,			0.0, 1.0,
-			0.5, 0.0, 0.5,			0.0, 1.0, 0.0,			1.0, 1.0,
-		];
-		let indices = [
-			0u16, 2, 1,
-			3, 1, 2
-		];
-		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
-
-		for _ in 0..GRASS_COUNT {
-			let x = random::<f32>() - 0.5;
-			let z = random::<f32>() - 0.5;
-			let height = TERRAIN_AMPLITUDE * simplex_generator.get([SIMPLEX_SCALE * x as f64, SIMPLEX_SCALE * z as f64]) as f32;
-			let translation_vec = glm::translation(&glm::vec3(x * TERRAIN_SCALE, height + 0.75/2.0, z * TERRAIN_SCALE));
-
-			let model_matrix = translation_vec *
-							   glm::rotation(glm::half_pi(), &glm::vec3(1.0, 0.0, 0.0)) *
-							   uniform_scale(0.75);
-			let mut mesh = Mesh::new(vao, model_matrix, "", indices.len() as i32);
-			mesh.texture = grass_texture;
-			flora.insert(mesh);
-			
-			let model_matrix = translation_vec *
-							   glm::rotation(glm::half_pi(), &glm::vec3(0.0, 1.0, 0.0)) *
-							   glm::rotation(glm::half_pi(), &glm::vec3(1.0, 0.0, 0.0)) *
-							   uniform_scale(0.75);
-			let mut mesh = Mesh::new(vao, model_matrix, "", indices.len() as i32);
-			mesh.texture = grass_texture;
-			flora.insert(mesh);			
-		}
-	}
-
 	//Variables to keep track of the loaded models
 	let model_bounding_sphere_radius = 0.20;
 	let mut bound_controller_indices = Vec::new();
