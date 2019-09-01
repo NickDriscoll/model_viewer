@@ -12,13 +12,14 @@ use std::thread;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::sync::mpsc;
 use std::ptr;
-use obj;
+use wavefront_obj::obj;
 use rand::random;
 use noise::{NoiseFn, OpenSimplex, Seedable};
 use crate::structs::*;
 use crate::glutil::*;
 use self::gl::types::*;
 
+//Including the other source files
 mod structs;
 mod glutil;
 
@@ -26,6 +27,7 @@ mod glutil;
 const NEAR_Z: f32 = 0.05;
 const FAR_Z: f32 = 800.0;
 
+//Left eye, Right eye, Companion window
 const RENDER_PASSES: usize = 3;
 
 type MeshArrays = (Vec<f32>, Vec<u16>);
@@ -63,11 +65,11 @@ fn get_projection_matrix(sys: &System, eye: Eye) -> glm::TMat4<f32> {
 	let t_matrix = sys.projection_matrix(eye, NEAR_Z, FAR_Z);
 
 	glm::mat4(
-			t_matrix[0][0], t_matrix[0][1], t_matrix[0][2], t_matrix[0][3],
-			t_matrix[1][0], t_matrix[1][1], t_matrix[1][2], t_matrix[1][3],
-			t_matrix[2][0], t_matrix[2][1], t_matrix[2][2], t_matrix[2][3],
-			t_matrix[3][0], t_matrix[3][1], t_matrix[3][2], t_matrix[3][3]
-		)
+		t_matrix[0][0], t_matrix[0][1], t_matrix[0][2], t_matrix[0][3],
+		t_matrix[1][0], t_matrix[1][1], t_matrix[1][2], t_matrix[1][3],
+		t_matrix[2][0], t_matrix[2][1], t_matrix[2][2], t_matrix[2][3],
+		t_matrix[3][0], t_matrix[3][1], t_matrix[3][2], t_matrix[3][3]
+	)
 }
 
 //This returns the Mesh struct associated with the OpenVR model
@@ -123,7 +125,7 @@ fn get_mesh_origin(mesh: &Option<Mesh>) -> glm::TVec4<f32> {
 }
 
 fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
-	let model: obj::Obj = match obj::load_obj(BufReader::new(File::open(path).unwrap())) {
+	let obj_set = match obj::parse(path) {
 		Ok(m) => {
 			m
 		}
@@ -132,21 +134,28 @@ fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
 			return None;
 		}
 	};
+	
+	for object in obj_set.objects {
+		println!("{}", object.name);
+	}
 
 	//Take loaded model and create a Mesh
+	/*
 	const ELEMENT_STRIDE: usize = 8;
 	let mut vert_data = Vec::with_capacity(ELEMENT_STRIDE * model.vertices.len());
-	for v in model.vertices {
-		vert_data.push(v.position[0]);
-		vert_data.push(v.position[1]);
-		vert_data.push(v.position[2]);
-		vert_data.push(v.normal[0]);
-		vert_data.push(v.normal[1]);
-		vert_data.push(v.normal[2]);
+	for i in model.position.len() {
+		vert_data.push(model.position[i][0]);
+		vert_data.push(model.position[i][1]);
+		vert_data.push(model.position[i][2]);
+		vert_data.push(model.normal[i][0]);
+		vert_data.push(model.normal[i][1]);
+		vert_data.push(model.normal[i][2]);
 		vert_data.push(random::<f32>());
 		vert_data.push(random::<f32>());
 	}
 	Some((vert_data, model.indices))
+	*/
+	None
 }
 
 fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
@@ -231,14 +240,16 @@ fn main() {
 	//Map of texture paths to texture ids
 	let mut textures: HashMap<String, GLuint> = HashMap::new();
 
-	//Spawn thread to load textures
+	//Spawn thread to do work
 	thread::spawn(move || {
 		loop {
+			let tx = &result_tx;
 			match order_rx.recv() {
 				Ok(WorkOrder::Image(path)) => {
-					result_tx.send(WorkResult::Image(path, image_data_from_path(path))).unwrap();
+					tx.send(WorkResult::Image(path, image_data_from_path(path))).unwrap();
 				}
 				Ok(WorkOrder::Model) => {
+					println!("Here");
 					//Invoke file selection dialogue
 					let path = match nfd::open_file_dialog(None, None).unwrap() {
 						Response::Okay(filename) => { filename }
@@ -246,9 +257,12 @@ fn main() {
 					};
 
 					//Send model data back to the main thread
-					result_tx.send(WorkResult::Model(load_wavefront_obj(&path))).unwrap();
+					tx.send(WorkResult::Model(load_wavefront_obj(&path))).unwrap();
 				}
-				Err(_) => { return; }
+				Err(e) => {
+					println!("{}", e);
+					return;
+				}
 			}
 		}
 	});
@@ -261,7 +275,6 @@ fn main() {
 			-1.0, 1.0, -1.0,
 			1.0, 1.0, -1.0,
 			-1.0, -1.0, 1.0,
-			-1.0, 1.0, 1.0,
 			1.0, -1.0, 1.0,
 			1.0, 1.0, 1.0
 		];
@@ -445,9 +458,8 @@ fn main() {
 	};
 
 	//Create the grass billboards
-	const GRASS_COUNT: usize = 10000;
+	const GRASS_COUNT: usize = 10;
 
-	//OptionVec of flora
 	let mut flora = OptionVec::with_capacity(GRASS_COUNT);
 
 	let grass_texture = unsafe { load_texture("textures/billboardgrass.png") };
@@ -626,6 +638,7 @@ fn main() {
 				}
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
+						Key::Escape => { window.set_should_close(true); }
 						Key::W => { camera.velocity = glm::vec3(0.0, 0.0, Camera::SPEED); }
 						Key::S => { camera.velocity = glm::vec3(0.0, 0.0, -Camera::SPEED); }
 						Key::A => { camera.velocity = glm::vec3(Camera::SPEED, 0.0, 0.0); }
@@ -633,9 +646,12 @@ fn main() {
 						Key::O => { camera.fov_delta = -Camera::FOV_SPEED; }
 						Key::P => { camera.fov_delta = Camera::FOV_SPEED; }
 						Key::I => { camera.fov = 90.0; }
-						Key::Escape => { window.set_should_close(true); }
 						Key::G => { is_lighting = !is_lighting; }
-						Key::L => { order_tx.send(WorkOrder::Model).unwrap(); }
+						Key::L => {
+							if let Err(e) = order_tx.send(WorkOrder::Model) {
+								println!("{}", e);
+							}
+						}
 						Key::M => {
 							if let Some(sink) = &mut bgm_sink {
 								sink.set_volume(1.0 * is_muted as u32 as f32);
