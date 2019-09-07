@@ -37,11 +37,11 @@ pub struct Camera {
 	pub pitch: f32, 				//In radians
 	pub fov: f32,					//In degrees
 	pub fov_delta: f32,
+	pub speed: f32,
 	pub attached_to_hmd: bool
 }
 
 impl Camera {
-	pub const SPEED: f32 = 10.0;
 	pub const FOV_SPEED: f32 = 5.0;
 
 	pub fn new(position: glm::TVec3<f32>) -> Self {
@@ -52,6 +52,7 @@ impl Camera {
 			pitch: 0.0,
 			fov: 90.0,
 			fov_delta: 0.0,
+			speed: 2.0,
 			attached_to_hmd: true
 		}
 	}

@@ -5,7 +5,7 @@ use openvr::{ApplicationType, button_id, Eye, System, RenderModels, TrackedContr
 use openvr::compositor::texture::{ColorSpace, Handle, Texture};
 use nfd::Response;
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs::{File, read_to_string};
 use std::io::BufReader;
 use std::os::raw::c_void;
 use std::thread;
@@ -13,7 +13,6 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::sync::mpsc;
 use std::ptr;
 use wavefront_obj::obj;
-use rand::random;
 use noise::{NoiseFn, OpenSimplex, Seedable};
 use crate::structs::*;
 use crate::glutil::*;
@@ -125,18 +124,57 @@ fn get_mesh_origin(mesh: &Option<Mesh>) -> glm::TVec4<f32> {
 }
 
 fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
-	let obj_set = match obj::parse(path) {
-		Ok(m) => {
-			m
+	//Load file's contents as a string
+	let file_contents = match read_to_string(path) {
+		Ok(s) => { s }
+		Err(e) => {
+			println!("{}", e);
+			return None;
 		}
+	};
+	
+	//Get the ObjSet from the file
+	let obj_set = match obj::parse(file_contents) {
+		Ok(m) => { m }
 		Err(e) => {
 			println!("{:?}", e);
 			return None;
 		}
 	};
 	
-	for object in obj_set.objects {
-		println!("{}", object.name);
+	if obj_set.objects.len() != 1 {
+		println!("Obj file must contain exactly one object");
+		return None;
+	}
+
+	let object = &obj_set.objects[0];
+	let mut vert_data = Vec::new();
+	for i in 0..object.vertices.len() {
+		vert_data.push(object.vertices[i].x as f32);
+		vert_data.push(object.vertices[i].y as f32);
+		vert_data.push(object.vertices[i].z as f32);
+		vert_data.push(object.normals[i].x as f32);
+		vert_data.push(object.normals[i].y as f32);
+		vert_data.push(object.normals[i].z as f32);
+		vert_data.push(rand::random::<f32>());
+		vert_data.push(rand::random::<f32>());
+	}
+
+	let mut indices = Vec::new();
+	for geo in &object.geometry {
+		for shape in &geo.shapes {
+			match shape.primitive {
+				obj::Primitive::Triangle(a, b, c) => {
+					indices.push(a.0 as u16);
+					indices.push(b.0 as u16);
+					indices.push(c.0 as u16);
+				}
+				_ => {
+					println!("Only triangle meshes can be loaded.");
+					return None;
+				}
+			}
+		}
 	}
 
 	//Take loaded model and create a Mesh
@@ -155,7 +193,7 @@ fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
 	}
 	Some((vert_data, model.indices))
 	*/
-	None
+	Some((vert_data, indices))
 }
 
 fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
@@ -173,9 +211,7 @@ fn main() {
 	//Initialize OpenVR
 	let openvr_context = unsafe {
 		match openvr::init(ApplicationType::Scene) {
-			Ok(ctxt) => {
-				Some(ctxt)
-			}
+			Ok(ctxt) => { Some(ctxt) }
 			Err(e) => {
 				println!("OpenVR initialization error: {}", e);
 				None
@@ -218,13 +254,9 @@ fn main() {
 	//Load all OpenGL function pointers
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
-	let mut is_wireframe = false;
-
 	//Compile shaders
 	let model_shader = unsafe { compile_program_from_files("shaders/model_vertex.glsl", "shaders/model_fragment.glsl") };
 	let skybox_shader = unsafe { compile_program_from_files("shaders/skybox_vertex.glsl", "shaders/skybox_fragment.glsl") };
-
-	let mut is_lighting = true;
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -243,25 +275,28 @@ fn main() {
 	//Spawn thread to do work
 	thread::spawn(move || {
 		loop {
-			let tx = &result_tx;
 			match order_rx.recv() {
 				Ok(WorkOrder::Image(path)) => {
-					tx.send(WorkResult::Image(path, image_data_from_path(path))).unwrap();
+					if let Err(e) = result_tx.send(WorkResult::Image(path, image_data_from_path(path))) {
+						println!("{}", e);
+					}
 				}
 				Ok(WorkOrder::Model) => {
-					println!("Here");
 					//Invoke file selection dialogue
 					let path = match nfd::open_file_dialog(None, None).unwrap() {
-						Response::Okay(filename) => { filename }
-						_ => { return }
+						Response::Okay(filename) => { Some(filename) }
+						_ => { None }
 					};
 
 					//Send model data back to the main thread
-					tx.send(WorkResult::Model(load_wavefront_obj(&path))).unwrap();
+					if let Some(p) = path {
+						if let Err(e) = result_tx.send(WorkResult::Model(load_wavefront_obj(&p))) {
+							println!("{}", e);
+						}
+					}					
 				}
 				Err(e) => {
 					println!("{}", e);
-					return;
 				}
 			}
 		}
@@ -359,7 +394,7 @@ fn main() {
 	const TERRAIN_SCALE: f32 = 500.0;
 	const TERRAIN_AMPLITUDE: f32 = TERRAIN_SCALE / 5.0;
 	let surface_normals;
-	let terrain_mesh_index = unsafe {
+	unsafe {
 		const ELEMENT_STRIDE: usize = 8;
 		const WIDTH: usize = 100; //Width (and height) in vertices
 		const TRIS: usize = (WIDTH - 1) * (WIDTH - 1) * 2;
@@ -500,6 +535,10 @@ fn main() {
 
 	order_tx.send(WorkOrder::Image("textures/bricks.jpg")).unwrap();
 
+	//Flags
+	let mut is_wireframe = false;
+	let mut is_lighting = true;
+
 	//Main loop
 	while !window.should_close() {
 		//Calculate time since the last frame started
@@ -597,18 +636,19 @@ fn main() {
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
 						Key::Escape => { window.set_should_close(true); }
-						Key::W => { camera.velocity = glm::vec3(0.0, 0.0, Camera::SPEED); }
-						Key::S => { camera.velocity = glm::vec3(0.0, 0.0, -Camera::SPEED); }
-						Key::A => { camera.velocity = glm::vec3(Camera::SPEED, 0.0, 0.0); }
-						Key::D => { camera.velocity = glm::vec3(-Camera::SPEED, 0.0, 0.0); }
+						Key::W => { camera.velocity = glm::vec3(0.0, 0.0, camera.speed); }
+						Key::S => { camera.velocity = glm::vec3(0.0, 0.0, -camera.speed); }
+						Key::A => { camera.velocity = glm::vec3(camera.speed, 0.0, 0.0); }
+						Key::D => { camera.velocity = glm::vec3(-camera.speed, 0.0, 0.0); }
 						Key::O => { camera.fov_delta = -Camera::FOV_SPEED; }
 						Key::P => { camera.fov_delta = Camera::FOV_SPEED; }
 						Key::I => { camera.fov = 90.0; }
 						Key::G => { is_lighting = !is_lighting; }
-						Key::L => {
+						Key::LeftShift => { camera.velocity *= 5.0; }
+						Key::L => {							
 							if let Err(e) = order_tx.send(WorkOrder::Model) {
 								println!("{}", e);
-							}
+							}							
 						}
 						Key::M => {
 							if let Some(sink) = &mut bgm_sink {
@@ -637,11 +677,12 @@ fn main() {
 					match key {
 						Key::A | Key::D => { camera.velocity.x = 0.0; }
 						Key::W | Key::S => { camera.velocity.z = 0.0; }
+						Key::LeftShift => { camera.velocity /= 5.0; }
 						Key::O | Key::P => {
 							camera.fov_delta = 0.0;
 							println!("Field of view is now {} degrees", camera.fov);
 						}
-						_ => {}
+						_ => { println!("You released the unbound key: {:?}", key); }
 					}
 				}
 				_ => {}
@@ -701,19 +742,13 @@ fn main() {
 
 						if is_colliding {
 							controllers.colliding_with[i].push(loaded_index);
-
-							//Check if controller was colliding with that model last frame
-							if !controllers.collided_with[i].contains(&loaded_index) {
-								println!("Triggering pulse");
-								//sys.trigger_haptic_pulse(device_index, 0, 3999);
-							}
 						}
 
 						if controllers.pressed_this_frame(i, button_id::GRIP) && is_colliding {
 							//Set the controller's mesh as the mesh the cube mesh is "bound" to
 							bound_controller_indices[j] = Some(i);
 
-							//Calculate the cube-space to controller-space matrix aka inverse(controller.model_matrix) * cube.model_matrix
+							//Calculate the loaded_mesh-space to controller-space matrix aka inverse(controller.model_matrix) * loaded_mesh.model_matrix
 							if let (Some(cont_mesh), Some(loaded_mesh)) = (&meshes[mesh_index], &meshes[loaded_index]) {
 								model_to_controller_matrices[j] = glm::affine_inverse(cont_mesh.model_matrix) * loaded_mesh.model_matrix;
 							}
@@ -873,10 +908,6 @@ fn main() {
 				//Render the regular meshes
 				gl::Enable(gl::CULL_FACE);
 				render_meshes(&meshes, model_shader, i, &render_context);
-
-				//Render flora
-				gl::Disable(gl::CULL_FACE);	//We disable backface culling because we actually want the flora to be visible on both sides
-				render_meshes(&flora, model_shader, i, &render_context);
 
 				//Submit render to HMD
 				submit_to_hmd(eyes[i], &openvr_compositor, &openvr_texture_handle);
