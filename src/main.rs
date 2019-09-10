@@ -33,7 +33,8 @@ type MeshArrays = (Vec<f32>, Vec<u16>);
 
 enum WorkOrder<'a> {
 	Image(&'a str),
-	Model
+	Model,
+	Quit
 }
 
 enum WorkResult<'a> {
@@ -91,13 +92,9 @@ fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option
 				vertices.push(vertex.texture_coord[0]);
 				vertices.push(vertex.texture_coord[1]);
 			}
-
-			//Create vao
+			
 			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]) };
-
-			//Create texture
 			let t = unsafe { load_texture_from_data(([25, 140, 15].to_vec(), 1, 1, gl::RGB)) };
-
 			let mut mesh = Mesh::new(vao, glm::identity(), "", model.indices().len() as GLsizei);
 			mesh.texture = t;
 
@@ -148,6 +145,16 @@ fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
 	}
 
 	let object = &obj_set.objects[0];
+
+	for geo in &object.geometry {
+		for shape in &geo.shapes {
+			println!("{:?}", shape.primitive);
+		}
+	}
+	println!("{}", object.vertices.len());
+	println!("{}", object.normals.len());
+
+	
 	let mut vert_data = Vec::new();
 	for i in 0..object.vertices.len() {
 		vert_data.push(object.vertices[i].x as f32);
@@ -175,24 +182,7 @@ fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
 				}
 			}
 		}
-	}
-
-	//Take loaded model and create a Mesh
-	/*
-	const ELEMENT_STRIDE: usize = 8;
-	let mut vert_data = Vec::with_capacity(ELEMENT_STRIDE * model.vertices.len());
-	for i in model.position.len() {
-		vert_data.push(model.position[i][0]);
-		vert_data.push(model.position[i][1]);
-		vert_data.push(model.position[i][2]);
-		vert_data.push(model.normal[i][0]);
-		vert_data.push(model.normal[i][1]);
-		vert_data.push(model.normal[i][2]);
-		vert_data.push(random::<f32>());
-		vert_data.push(random::<f32>());
-	}
-	Some((vert_data, model.indices))
-	*/
+	}	
 	Some((vert_data, indices))
 }
 
@@ -295,6 +285,7 @@ fn main() {
 						}
 					}					
 				}
+				Ok(WorkOrder::Quit) => { return; }
 				Err(e) => {
 					println!("{}", e);
 				}
@@ -486,7 +477,7 @@ fn main() {
 			vertices[i + 5] = averaged_vector.data[2];
 		}
 
-		println!("The generated plane contains {} vertices", vertices.len());
+		println!("The generated plane contains {} vertices", vertices.len() / ELEMENT_STRIDE);
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
 		let model_matrix = glm::scaling(&glm::vec3(TERRAIN_SCALE, TERRAIN_AMPLITUDE, TERRAIN_SCALE));
 		order_tx.send(WorkOrder::Image("textures/grass.jpg")).unwrap();
@@ -644,7 +635,7 @@ fn main() {
 						Key::P => { camera.fov_delta = Camera::FOV_SPEED; }
 						Key::I => { camera.fov = 90.0; }
 						Key::G => { is_lighting = !is_lighting; }
-						Key::LeftShift => { camera.velocity *= 5.0; }
+						Key::LeftShift => { camera.velocity *= 15.0; }
 						Key::L => {							
 							if let Err(e) = order_tx.send(WorkOrder::Model) {
 								println!("{}", e);
@@ -682,7 +673,7 @@ fn main() {
 							camera.fov_delta = 0.0;
 							println!("Field of view is now {} degrees", camera.fov);
 						}
-						_ => { println!("You released the unbound key: {:?}", key); }
+						_ => {}
 					}
 				}
 				_ => {}
@@ -917,6 +908,9 @@ fn main() {
 		window.render_context().swap_buffers();
 		glfw.poll_events();
 	}
+
+	//Shut down the worker thread
+	order_tx.send(WorkOrder::Quit).unwrap();
 
 	//Shut down OpenVR
 	if let Some(ctxt) = openvr_context {
