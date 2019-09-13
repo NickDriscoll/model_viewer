@@ -58,6 +58,5 @@ void main() {
 
 	vec3 result = BRIGHTNESS * attenuation * tex_color.rgb * (ambient + diffuse + specular);
 	
-	//frag_color = vec4(result, 1.0);
-	frag_color = vec4(norm.xyz / 2.0 + 0.5, 1.0);
+	frag_color = vec4(result, 1.0);
 }

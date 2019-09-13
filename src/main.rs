@@ -143,47 +143,61 @@ fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
 		println!("Obj file must contain exactly one object");
 		return None;
 	}
-
 	let object = &obj_set.objects[0];
 
+	//Transform the object into something the engine can actually use
+	let mut index_map = HashMap::new();
+	let mut vertices = Vec::new();
+	let mut indices = Vec::new();
+	let mut current_index = 0u16;
 	for geo in &object.geometry {
 		for shape in &geo.shapes {
-			println!("{:?}", shape.primitive);
+			match shape.primitive {
+				obj::Primitive::Triangle(a, b, c) => {
+					let verts = [a, b, c];
+					for v in &verts {
+						if let Some(normal_index) = v.2 {
+							let pair = (v.0, normal_index);
+							match index_map.get(&pair) {
+								Some(i) => {
+									//This vertex has already been accounted for, so we can just push the index into indices
+									indices.push(*i);
+								}
+								None => {
+									//This vertex is not accounted for
+
+									//We add the vertex data to vertices
+									vertices.push(object.vertices[pair.0].x as f32);
+									vertices.push(object.vertices[pair.0].y as f32);
+									vertices.push(object.vertices[pair.0].z as f32);
+									vertices.push(object.normals[pair.1].x as f32);
+									vertices.push(object.normals[pair.1].y as f32);
+									vertices.push(object.normals[pair.1].z as f32);
+									vertices.push(0.0);
+									vertices.push(0.0);
+
+									//Add the index to indices
+									indices.push(current_index);
+
+									//Then we declare that this vertex will appear in vertices at current_index
+									index_map.insert(pair, current_index);
+									current_index += 1;
+								}
+							}
+						}
+					}
+				}
+				_ => {
+					println!("Only triangle meshes are supported.");
+					return None;
+				}
+			}
 		}
 	}
 	println!("{}", object.vertices.len());
 	println!("{}", object.normals.len());
 
-	
-	let mut vert_data = Vec::new();
-	for i in 0..object.vertices.len() {
-		vert_data.push(object.vertices[i].x as f32);
-		vert_data.push(object.vertices[i].y as f32);
-		vert_data.push(object.vertices[i].z as f32);
-		vert_data.push(object.normals[i].x as f32);
-		vert_data.push(object.normals[i].y as f32);
-		vert_data.push(object.normals[i].z as f32);
-		vert_data.push(rand::random::<f32>());
-		vert_data.push(rand::random::<f32>());
-	}
-
-	let mut indices = Vec::new();
-	for geo in &object.geometry {
-		for shape in &geo.shapes {
-			match shape.primitive {
-				obj::Primitive::Triangle(a, b, c) => {
-					indices.push(a.0 as u16);
-					indices.push(b.0 as u16);
-					indices.push(c.0 as u16);
-				}
-				_ => {
-					println!("Only triangle meshes can be loaded.");
-					return None;
-				}
-			}
-		}
-	}	
-	Some((vert_data, indices))
+	Some((vertices, indices))
 }
 
 fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
@@ -237,7 +251,7 @@ fn main() {
 	//Calculate window's aspect ratio
 	let mut aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
 
-	//Configure window
+	//Configure what kinds of events the window will emit
 	window.set_key_polling(true);
 	window.set_framebuffer_size_polling(true);
 
@@ -263,7 +277,7 @@ fn main() {
 	let mut textures: HashMap<String, GLuint> = HashMap::new();
 
 	//Spawn thread to do work
-	thread::spawn(move || {
+	let worker_handle = thread::spawn(move || {
 		loop {
 			match order_rx.recv() {
 				Ok(WorkOrder::Image(path)) => {
@@ -728,7 +742,6 @@ fn main() {
 				for j in 0..model_indices.len() {
 					//If the trigger was pulled this frame, grab the object the controller is currently touching, if there is one
 					if let Some(loaded_index) = model_indices[j] {
-						//Make controller vibrate if it collides with something
 						let is_colliding = glm::distance(&get_mesh_origin(&meshes[mesh_index as usize]), &get_mesh_origin(&meshes[loaded_index])) < model_bounding_sphere_radius;
 
 						if is_colliding {
@@ -777,7 +790,7 @@ fn main() {
 					}
 
 					if controllers.holding_button(i, button_id::STEAM_VR_TOUCHPAD) {
-						movement_vector *= 3.0;
+						movement_vector *= 5.0;
 					}
 				}
 
@@ -911,6 +924,7 @@ fn main() {
 
 	//Shut down the worker thread
 	order_tx.send(WorkOrder::Quit).unwrap();
+	worker_handle.join().unwrap();
 
 	//Shut down OpenVR
 	if let Some(ctxt) = openvr_context {
