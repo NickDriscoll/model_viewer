@@ -260,7 +260,7 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 				}
 
 				//Send float uniform to GPU
-				gl::Uniform1f(get_uniform_location(program, "shininess"), mesh.shininess);
+				gl::Uniform1f(get_uniform_location(program, "specular_coefficient"), mesh.specular_coefficient);
 
 				//Send bool uniform to GPU
 				gl::Uniform1i(get_uniform_location(program, "lighting"), context.is_lighting as i32);

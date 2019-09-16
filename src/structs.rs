@@ -11,7 +11,7 @@ pub struct Mesh {
 	pub model_matrix: glm::TMat4<f32>, //Matrix that transforms points in model space to world space
 	pub texture: GLuint, //Texture
 	pub texture_path: String,
-	pub shininess: f32,
+	pub specular_coefficient: f32,
 	pub indices_count: GLsizei, //Number of indices in index array
 	pub render_pass_visibilities: [bool; RENDER_PASSES]
 }
@@ -23,7 +23,7 @@ impl Mesh {
 			model_matrix,
 			texture: 0,
 			texture_path: path.to_string(),
-			shininess: 8.0,
+			specular_coefficient: 8.0,
 			indices_count,
 			render_pass_visibilities: [true, true, true]
 		}

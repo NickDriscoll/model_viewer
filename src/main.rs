@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::sync::mpsc;
 use std::ptr;
-use wavefront_obj::obj;
+use wavefront_obj::{mtl, obj};
 use noise::{NoiseFn, OpenSimplex, Seedable};
 use crate::structs::*;
 use crate::glutil::*;
@@ -29,17 +29,19 @@ const FAR_Z: f32 = 800.0;
 //Left eye, Right eye, Companion window
 const RENDER_PASSES: usize = 3;
 
-type MeshArrays = (Vec<f32>, Vec<u16>);
+type MeshData = (Vec<f32>, Vec<u16>, Vec<Option<mtl::Material>>);
 
+//Things you can request the worker thread to do
 enum WorkOrder<'a> {
 	Image(&'a str),
 	Model,
 	Quit
 }
 
+//Things the worker thread can send back to the main thread
 enum WorkResult<'a> {
 	Image(&'a str, ImageData),
-	Model(Option<MeshArrays>)
+	Model(Option<MeshData>)
 }
 
 fn openvr_to_mat4(mat: [[f32; 4]; 3]) -> glm::TMat4<f32> {
@@ -120,9 +122,18 @@ fn get_mesh_origin(mesh: &Option<Mesh>) -> glm::TVec4<f32> {
 	}
 }
 
-fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
-	//Load file's contents as a string
-	let file_contents = match read_to_string(path) {
+fn load_wavefront_obj(path: &str) -> Option<MeshData> {
+	//Load .obj file's contents as a string
+	let obj_contents = match read_to_string(path) {
+		Ok(s) => { s }
+		Err(e) => {
+			println!("{}", e);
+			return None;
+		}
+	};
+
+	//Load .mtl file's contents as a string
+	let mtl_contents = match read_to_string(format!("{}.mtl", path.split_at(path.len() - 4).0)) {
 		Ok(s) => { s }
 		Err(e) => {
 			println!("{}", e);
@@ -130,14 +141,23 @@ fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
 		}
 	};
 	
-	//Get the ObjSet from the file
-	let obj_set = match obj::parse(file_contents) {
+	//Parse the Objects from the file
+	let obj_set = match obj::parse(obj_contents) {
 		Ok(m) => { m }
 		Err(e) => {
 			println!("{:?}", e);
 			return None;
 		}
 	};
+
+	//Parse the Materials from the file
+	let mtl_set = match mtl::parse(mtl_contents) {
+		Ok(m) => { m }
+		Err(e) => {
+			println!("{:?}", e);
+			return None;
+		}
+	};	
 	
 	if obj_set.objects.len() != 1 {
 		println!("Obj file must contain exactly one object");
@@ -149,40 +169,76 @@ fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
 	let mut index_map = HashMap::new();
 	let mut vertices = Vec::new();
 	let mut indices = Vec::new();
+	let mut geometry_boundaries = Vec::with_capacity(object.geometry.len());
+	let mut materials_in_order = Vec::with_capacity(object.geometry.len());
 	let mut current_index = 0u16;
 	for geo in &object.geometry {
+		//Copy the current material into materials_in_order
+		match &geo.material_name {
+			Some(name) => {
+				for material in &mtl_set.materials {
+					if *name == material.name {
+						materials_in_order.push(Some(material.clone()));
+					}
+				}
+			}
+			None => {
+				materials_in_order.push(None);
+			}
+		}
+
 		for shape in &geo.shapes {
 			match shape.primitive {
 				obj::Primitive::Triangle(a, b, c) => {
 					let verts = [a, b, c];
 					for v in &verts {
-						if let Some(normal_index) = v.2 {
-							let pair = (v.0, normal_index);
-							match index_map.get(&pair) {
-								Some(i) => {
-									//This vertex has already been accounted for, so we can just push the index into indices
-									indices.push(*i);
+						let pair = (v.0, v.2, v.1);
+						match index_map.get(&pair) {
+							Some(i) => {
+								//This vertex has already been accounted for, so we can just push the index into indices
+								indices.push(*i);
+							}
+							None => {
+								//This vertex is not accounted for, and so now we must add its data to vertices
+
+								//We add the position data to vertices
+								vertices.push(object.vertices[pair.0].x as f32);
+								vertices.push(object.vertices[pair.0].y as f32);
+								vertices.push(object.vertices[pair.0].z as f32);
+
+								//Push the normal vector data if there is any
+								match pair.1 {
+									Some(i) => {
+										let coords = [object.normals[i].x as f32, object.normals[i].y as f32, object.normals[i].z as f32];
+										for c in &coords {
+											vertices.push(*c);
+										}
+									}
+									None => {
+										for _ in 0..3 {
+											vertices.push(0.0);
+										}
+									}
 								}
-								None => {
-									//This vertex is not accounted for
 
-									//We add the vertex data to vertices
-									vertices.push(object.vertices[pair.0].x as f32);
-									vertices.push(object.vertices[pair.0].y as f32);
-									vertices.push(object.vertices[pair.0].z as f32);
-									vertices.push(object.normals[pair.1].x as f32);
-									vertices.push(object.normals[pair.1].y as f32);
-									vertices.push(object.normals[pair.1].z as f32);
-									vertices.push(0.0);
-									vertices.push(0.0);
-
-									//Add the index to indices
-									indices.push(current_index);
-
-									//Then we declare that this vertex will appear in vertices at current_index
-									index_map.insert(pair, current_index);
-									current_index += 1;
+								//Push the texture coordinate data if there is any
+								match pair.2 {
+									Some(i) => {
+										vertices.push(object.tex_vertices[i].u as f32);
+										vertices.push(object.tex_vertices[i].v as f32);
+									}
+									None => {
+										vertices.push(0.0);
+										vertices.push(0.0);
+									}
 								}
+
+								//Add the index to indices
+								indices.push(current_index);
+
+								//Then we declare that this vertex will appear in vertices at current_index
+								index_map.insert(pair, current_index);
+								current_index += 1;
 							}
 						}
 					}
@@ -193,11 +249,9 @@ fn load_wavefront_obj(path: &str) -> Option<MeshArrays> {
 				}
 			}
 		}
+		geometry_boundaries.push(indices.len());
 	}
-	println!("{}", object.vertices.len());
-	println!("{}", object.normals.len());
-
-	Some((vertices, indices))
+	Some((vertices, indices, materials_in_order))
 }
 
 fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
@@ -205,9 +259,9 @@ fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
 }
 
 fn update_openvr_mesh(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevicePose], tracking_to_world: &glm::TMat4<f32>, device_index: usize, mesh_index: Option<usize>) {
-	let ovr_to_absolute = openvr_to_mat4(*poses[device_index].device_to_absolute_tracking());
+	let device_to_absolute = openvr_to_mat4(*poses[device_index].device_to_absolute_tracking());
 	if let Some(mesh) = meshes.get_element(mesh_index) {
-		mesh.model_matrix = tracking_to_world * ovr_to_absolute;
+		mesh.model_matrix = tracking_to_world * device_to_absolute;
 	}
 }
 
@@ -397,7 +451,7 @@ fn main() {
 	//Create the large tessellated plane
 	const SIMPLEX_SCALE: f64 = 3.0;
 	const TERRAIN_SCALE: f32 = 500.0;
-	const TERRAIN_AMPLITUDE: f32 = TERRAIN_SCALE / 5.0;
+	const TERRAIN_AMPLITUDE: f32 = TERRAIN_SCALE / 10.0;
 	let surface_normals;
 	unsafe {
 		const ELEMENT_STRIDE: usize = 8;
@@ -580,7 +634,7 @@ fn main() {
 		if let None = hmd_mesh_index {
 			if let Some(mut mesh) = load_openvr_mesh(&openvr_system, &openvr_rendermodels, 0) {
 				mesh.render_pass_visibilities = [false, false, !camera.attached_to_hmd];
-				mesh.shininess = 128.0;
+				mesh.specular_coefficient = 128.0;
 				hmd_mesh_index = Some(meshes.insert(mesh));
 			}
 		}
@@ -608,6 +662,9 @@ fn main() {
 				WorkResult::Model(option_mesh) => {
 					if let Some(package) = option_mesh {
 						let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
+
+						
+
 						let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), "textures/bricks.jpg", package.1.len() as i32);
 						model_indices.push(Some(meshes.insert(mesh)));
 						bound_controller_indices.push(None);
@@ -898,6 +955,8 @@ fn main() {
 				gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
 				//Compute the view-projection matrix for the skybox (the conversion functions are just there to nullify the translation component of the view matrix)
+				//The skybox vertices should obviously be rotated along with the camera, but shouldn't be translated in order to maintain the illusion
+				//that the sky is infinitely far away
 				let view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
 
 				//Render the skybox

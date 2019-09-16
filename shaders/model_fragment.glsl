@@ -8,7 +8,7 @@ out vec4 frag_color;
 uniform sampler2D tex;
 //uniform vec4 light_position;
 uniform vec4 view_position;
-uniform float shininess;
+uniform float specular_coefficient;
 uniform bool lighting;
 
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
@@ -39,8 +39,7 @@ void main() {
 	vec4 light_direction = normalize(vec4(0.0, 1.0, 0.0, 0.0));
 
 	//Get ambient contribution
-	//vec3 ambient = AMBIENT_STRENGTH * LIGHT_COLOR;
-	vec3 ambient = vec3(0.0, 0.0, 0.0);
+	vec3 ambient = AMBIENT_STRENGTH * LIGHT_COLOR;
 
 	//Get diffuse contribution
 	float diff = max(0.0, dot(norm, light_direction));
@@ -50,7 +49,7 @@ void main() {
 	vec4 view_direction = normalize(view_position - f_pos);
 	vec4 half_dir = normalize(light_direction + view_direction);
 	float specular_angle = max(0.0, dot(norm, half_dir));
-	vec3 specular = pow(specular_angle, shininess) * LIGHT_COLOR;
+	vec3 specular = pow(specular_angle, specular_coefficient) * LIGHT_COLOR;
 
 	//Calculate distance attenuation
 	//float attenuation = clamp(ATTENUATION_CONSTANT / length(light_position - f_pos), 0.0, 1.0);
