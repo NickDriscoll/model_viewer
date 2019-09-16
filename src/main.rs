@@ -267,21 +267,18 @@ fn update_openvr_mesh(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevicePose],
 
 fn main() {
 	//Initialize OpenVR
-	let openvr_context = unsafe {
+	let (openvr_context, openvr_system, openvr_compositor, openvr_rendermodels) = unsafe {
 		match openvr::init(ApplicationType::Scene) {
-			Ok(ctxt) => { Some(ctxt) }
+			Ok(ctxt) => {
+				let system = ctxt.system().unwrap();
+				let compositor = ctxt.compositor().unwrap();
+				let render_models = ctxt.render_models().unwrap();
+				(Some(ctxt), Some(system), Some(compositor), Some(render_models))
+			}
 			Err(e) => {
 				println!("OpenVR initialization error: {}", e);
-				None
+				(None, None, None, None)
 			}
-		}
-	};
-
-	//Get the OpenVR submodules
-	let (openvr_system, openvr_compositor, openvr_rendermodels) = {
-		match &openvr_context {
-			Some(ctxt) => { (Some(ctxt.system().unwrap()), Some(ctxt.compositor().unwrap()), Some(ctxt.render_models().unwrap())) }
-			None => { (None, None, None) }
 		}
 	};
 
@@ -323,7 +320,7 @@ fn main() {
 		color_space: ColorSpace::Auto
 	};
 
-	//Channels for communication with the worker thread
+	//Create channels for communication with the worker thread
 	let (order_tx, order_rx) = mpsc::channel::<WorkOrder>();
 	let (result_tx, result_rx) = mpsc::channel::<WorkResult>();
 
@@ -663,7 +660,7 @@ fn main() {
 					if let Some(package) = option_mesh {
 						let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
 
-						
+
 
 						let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), "textures/bricks.jpg", package.1.len() as i32);
 						model_indices.push(Some(meshes.insert(mesh)));
