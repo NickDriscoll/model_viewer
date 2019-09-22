@@ -29,7 +29,7 @@ const FAR_Z: f32 = 800.0;
 //Left eye, Right eye, Companion window
 const RENDER_PASSES: usize = 3;
 
-type MeshData = (Vec<f32>, Vec<u16>, Vec<Option<mtl::Material>>);
+type MeshData = (Vec<f32>, Vec<u16>, Vec<GLsizei>, Vec<Option<mtl::Material>>);
 
 //Things you can request the worker thread to do
 enum WorkOrder<'a> {
@@ -97,7 +97,7 @@ fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option
 			
 			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]) };
 			let t = unsafe { load_texture_from_data(([25, 140, 15].to_vec(), 1, 1, gl::RGB)) };
-			let mut mesh = Mesh::new(vao, glm::identity(), "", model.indices().len() as GLsizei);
+			let mut mesh = Mesh::new(vao, glm::identity(), "", vec![0, model.indices().len() as GLsizei]);
 			mesh.texture = t;
 
 			result = Some(mesh);
@@ -173,12 +173,15 @@ fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 	let mut materials_in_order = Vec::with_capacity(object.geometry.len());
 	let mut current_index = 0u16;
 	for geo in &object.geometry {
+		geometry_boundaries.push(indices.len() as GLsizei);
+
 		//Copy the current material into materials_in_order
 		match &geo.material_name {
 			Some(name) => {
 				for material in &mtl_set.materials {
 					if *name == material.name {
 						materials_in_order.push(Some(material.clone()));
+						break;
 					}
 				}
 			}
@@ -249,9 +252,10 @@ fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 				}
 			}
 		}
-		geometry_boundaries.push(indices.len());
 	}
-	Some((vertices, indices, materials_in_order))
+	geometry_boundaries.push(indices.len() as GLsizei);
+	println!("{:?}", geometry_boundaries);
+	Some((vertices, indices, geometry_boundaries, materials_in_order))
 }
 
 fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
@@ -546,7 +550,7 @@ fn main() {
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
 		let model_matrix = glm::scaling(&glm::vec3(TERRAIN_SCALE, TERRAIN_AMPLITUDE, TERRAIN_SCALE));
 		order_tx.send(WorkOrder::Image("textures/grass.jpg")).unwrap();
-		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", indices.len() as i32))
+		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", vec![0, indices.len() as GLsizei]))
 	};
 
 	//Variables to keep track of the loaded models
@@ -659,10 +663,7 @@ fn main() {
 				WorkResult::Model(option_mesh) => {
 					if let Some(package) = option_mesh {
 						let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
-
-
-
-						let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), "textures/bricks.jpg", package.1.len() as i32);
+						let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), "textures/bricks.jpg", package.2);
 						model_indices.push(Some(meshes.insert(mesh)));
 						bound_controller_indices.push(None);
 						model_to_controller_matrices.push(glm::identity());
@@ -962,8 +963,6 @@ fn main() {
 				gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_cubemap);
 				gl::BindVertexArray(skybox_vao);
 				gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_SHORT, ptr::null());
-
-				gl::UseProgram(model_shader);
 
 				//Render the regular meshes
 				gl::Enable(gl::CULL_FACE);

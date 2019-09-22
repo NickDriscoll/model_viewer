@@ -237,6 +237,7 @@ pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint
 pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pass: usize, context: &RenderContext) {
 	let mut current_vao = 0;
 	let mut current_texture = 0;
+	gl::UseProgram(program);
 	for option_mesh in meshes.iter() {
 		if let Some(mesh) = option_mesh {
 			if mesh.render_pass_visibilities[render_pass] {
@@ -277,8 +278,10 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 					gl::BindVertexArray(mesh.vao);
 				}
 
-				//Draw call
-				gl::DrawElements(gl::TRIANGLES, mesh.indices_count, gl::UNSIGNED_SHORT, ptr::null());
+				//Draw calls
+				for i in 0..mesh.geo_boundaries.len()-1 {
+					gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
+				}
 			}
 		}
 	}
