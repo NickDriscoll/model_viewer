@@ -97,7 +97,7 @@ fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option
 			
 			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]) };
 			let t = unsafe { load_texture_from_data(([25, 140, 15].to_vec(), 1, 1, gl::RGB)) };
-			let mut mesh = Mesh::new(vao, glm::identity(), "", vec![0, model.indices().len() as GLsizei]);
+			let mut mesh = Mesh::new(vao, glm::identity(), "", vec![0, model.indices().len() as GLsizei], None);
 			mesh.texture = t;
 
 			result = Some(mesh);
@@ -254,7 +254,6 @@ fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 		}
 	}
 	geometry_boundaries.push(indices.len() as GLsizei);
-	println!("{:?}", geometry_boundaries);
 	Some((vertices, indices, geometry_boundaries, materials_in_order))
 }
 
@@ -449,7 +448,7 @@ fn main() {
 		OpenSimplex::new().set_seed(seed as u32)
 	};
 
-	//Create the large tessellated plane
+	//Create the large tessellated surface
 	const SIMPLEX_SCALE: f64 = 3.0;
 	const TERRAIN_SCALE: f32 = 500.0;
 	const TERRAIN_AMPLITUDE: f32 = TERRAIN_SCALE / 10.0;
@@ -546,11 +545,11 @@ fn main() {
 			vertices[i + 5] = averaged_vector.data[2];
 		}
 
-		println!("The generated plane contains {} vertices", vertices.len() / ELEMENT_STRIDE);
+		println!("The generated surface contains {} vertices", vertices.len() / ELEMENT_STRIDE);
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
 		let model_matrix = glm::scaling(&glm::vec3(TERRAIN_SCALE, TERRAIN_AMPLITUDE, TERRAIN_SCALE));
 		order_tx.send(WorkOrder::Image("textures/grass.jpg")).unwrap();
-		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", vec![0, indices.len() as GLsizei]))
+		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", vec![0, indices.len() as GLsizei], None))
 	};
 
 	//Variables to keep track of the loaded models
@@ -663,7 +662,7 @@ fn main() {
 				WorkResult::Model(option_mesh) => {
 					if let Some(package) = option_mesh {
 						let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
-						let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.1), "textures/bricks.jpg", package.2);
+						let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.3), "textures/bricks.jpg", package.2, Some(package.3));
 						model_indices.push(Some(meshes.insert(mesh)));
 						bound_controller_indices.push(None);
 						model_to_controller_matrices.push(glm::identity());
@@ -754,7 +753,7 @@ fn main() {
 		let cursor_pos = window.get_cursor_pos();
 		let cursor_delta = [cursor_pos.0 - window_size.0 as f64 / 2.0, cursor_pos.1 - window_size.1 as f64 / 2.0];
 
-		//If the cursor is currently captured
+		//If the cursor is currently captured, calculate how the camera's rotation should change this frame
 		if window.get_cursor_mode() == CursorMode::Disabled {
 			//No idea what a good range is for this value, but this is working for now
 			const MOUSE_SENSITIVITY: f32 = 0.001;
@@ -918,7 +917,7 @@ fn main() {
 			}
 		}
 
-		//If a model is being grabbed, place it in the right spot
+		//If a model is being grabbed, update its model matrix
 		for i in 0..bound_controller_indices.len() {
 			if let Some(index) = bound_controller_indices[i] {
 				if let (Some(mesh_index), Some(load_index)) = (controllers.mesh_indices[index], model_indices[i]) {				

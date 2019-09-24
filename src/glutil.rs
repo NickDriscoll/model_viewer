@@ -260,9 +260,6 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 					gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);
 				}
 
-				//Send float uniform to GPU
-				gl::Uniform1f(get_uniform_location(program, "specular_coefficient"), mesh.specular_coefficient);
-
 				//Send bool uniform to GPU
 				gl::Uniform1i(get_uniform_location(program, "lighting"), context.is_lighting as i32);
 
@@ -278,9 +275,39 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 					gl::BindVertexArray(mesh.vao);
 				}
 
-				//Draw calls
-				for i in 0..mesh.geo_boundaries.len()-1 {
-					gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
+				//Check if we're using a material or just a texture
+				match &mesh.materials {
+					Some(mats) => {
+						gl::Uniform1i(get_uniform_location(program, "using_material"), true as i32);
+
+						//Draw calls
+						for i in 0..mesh.geo_boundaries.len()-1 {
+							let (ambient, diffuse, specular) = match &mats[i] {
+								Some(material) => {
+									let amb = [material.color_ambient.r as f32, material.color_ambient.g as f32, material.color_ambient.b as f32];
+									let diff = [material.color_diffuse.r as f32, material.color_diffuse.g as f32, material.color_diffuse.b as f32];
+									let spec = [material.color_specular.r as f32, material.color_specular.g as f32, material.color_specular.b as f32];
+									(amb, diff, spec)
+								}
+								None => {
+									panic!("This really should be unreachable");
+								}
+							};
+							gl::Uniform3fv(get_uniform_location(program, "ambient_material"), 1, &ambient as *const GLfloat);
+							gl::Uniform3fv(get_uniform_location(program, "diffuse_material"), 1, &diffuse as *const GLfloat);
+							gl::Uniform3fv(get_uniform_location(program, "specular_material"), 1, &specular as *const GLfloat);
+							gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
+						}
+					}
+					None => {
+						gl::Uniform1i(get_uniform_location(program, "using_material"), false as i32);
+						gl::Uniform1f(get_uniform_location(program, "specular_coefficient"), mesh.specular_coefficient);
+
+						//Draw calls
+						for i in 0..mesh.geo_boundaries.len()-1 {
+							gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
+						}
+					}
 				}
 			}
 		}

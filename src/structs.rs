@@ -9,6 +9,7 @@ use crate::*;
 pub struct Mesh {
 	pub vao: GLuint, //Vertex array object
 	pub geo_boundaries: Vec<GLsizei>, //The start of each geometry in the vao
+	pub materials: Option<Vec<Option<mtl::Material>>>, //The materials associated with this mesh, in the same order as geo_boundaries
 	pub model_matrix: glm::TMat4<f32>, //Matrix that transforms points in model space to world space
 	pub texture: GLuint, //Texture
 	pub texture_path: String,
@@ -17,10 +18,11 @@ pub struct Mesh {
 }
 
 impl Mesh {
-	pub fn new(vao: GLuint, model_matrix: glm::TMat4<f32>, path: &str, geo_boundaries: Vec<GLsizei>) -> Self {
+	pub fn new(vao: GLuint, model_matrix: glm::TMat4<f32>, path: &str, geo_boundaries: Vec<GLsizei>, materials: Option<Vec<Option<mtl::Material>>>) -> Self {
 		Mesh {
 			vao,
 			geo_boundaries,
+			materials,
 			model_matrix,
 			texture: 0,
 			texture_path: path.to_string(),

@@ -16,7 +16,7 @@ void main() {
 
 	//Send world space representation of normal vector
 	//We use a normal matrix instead of just the model matrix so that non-uniform scaling doesn't mess up the normal vector
-	mat4 normal_matrix = transpose(inverse(model_matrix));
+	mat4 normal_matrix = transpose(mat4(inverse(mat3(model_matrix))));
 	f_normal = normal_matrix * vec4(normal, 0.0);
 
 	//Send tex coords
