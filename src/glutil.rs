@@ -282,12 +282,13 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 
 						//Draw calls
 						for i in 0..mesh.geo_boundaries.len()-1 {
-							let (ambient, diffuse, specular) = match &mats[i] {
+							let (ambient, diffuse, specular, specular_coefficient) = match &mats[i] {
 								Some(material) => {
 									let amb = [material.color_ambient.r as f32, material.color_ambient.g as f32, material.color_ambient.b as f32];
 									let diff = [material.color_diffuse.r as f32, material.color_diffuse.g as f32, material.color_diffuse.b as f32];
 									let spec = [material.color_specular.r as f32, material.color_specular.g as f32, material.color_specular.b as f32];
-									(amb, diff, spec)
+									let spec_co = material.specular_coefficient as f32;
+									(amb, diff, spec, spec_co)
 								}
 								None => {
 									panic!("This really should be unreachable");
@@ -296,6 +297,7 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 							gl::Uniform3fv(get_uniform_location(program, "ambient_material"), 1, &ambient as *const GLfloat);
 							gl::Uniform3fv(get_uniform_location(program, "diffuse_material"), 1, &diffuse as *const GLfloat);
 							gl::Uniform3fv(get_uniform_location(program, "specular_material"), 1, &specular as *const GLfloat);
+							gl::Uniform1f(get_uniform_location(program, "specular_coefficient"), specular_coefficient);
 							gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
 						}
 					}

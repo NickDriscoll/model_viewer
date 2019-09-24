@@ -40,7 +40,7 @@ void main() {
 	//Get light direction vector from light position
 	//From frag location to light source
 	//vec4 light_direction = normalize(light_position - f_pos);
-	vec4 light_direction = normalize(vec4(0.0, 1.0, 0.0, 0.0));
+	vec4 light_direction = normalize(vec4(1.0, 1.0, 0.0, 0.0));
 
 	//Get ambient contribution
 	vec3 ambient_light = AMBIENT_STRENGTH * LIGHT_COLOR;
