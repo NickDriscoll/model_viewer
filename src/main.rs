@@ -157,102 +157,101 @@ fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 			println!("{:?}", e);
 			return None;
 		}
-	};	
-	
-	if obj_set.objects.len() != 1 {
-		println!("Obj file must contain exactly one object");
-		return None;
-	}
-	let object = &obj_set.objects[0];
+	};
 
 	//Transform the object into something the engine can actually use
 	let mut index_map = HashMap::new();
 	let mut vertices = Vec::new();
 	let mut indices = Vec::new();
-	let mut geometry_boundaries = Vec::with_capacity(object.geometry.len());
-	let mut materials_in_order = Vec::with_capacity(object.geometry.len());
+	let mut geometry_boundaries = Vec::new();
+	let mut materials_in_order = Vec::new();
 	let mut current_index = 0u16;
-	for geo in &object.geometry {
-		geometry_boundaries.push(indices.len() as GLsizei);
+	let mut index_offset = 0;
+	for object in obj_set.objects {
+		for geo in &object.geometry {
+			geometry_boundaries.push(indices.len() as GLsizei);
 
-		//Copy the current material into materials_in_order
-		match &geo.material_name {
-			Some(name) => {
-				for material in &mtl_set.materials {
-					if *name == material.name {
-						materials_in_order.push(Some(material.clone()));
-						break;
-					}
-				}
-			}
-			None => {
-				materials_in_order.push(None);
-			}
-		}
-
-		for shape in &geo.shapes {
-			match shape.primitive {
-				obj::Primitive::Triangle(a, b, c) => {
-					let verts = [a, b, c];
-					for v in &verts {
-						let pair = (v.0, v.2, v.1);
-						match index_map.get(&pair) {
-							Some(i) => {
-								//This vertex has already been accounted for, so we can just push the index into indices
-								indices.push(*i);
-							}
-							None => {
-								//This vertex is not accounted for, and so now we must add its data to vertices
-
-								//We add the position data to vertices
-								vertices.push(object.vertices[pair.0].x as f32);
-								vertices.push(object.vertices[pair.0].y as f32);
-								vertices.push(object.vertices[pair.0].z as f32);
-
-								//Push the normal vector data if there is any
-								match pair.1 {
-									Some(i) => {
-										let coords = [object.normals[i].x as f32, object.normals[i].y as f32, object.normals[i].z as f32];
-										for c in &coords {
-											vertices.push(*c);
-										}
-									}
-									None => {
-										for _ in 0..3 {
-											vertices.push(0.0);
-										}
-									}
-								}
-
-								//Push the texture coordinate data if there is any
-								match pair.2 {
-									Some(i) => {
-										vertices.push(object.tex_vertices[i].u as f32);
-										vertices.push(object.tex_vertices[i].v as f32);
-									}
-									None => {
-										vertices.push(0.0);
-										vertices.push(0.0);
-									}
-								}
-
-								//Add the index to indices
-								indices.push(current_index);
-
-								//Then we declare that this vertex will appear in vertices at current_index
-								index_map.insert(pair, current_index);
-								current_index += 1;
-							}
+			//Copy the current material into materials_in_order
+			match &geo.material_name {
+				Some(name) => {
+					for material in &mtl_set.materials {
+						if *name == material.name {
+							materials_in_order.push(Some(material.clone()));
+							break;
 						}
 					}
 				}
-				_ => {
-					println!("Only triangle meshes are supported.");
-					return None;
+				None => {
+					materials_in_order.push(None);
+				}
+			}
+
+			for shape in &geo.shapes {
+				match shape.primitive {
+					obj::Primitive::Triangle(a, b, c) => {
+						let verts = [a, b, c];
+						for v in &verts {
+							let pair = (v.0 + index_offset, v.2, v.1);
+							match index_map.get(&pair) {
+								Some(i) => {
+									//This vertex has already been accounted for, so we can just push the index into indices
+									indices.push(*i);
+								}
+								None => {
+									//This vertex is not accounted for, and so now we must add its data to vertices
+
+									//We add the position data to vertices
+									vertices.push(object.vertices[pair.0 - index_offset].x as f32);
+									vertices.push(object.vertices[pair.0 - index_offset].y as f32);
+									vertices.push(object.vertices[pair.0 - index_offset].z as f32);
+
+									//Push the normal vector data if there is any
+									match pair.1 {
+										Some(i) => {
+											let coords = [object.normals[i].x as f32, object.normals[i].y as f32, object.normals[i].z as f32];
+											for c in &coords {
+												vertices.push(*c);
+											}
+										}
+										None => {
+											for _ in 0..3 {
+												vertices.push(0.0);
+											}
+										}
+									}
+
+									//Push the texture coordinate data if there is any
+									match pair.2 {
+										Some(i) => {
+											vertices.push(object.tex_vertices[i].u as f32);
+											vertices.push(object.tex_vertices[i].v as f32);
+										}
+										None => {
+											vertices.push(0.0);
+											vertices.push(0.0);
+										}
+									}
+
+									//Add the index to indices
+									indices.push(current_index);
+
+									//Then we declare that this vertex will appear in vertices at current_index
+									index_map.insert(pair, current_index);
+									current_index += 1;
+								}
+							}
+						}
+					}
+					_ => {
+						println!("Only triangle meshes are supported.");
+						return None;
+					}
 				}
 			}
 		}
+		index_offset += current_index as usize;
 	}
+	println!("{}", index_map.len());
 	geometry_boundaries.push(indices.len() as GLsizei);
 	Some((vertices, indices, geometry_boundaries, materials_in_order))
 }

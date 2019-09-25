@@ -16,7 +16,7 @@ uniform vec3 specular_material;
 uniform float specular_coefficient;
 
 //Flags
-uniform bool using_material = false;
+uniform bool using_material;
 uniform bool lighting;
 
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
@@ -33,7 +33,10 @@ void main() {
 
 	//Exit early if we're not doing lighting calculations
 	if (!lighting) {
-		frag_color = vec4(tex_color.rgb, 1.0);
+		if (using_material)
+			frag_color = vec4(diffuse_material + specular_material, 1.0);
+		else
+			frag_color = vec4(tex_color.rgb, 1.0);
 		return;
 	}
 
