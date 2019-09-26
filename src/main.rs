@@ -123,6 +123,12 @@ fn get_mesh_origin(mesh: &Option<Mesh>) -> glm::TVec4<f32> {
 }
 
 fn load_wavefront_obj(path: &str) -> Option<MeshData> {
+	//Gracefully exit if this is not an obj
+	if path.split_at(path.len() - 3).1 != "obj" {
+		println!("{} is not an obj file, dude.", path);
+		return None;
+	}
+
 	//Load .obj file's contents as a string
 	let obj_contents = match read_to_string(path) {
 		Ok(s) => { s }
@@ -160,11 +166,12 @@ fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 	};
 
 	//Transform the object into something the engine can actually use
+	const BUFFER_SIZE: usize = 500;
 	let mut index_map = HashMap::new();
-	let mut vertices = Vec::new();
-	let mut indices = Vec::new();
-	let mut geometry_boundaries = Vec::new();
-	let mut materials_in_order = Vec::new();
+	let mut vertices = Vec::with_capacity(BUFFER_SIZE);
+	let mut indices = Vec::with_capacity(BUFFER_SIZE);
+	let mut geometry_boundaries = Vec::with_capacity(BUFFER_SIZE);
+	let mut materials_in_order = Vec::with_capacity(BUFFER_SIZE);
 	let mut current_index = 0u16;
 	let mut index_offset = 0;
 	for object in obj_set.objects {
@@ -251,7 +258,6 @@ fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 		}
 		index_offset += current_index as usize;
 	}
-	println!("{}", index_map.len());
 	geometry_boundaries.push(indices.len() as GLsizei);
 	Some((vertices, indices, geometry_boundaries, materials_in_order))
 }
@@ -591,8 +597,6 @@ fn main() {
 		}
 	};
 
-	order_tx.send(WorkOrder::Image("textures/bricks.jpg")).unwrap();
-
 	//Flags
 	let mut is_wireframe = false;
 	let mut is_lighting = true;
@@ -883,7 +887,7 @@ fn main() {
 					let companion_v_mat = if camera.attached_to_hmd { 
 						glm::affine_inverse(tracking_to_world * hmd_to_tracking)
 					} else {
-						camera.get_freecam_matrix()
+						camera.freecam_matrix()
 					};
 
 					//Need to return inverse(tracking_to_world * hmd_to_tracking * eye_to_hmd)
@@ -891,7 +895,7 @@ fn main() {
 					 glm::affine_inverse(tracking_to_world * hmd_to_tracking * right_eye_to_hmd),
 					 companion_v_mat]
 			}
-			_ => { [glm::identity(), glm::identity(), camera.get_freecam_matrix()] }
+			_ => { [glm::identity(), glm::identity(), camera.freecam_matrix()] }
 		};
 
 		//Get projection matrices

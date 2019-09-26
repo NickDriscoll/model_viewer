@@ -59,7 +59,7 @@ impl Camera {
 		}
 	}
 
-	pub fn get_freecam_matrix(&self) -> glm::TMat4<f32> {
+	pub fn freecam_matrix(&self) -> glm::TMat4<f32> {
 		glm::rotation(self.pitch, &glm::vec3(1.0, 0.0, 0.0)) *
 		glm::rotation(self.yaw, &glm::vec3(0.0, 1.0, 0.0)) *
 		glm::translation(&self.position)
