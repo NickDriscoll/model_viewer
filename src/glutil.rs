@@ -253,10 +253,10 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 				}
 
 				//Send vector uniforms to GPU
-				let vec_locs = [get_uniform_location(program, "view_position")];
-				let vecs = [context.view_positions[render_pass]];
+				let vec_locs = [get_uniform_location(program, "view_position"), get_uniform_location(program, "light_direction")];
+				let vecs = [context.view_positions[render_pass], context.light_direction];
 				for i in 0..vec_locs.len() {
-					let pos = [vecs[i].x, vecs[i].y, vecs[i].z, 1.0];
+					let pos = [vecs[i].x, vecs[i].y, vecs[i].z, vecs[i].w];
 					gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);
 				}
 

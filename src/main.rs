@@ -601,6 +601,8 @@ fn main() {
 	let mut is_wireframe = false;
 	let mut is_lighting = true;
 
+	let light_direction = glm::normalize(&glm::vec4(1.0, 1.0, 0.0, 0.0));
+
 	//Main loop
 	while !window.should_close() {
 		//Calculate time since the last frame started
@@ -937,7 +939,7 @@ fn main() {
 		let sizes = [render_target_size, render_target_size, window_size];
 
 		//Rendering code
-		let render_context = RenderContext::new(&p_matrices, &v_matrices, is_lighting);
+		let render_context = RenderContext::new(&p_matrices, &v_matrices, light_direction, is_lighting);
 		unsafe {
 			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
 			gl::DepthFunc(gl::LESS);	//Pass the fragment with the smallest z-value

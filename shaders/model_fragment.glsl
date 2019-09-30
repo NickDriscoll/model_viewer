@@ -8,6 +8,7 @@ out vec4 frag_color;
 uniform sampler2D tex;
 //uniform vec4 light_position;
 uniform vec4 view_position;
+uniform vec4 light_direction;
 
 //Material properties
 uniform vec3 ambient_material;
@@ -19,6 +20,7 @@ uniform float specular_coefficient;
 uniform bool using_material;
 uniform bool lighting;
 
+//const vec4 LIGHT_DIRECTION = vec4(1.0, 1.0, 0.0, 0.0);
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
 const float AMBIENT_STRENGTH = 0.1;
 const float ATTENUATION_CONSTANT = 1.0;
@@ -43,7 +45,7 @@ void main() {
 	//Get light direction vector from light position
 	//From frag location to light source
 	//vec4 light_direction = normalize(light_position - f_pos);
-	vec4 light_direction = normalize(vec4(1.0, 1.0, 0.0, 0.0));
+	//vec4 light_direction = normalize(LIGHT_DIRECTION);
 
 	//Get ambient contribution
 	vec3 ambient_light = AMBIENT_STRENGTH * LIGHT_COLOR;
