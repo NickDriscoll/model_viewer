@@ -320,6 +320,7 @@ fn main() {
 	//Compile shaders
 	let model_shader = unsafe { compile_program_from_files("shaders/model_vertex.glsl", "shaders/model_fragment.glsl") };
 	let skybox_shader = unsafe { compile_program_from_files("shaders/skybox_vertex.glsl", "shaders/skybox_fragment.glsl") };
+	let shadow_map_shader = unsafe { compile_program_from_files("shaders/shadow_vertex.glsl", "shaders/shadow_fragment.glsl") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -448,9 +449,9 @@ fn main() {
 
 	//Set up the simplex noise generator
 	let simplex_generator = {
-		let seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000;
-		println!("Seed used for terrain generation: {}", seed as u32);
-		OpenSimplex::new().set_seed(seed as u32)
+		let seed = (SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000) as u32;
+		println!("Seed used for terrain generation: {}", seed);
+		OpenSimplex::new().set_seed(seed)
 	};
 
 	//Create the large tessellated surface
@@ -477,6 +478,7 @@ fn main() {
 			vertices[i + 2] = (ypos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
 
 			vertices[i + 1] = simplex_generator.get([vertices[i] as f64 * SIMPLEX_SCALE, vertices[i + 2] as f64 * SIMPLEX_SCALE]) as f32;
+			//vertices[i + 1] = 0.0;
 
 			//Calculate texture coordinates
 			vertices[i + 6] = TERRAIN_SCALE * (xpos as f32 / (WIDTH - 1) as f32) as f32;
@@ -603,6 +605,37 @@ fn main() {
 
 	let light_direction = glm::normalize(&glm::vec4(1.0, 1.0, 0.0, 0.0));
 
+	//Shadow mapping data
+	let projection_size = 10.0;
+	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 2.0 * projection_size) *
+								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 5.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
+	let (shadow_buffer, shadow_map) = unsafe {
+		let mut framebuffer = 0;
+		gl::GenFramebuffers(1, &mut framebuffer);
+
+		let mut depth_texture = 0;
+		gl::GenTextures(1, &mut depth_texture);
+		gl::BindTexture(gl::TEXTURE_2D, depth_texture);
+		gl::TexImage2D(gl::TEXTURE_2D, 0, gl::DEPTH_COMPONENT as i32, 1024, 1024, 0, gl::DEPTH_COMPONENT, gl::FLOAT, ptr::null());
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
+
+		gl::BindFramebuffer(gl::FRAMEBUFFER, framebuffer);
+		gl::FramebufferTexture2D(gl::FRAMEBUFFER, gl::DEPTH_ATTACHMENT, gl::TEXTURE_2D, depth_texture, 0);
+
+		if gl::CheckFramebufferStatus(gl::FRAMEBUFFER) != gl::FRAMEBUFFER_COMPLETE {
+			panic!("Shadow map framebuffer didn't complete");
+		}
+		gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+
+		(framebuffer, depth_texture)
+	};
+
+	//Quad for visualizing shadow map
+	
+
 	//Main loop
 	while !window.should_close() {
 		//Calculate time since the last frame started
@@ -667,7 +700,8 @@ fn main() {
 				WorkResult::Model(option_mesh) => {
 					if let Some(package) = option_mesh {
 						let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
-						let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.3), "textures/bricks.jpg", package.2, Some(package.3));
+						//let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.3), "textures/bricks.jpg", package.2, Some(package.3));
+						let mesh = Mesh::new(vao, glm::translation(&glm::vec4_to_vec3(&(light_direction * 2.0))) * uniform_scale(0.3), "textures/bricks.jpg", package.2, Some(package.3));
 						model_indices.push(Some(meshes.insert(mesh)));
 						bound_controller_indices.push(None);
 						model_to_controller_matrices.push(glm::identity());
@@ -704,8 +738,6 @@ fn main() {
 						Key::S => { camera.velocity = glm::vec3(0.0, 0.0, -camera.speed); }
 						Key::A => { camera.velocity = glm::vec3(camera.speed, 0.0, 0.0); }
 						Key::D => { camera.velocity = glm::vec3(-camera.speed, 0.0, 0.0); }
-						Key::O => { camera.fov_delta = -Camera::FOV_SPEED; }
-						Key::P => { camera.fov_delta = Camera::FOV_SPEED; }
 						Key::I => { camera.fov = 90.0; }
 						Key::G => { is_lighting = !is_lighting; }
 						Key::LeftShift => { camera.velocity *= 15.0; }
@@ -742,10 +774,6 @@ fn main() {
 						Key::A | Key::D => { camera.velocity.x = 0.0; }
 						Key::W | Key::S => { camera.velocity.z = 0.0; }
 						Key::LeftShift => { camera.velocity /= 5.0; }
-						Key::O | Key::P => {
-							camera.fov_delta = 0.0;
-							println!("Field of view is now {} degrees", camera.fov);
-						}
 						_ => {}
 					}
 				}
@@ -939,13 +967,35 @@ fn main() {
 		let sizes = [render_target_size, render_target_size, window_size];
 
 		//Rendering code
-		let render_context = RenderContext::new(&p_matrices, &v_matrices, light_direction, is_lighting);
+		let render_context = RenderContext::new(&p_matrices, &v_matrices, &light_direction, shadow_map, &shadow_viewprojection, is_lighting);
 		unsafe {
 			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
 			gl::DepthFunc(gl::LESS);	//Pass the fragment with the smallest z-value
 
 			//Set clear color
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
+
+			//Render the shadow map
+			gl::BindFramebuffer(gl::FRAMEBUFFER, shadow_buffer);
+			gl::Viewport(0, 0, 1024, 1024);
+			gl::DrawBuffer(gl::NONE);
+			gl::ReadBuffer(gl::NONE);
+			gl::Clear(gl::DEPTH_BUFFER_BIT);
+			gl::UseProgram(shadow_map_shader);
+			for option_mesh in meshes.iter() {
+				if let Some(mesh) = option_mesh {
+					let mvp = shadow_viewprojection * mesh.model_matrix;
+					gl::UniformMatrix4fv(get_uniform_location(shadow_map_shader, "shadowMVP"), 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
+					gl::BindVertexArray(mesh.vao);
+					for i in 0..mesh.geo_boundaries.len()-1 {
+						gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
+					}
+				}
+			}
+			gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+
+			//Turn the color buffer back on now that we're done rendering the shadow map
+			gl::DrawBuffer(gl::BACK);
 
 			//Render once per framebuffer (Left eye, Right eye, Companion window)
 			for i in 0..framebuffers.len() {

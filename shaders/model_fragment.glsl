@@ -3,12 +3,13 @@
 in vec4 f_pos;
 in vec4 f_normal;
 in vec2 v_tex_coords;
+in vec4 shadow_coord;
 out vec4 frag_color;
 
 uniform sampler2D tex;
-//uniform vec4 light_position;
-uniform vec4 view_position;
-uniform vec4 light_direction;
+uniform sampler2D shadow_map;
+uniform vec4 view_position;		//Origin of view space
+uniform vec4 light_direction;	//Vector pointing at the parallel light source
 
 //Material properties
 uniform vec3 ambient_material;
@@ -20,9 +21,8 @@ uniform float specular_coefficient;
 uniform bool using_material;
 uniform bool lighting;
 
-//const vec4 LIGHT_DIRECTION = vec4(1.0, 1.0, 0.0, 0.0);
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
-const float AMBIENT_STRENGTH = 0.1;
+const float AMBIENT_STRENGTH = 0.05;
 const float ATTENUATION_CONSTANT = 1.0;
 const float BRIGHTNESS = 0.75;
 
@@ -33,6 +33,12 @@ void main() {
 	//Get raw texel
 	vec4 tex_color = texture(tex, v_tex_coords);
 
+	//Exit early if we're in a shadow
+	if (texture(shadow_map, shadow_coord.xy).z < shadow_coord.z) {
+		frag_color = vec4(0.0, 0.0, 0.0, 1.0);
+		return;
+	}
+
 	//Exit early if we're not doing lighting calculations
 	if (!lighting) {
 		if (using_material)
@@ -41,11 +47,6 @@ void main() {
 			frag_color = vec4(tex_color.rgb, 1.0);
 		return;
 	}
-
-	//Get light direction vector from light position
-	//From frag location to light source
-	//vec4 light_direction = normalize(light_position - f_pos);
-	//vec4 light_direction = normalize(LIGHT_DIRECTION);
 
 	//Get ambient contribution
 	vec3 ambient_light = AMBIENT_STRENGTH * LIGHT_COLOR;
@@ -58,7 +59,7 @@ void main() {
 	vec4 view_direction = normalize(view_position - f_pos);
 	vec4 half_dir = normalize(light_direction + view_direction);
 	float specular_angle = max(0.0, dot(norm, half_dir));
-	vec3 specular_light = pow(specular_angle, specular_coefficient) * LIGHT_COLOR;
+	vec3 specular_light = pow(0.0, specular_coefficient) * LIGHT_COLOR;
 
 	//Calculate distance attenuation
 	//float attenuation = clamp(ATTENUATION_CONSTANT / length(light_position - f_pos), 0.0, 1.0);
@@ -72,5 +73,6 @@ void main() {
 	}
 	
 	frag_color = vec4(result, 1.0);
-	//frag_color = vec4(norm.r, norm.g, norm.b, 1.0);
+	//frag_color = texture(shadow_map, shadow_coord.xy).zzzz;
+	//frag_color = vec4(norm.rgb, 1.0);
 }

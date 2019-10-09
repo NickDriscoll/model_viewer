@@ -44,8 +44,6 @@ pub struct Camera {
 }
 
 impl Camera {
-	pub const FOV_SPEED: f32 = 5.0;
-
 	pub fn new(position: glm::TVec3<f32>) -> Self {
 		Camera {
 			position,
@@ -206,12 +204,14 @@ pub struct RenderContext<'a> {
 	pub p_matrices: &'a [glm::TMat4<f32>],						//The projection matrices for a given frame
 	pub v_matrices: &'a [glm::TMat4<f32>],						//The view matrices for a given frame
 	pub view_positions: [glm::TVec4<f32>; RENDER_PASSES],		//The origins of the v_matrices with respect to world space
-	pub light_direction: glm::TVec4<f32>,						//The direction of the parallel light source
+	pub light_direction: &'a glm::TVec4<f32>,					//The direction of the parallel light source
+	pub shadow_map: GLuint,										//The shadow map for the parallel light source
+	pub shadow_vp: &'a glm::TMat4<f32>,							//The matrix that transforms coordinate in world space to light space
 	pub is_lighting: bool										//Flag that determines whether or not to apply the lighting model
 }
 
 impl<'a> RenderContext<'a> {
-	pub fn new(p_matrices: &'a [glm::TMat4<f32>], v_matrices: &'a [glm::TMat4<f32>], light_direction: glm::TVec4<f32>, is_lighting: bool) -> Self {
+	pub fn new(p_matrices: &'a [glm::TMat4<f32>], v_matrices: &'a [glm::TMat4<f32>], light_direction: &'a glm::TVec4<f32>, shadow_map: GLuint, shadow_vp: &'a glm::TMat4<f32>, is_lighting: bool) -> Self {
 		let mut view_positions = [glm::zero(); RENDER_PASSES];
 		for i in 0..v_matrices.len() {
 			view_positions[i] = get_frame_origin(&glm::affine_inverse(v_matrices[i]));
@@ -222,6 +222,8 @@ impl<'a> RenderContext<'a> {
 			v_matrices,
 			view_positions,
 			light_direction,
+			shadow_map,
+			shadow_vp,
 			is_lighting
 		}
 	}

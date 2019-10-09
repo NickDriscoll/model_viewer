@@ -235,8 +235,6 @@ pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint
 }
 
 pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pass: usize, context: &RenderContext) {
-	let mut current_vao = 0;
-	let mut current_texture = 0;
 	gl::UseProgram(program);
 	for option_mesh in meshes.iter() {
 		if let Some(mesh) = option_mesh {
@@ -245,35 +243,30 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 				let mvp = context.p_matrices[render_pass] * context.v_matrices[render_pass] * mesh.model_matrix;
 
 				//Send matrix uniforms to GPU
-				let mat_locs = [get_uniform_location(program, "mvp"),
-								get_uniform_location(program, "model_matrix")];
-				let mats = [mvp, mesh.model_matrix];
+				let mat_locs = ["mvp", "model_matrix", "shadow_vp"];
+				let mats = [mvp, mesh.model_matrix, *context.shadow_vp];
 				for i in 0..mat_locs.len() {
-					gl::UniformMatrix4fv(mat_locs[i], 1, gl::FALSE, &flatten_glm(&mats[i]) as *const GLfloat);
+					gl::UniformMatrix4fv(get_uniform_location(program, mat_locs[i]), 1, gl::FALSE, &flatten_glm(&mats[i]) as *const GLfloat);
 				}
 
 				//Send vector uniforms to GPU
-				let vec_locs = [get_uniform_location(program, "view_position"), get_uniform_location(program, "light_direction")];
-				let vecs = [context.view_positions[render_pass], context.light_direction];
+				let vec_locs = ["view_position", "light_direction"];
+				let vecs = [context.view_positions[render_pass], *context.light_direction];
 				for i in 0..vec_locs.len() {
-					let pos = [vecs[i].x, vecs[i].y, vecs[i].z, vecs[i].w];
-					gl::Uniform4fv(vec_locs[i], 1, &pos as *const GLfloat);
+					gl::Uniform4fv(get_uniform_location(program, vec_locs[i]), 1, &[vecs[i].x, vecs[i].y, vecs[i].z, vecs[i].w] as *const GLfloat);
 				}
 
 				//Send bool uniform to GPU
 				gl::Uniform1i(get_uniform_location(program, "lighting"), context.is_lighting as i32);
 
-				//Bind the mesh's texture
-				if current_texture != mesh.texture {
-					current_texture = mesh.texture;
-					gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
-				}
+				//Bind the textures
+				gl::ActiveTexture(gl::TEXTURE0);
+				gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
+				gl::ActiveTexture(gl::TEXTURE1);
+				gl::BindTexture(gl::TEXTURE_2D, context.shadow_map);
 
 				//Bind the mesh's vertex array object
-				if current_vao != mesh.vao {
-					current_vao = mesh.vao;
-					gl::BindVertexArray(mesh.vao);
-				}
+				gl::BindVertexArray(mesh.vao);
 
 				//Check if we're using a material or just a texture
 				match &mesh.materials {
@@ -282,21 +275,22 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 
 						//Draw calls
 						for i in 0..mesh.geo_boundaries.len()-1 {
-							let (ambient, diffuse, specular, specular_coefficient) = match &mats[i] {
+							const NAMES: [&str; 3] = ["ambient_material", "diffuse_material", "specular_material"];
+							let (colors, specular_coefficient) = match &mats[i] {
 								Some(material) => {
 									let amb = [material.color_ambient.r as f32, material.color_ambient.g as f32, material.color_ambient.b as f32];
 									let diff = [material.color_diffuse.r as f32, material.color_diffuse.g as f32, material.color_diffuse.b as f32];
 									let spec = [material.color_specular.r as f32, material.color_specular.g as f32, material.color_specular.b as f32];
 									let spec_co = material.specular_coefficient as f32;
-									(amb, diff, spec, spec_co)
+									([amb, diff, spec], spec_co)
 								}
 								None => {
 									panic!("This really should be unreachable");
 								}
 							};
-							gl::Uniform3fv(get_uniform_location(program, "ambient_material"), 1, &ambient as *const GLfloat);
-							gl::Uniform3fv(get_uniform_location(program, "diffuse_material"), 1, &diffuse as *const GLfloat);
-							gl::Uniform3fv(get_uniform_location(program, "specular_material"), 1, &specular as *const GLfloat);
+							for i in 0..NAMES.len() {
+								gl::Uniform3fv(get_uniform_location(program, NAMES[i]), 1, &colors[i] as *const GLfloat);
+							}
 							gl::Uniform1f(get_uniform_location(program, "specular_coefficient"), specular_coefficient);
 							gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
 						}
@@ -305,7 +299,7 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 						gl::Uniform1i(get_uniform_location(program, "using_material"), false as i32);
 						gl::Uniform1f(get_uniform_location(program, "specular_coefficient"), mesh.specular_coefficient);
 
-						//Draw calls
+						//Draw call
 						for i in 0..mesh.geo_boundaries.len()-1 {
 							gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
 						}
