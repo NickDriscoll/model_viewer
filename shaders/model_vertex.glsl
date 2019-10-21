@@ -25,13 +25,7 @@ void main() {
 	v_tex_coords = tex_coords;
 
 	//Calculate vertex's position in light space
-	mat4 bias_matrix = mat4(
-		0.5, 0.0, 0.0, 0.5,
-		0.0, 0.5, 0.0, 0.5,
-		0.0, 0.0, 1.0, 0.0,
-		0.0, 0.0, 0.0, 1.0
-	);
-	shadow_coord = bias_matrix * shadow_vp * model_matrix * vec4(position, 1.0);
+	shadow_coord = shadow_vp * model_matrix * vec4(position, 1.0);
 
 	//Transform vertex position with model-view-projection matrix
 	gl_Position = mvp * vec4(position, 1.0);

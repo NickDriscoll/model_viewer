@@ -33,11 +33,13 @@ void main() {
 	//Get raw texel
 	vec4 tex_color = texture(tex, v_tex_coords);
 
-	//Exit early if we're in a shadow
-	if (texture(shadow_map, shadow_coord.xy).z < shadow_coord.z) {
-		frag_color = vec4(0.0, 0.0, 0.0, 1.0);
-		return;
-	}
+	//Check if we're in shadow
+	float shadow = 1.0;
+	float threshold = 0.05;
+	vec4 normalized_shadow_coord = shadow_coord * 0.5 + 0.5;
+	if (texture(shadow_map, normalized_shadow_coord.xy).r < normalized_shadow_coord.z) {
+		shadow = 0.5;
+	}	
 
 	//Exit early if we're not doing lighting calculations
 	if (!lighting) {
@@ -53,13 +55,13 @@ void main() {
 
 	//Get diffuse contribution
 	float diff = max(0.0, dot(norm, light_direction));
-	vec3 diffuse_light = diff * LIGHT_COLOR;
+	vec3 diffuse_light = diff * LIGHT_COLOR * shadow;
 
 	//Get specular contribution (blinn-phong)
 	vec4 view_direction = normalize(view_position - f_pos);
 	vec4 half_dir = normalize(light_direction + view_direction);
 	float specular_angle = max(0.0, dot(norm, half_dir));
-	vec3 specular_light = pow(0.0, specular_coefficient) * LIGHT_COLOR;
+	vec3 specular_light = pow(0.0, specular_coefficient) * LIGHT_COLOR * shadow;
 
 	//Calculate distance attenuation
 	//float attenuation = clamp(ATTENUATION_CONSTANT / length(light_position - f_pos), 0.0, 1.0);

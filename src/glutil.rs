@@ -236,6 +236,8 @@ pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint
 
 pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pass: usize, context: &RenderContext) {
 	gl::UseProgram(program);
+	gl::Uniform1i(get_uniform_location(program, "tex"), 0);
+	gl::Uniform1i(get_uniform_location(program, "shadow_map"), 1);
 	for option_mesh in meshes.iter() {
 		if let Some(mesh) = option_mesh {
 			if mesh.render_pass_visibilities[render_pass] {
@@ -244,9 +246,9 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 
 				//Send matrix uniforms to GPU
 				let mat_locs = ["mvp", "model_matrix", "shadow_vp"];
-				let mats = [mvp, mesh.model_matrix, *context.shadow_vp];
+				let mats = [&mvp, &mesh.model_matrix, context.shadow_vp];
 				for i in 0..mat_locs.len() {
-					gl::UniformMatrix4fv(get_uniform_location(program, mat_locs[i]), 1, gl::FALSE, &flatten_glm(&mats[i]) as *const GLfloat);
+					gl::UniformMatrix4fv(get_uniform_location(program, mat_locs[i]), 1, gl::FALSE, &flatten_glm(mats[i]) as *const GLfloat);
 				}
 
 				//Send vector uniforms to GPU

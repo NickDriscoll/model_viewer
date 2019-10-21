@@ -605,10 +605,10 @@ fn main() {
 
 	let light_direction = glm::normalize(&glm::vec4(1.0, 1.0, 0.0, 0.0));
 
-	//Shadow mapping data
+	//Shadow map data
 	let projection_size = 10.0;
 	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 2.0 * projection_size) *
-								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 5.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
+								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 7.5)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 	let (shadow_buffer, shadow_map) = unsafe {
 		let mut framebuffer = 0;
 		gl::GenFramebuffers(1, &mut framebuffer);
@@ -632,9 +632,6 @@ fn main() {
 
 		(framebuffer, depth_texture)
 	};
-
-	//Quad for visualizing shadow map
-	
 
 	//Main loop
 	while !window.should_close() {
