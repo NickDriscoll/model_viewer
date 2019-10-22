@@ -35,11 +35,14 @@ void main() {
 
 	//Check if we're in shadow
 	float shadow = 1.0;
-	float threshold = 0.05;
+	float threshold = max(0.005, 0.05 * (1.0 - dot(light_direction, norm)));
 	vec4 normalized_shadow_coord = shadow_coord * 0.5 + 0.5;
-	if (texture(shadow_map, normalized_shadow_coord.xy).r < normalized_shadow_coord.z) {
-		shadow = 0.5;
-	}	
+	if (!(normalized_shadow_coord.x < 0.0 || normalized_shadow_coord.x > 1.0 || 
+	    normalized_shadow_coord.y < 0.0 || normalized_shadow_coord.y > 1.0)) {
+		if (texture(shadow_map, normalized_shadow_coord.xy).r < normalized_shadow_coord.z - threshold) {
+			shadow = 0.5;
+		}
+	}
 
 	//Exit early if we're not doing lighting calculations
 	if (!lighting) {

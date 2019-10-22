@@ -606,6 +606,7 @@ fn main() {
 	let light_direction = glm::normalize(&glm::vec4(1.0, 1.0, 0.0, 0.0));
 
 	//Shadow map data
+	let shadow_map_resolution = 10240;
 	let projection_size = 10.0;
 	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 2.0 * projection_size) *
 								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 7.5)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
@@ -616,7 +617,7 @@ fn main() {
 		let mut depth_texture = 0;
 		gl::GenTextures(1, &mut depth_texture);
 		gl::BindTexture(gl::TEXTURE_2D, depth_texture);
-		gl::TexImage2D(gl::TEXTURE_2D, 0, gl::DEPTH_COMPONENT as i32, 1024, 1024, 0, gl::DEPTH_COMPONENT, gl::FLOAT, ptr::null());
+		gl::TexImage2D(gl::TEXTURE_2D, 0, gl::DEPTH_COMPONENT as i32, shadow_map_resolution, shadow_map_resolution, 0, gl::DEPTH_COMPONENT, gl::FLOAT, ptr::null());
 		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
 		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
 		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
@@ -974,7 +975,7 @@ fn main() {
 
 			//Render the shadow map
 			gl::BindFramebuffer(gl::FRAMEBUFFER, shadow_buffer);
-			gl::Viewport(0, 0, 1024, 1024);
+			gl::Viewport(0, 0, shadow_map_resolution, shadow_map_resolution);
 			gl::DrawBuffer(gl::NONE);
 			gl::ReadBuffer(gl::NONE);
 			gl::Clear(gl::DEPTH_BUFFER_BIT);
