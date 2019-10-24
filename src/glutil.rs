@@ -228,9 +228,6 @@ pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint
 	if gl::CheckFramebufferStatus(gl::FRAMEBUFFER) != gl::FRAMEBUFFER_COMPLETE {
 		println!("Framebuffer wasn't complete");
 	}
-	gl::BindRenderbuffer(gl::RENDERBUFFER, 0);
-	gl::BindTexture(gl::TEXTURE_2D, 0);
-	gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 	render_target
 }
 

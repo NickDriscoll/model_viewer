@@ -65,7 +65,6 @@ fn flatten_glm(mat: &glm::TMat4<f32>) -> [f32; 16] {
 
 fn get_projection_matrix(sys: &System, eye: Eye) -> glm::TMat4<f32> {
 	let t_matrix = sys.projection_matrix(eye, NEAR_Z, FAR_Z);
-
 	glm::mat4(
 		t_matrix[0][0], t_matrix[0][1], t_matrix[0][2], t_matrix[0][3],
 		t_matrix[1][0], t_matrix[1][1], t_matrix[1][2], t_matrix[1][3],
@@ -290,7 +289,7 @@ fn main() {
 		}
 	};
 
-	//Calculate render target size
+	//Calculate VR render target size
 	let render_target_size = match &openvr_system {
 		Some(sys) => { sys.recommended_render_target_size() }
 		None => { (1280, 720) }
@@ -478,7 +477,6 @@ fn main() {
 			vertices[i + 2] = (ypos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
 
 			vertices[i + 1] = simplex_generator.get([vertices[i] as f64 * SIMPLEX_SCALE, vertices[i + 2] as f64 * SIMPLEX_SCALE]) as f32;
-			//vertices[i + 1] = 0.0;
 
 			//Calculate texture coordinates
 			vertices[i + 6] = TERRAIN_SCALE * (xpos as f32 / (WIDTH - 1) as f32) as f32;
@@ -547,9 +545,9 @@ fn main() {
 			averaged_vector = glm::normalize(&averaged_vector);
 
 			//Write this vertex normal to the proper spot in the vertices array
-			vertices[i + 3] = averaged_vector.data[0];
-			vertices[i + 4] = averaged_vector.data[1];
-			vertices[i + 5] = averaged_vector.data[2];
+			for j in 0..3 {
+				vertices[i + 3 + j] = averaged_vector.data[j];
+			}
 		}
 
 		println!("The generated surface contains {} vertices", vertices.len() / ELEMENT_STRIDE);
@@ -568,6 +566,7 @@ fn main() {
 	//Initialize the struct of arrays containing controller related state
 	let mut controllers = Controllers::new();
 
+	//Index of the HMD mesh in meshes
 	let mut hmd_mesh_index = None;
 
 	//Camera state
@@ -603,13 +602,14 @@ fn main() {
 	let mut is_wireframe = false;
 	let mut is_lighting = true;
 
-	let light_direction = glm::normalize(&glm::vec4(1.0, 1.0, 0.0, 0.0));
+	let light_direction = glm::normalize(&glm::vec4(0.7, 1.0, 0.0, 0.0));
+	println!("light_direction: {:?}", light_direction);
 
 	//Shadow map data
 	let shadow_map_resolution = 10240;
 	let projection_size = 10.0;
 	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 2.0 * projection_size) *
-								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 7.5)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
+								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 3.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 	let (shadow_buffer, shadow_map) = unsafe {
 		let mut framebuffer = 0;
 		gl::GenFramebuffers(1, &mut framebuffer);
@@ -657,6 +657,7 @@ fn main() {
 		}
 
 		//Load controller meshes if we haven't already
+		//TODO: None == controllers.mesh_indices[0] || None == controllers.mesh_indices[1]
 		if let None = controllers.mesh_indices[0] {
 			if let Some(index) = controllers.device_indices[0] {
 				if let Some(mesh) = load_openvr_mesh(&openvr_system, &openvr_rendermodels, index) {
@@ -698,7 +699,6 @@ fn main() {
 				WorkResult::Model(option_mesh) => {
 					if let Some(package) = option_mesh {
 						let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
-						//let mesh = Mesh::new(vao, glm::translation(&glm::vec3(0.0, 0.8, 0.0)) * uniform_scale(0.3), "textures/bricks.jpg", package.2, Some(package.3));
 						let mesh = Mesh::new(vao, glm::translation(&glm::vec4_to_vec3(&(light_direction * 2.0))) * uniform_scale(0.3), "textures/bricks.jpg", package.2, Some(package.3));
 						model_indices.push(Some(meshes.insert(mesh)));
 						bound_controller_indices.push(None);
@@ -990,7 +990,6 @@ fn main() {
 					}
 				}
 			}
-			gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 
 			//Turn the color buffer back on now that we're done rendering the shadow map
 			gl::DrawBuffer(gl::BACK);

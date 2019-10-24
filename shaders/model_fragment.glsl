@@ -78,6 +78,4 @@ void main() {
 	}
 	
 	frag_color = vec4(result, 1.0);
-	//frag_color = texture(shadow_map, shadow_coord.xy).zzzz;
-	//frag_color = vec4(norm.rgb, 1.0);
 }
