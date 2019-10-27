@@ -610,6 +610,7 @@ fn main() {
 			let sink = rodio::Sink::new(&device);
 			let source = rodio::Decoder::new(BufReader::new(File::open("audio/riverlands.mp3").unwrap())).unwrap();
 			sink.append(source);
+			sink.set_volume(0.25);
 			sink.play();
 			Some(sink)
 		}
@@ -623,13 +624,13 @@ fn main() {
 	let mut is_wireframe = false;
 	let mut is_lighting = true;
 
-	let light_direction = glm::normalize(&glm::vec4(0.7, 1.0, 0.0, 0.0));
-	println!("light_direction: {:?}", light_direction);
+	let light_direction = glm::normalize(&glm::vec4(0.2, 1.0, 1.0, 0.0));
+	//println!("{:?}", light_direction);
 
 	//Shadow map data
 	let shadow_map_resolution = 10240;
-	let projection_size = 10.0;
-	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 2.0 * projection_size) *
+	let projection_size = 15.0;
+	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, projection_size) *
 								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 3.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 	let (shadow_buffer, shadow_map) = unsafe {
 		let mut framebuffer = 0;
