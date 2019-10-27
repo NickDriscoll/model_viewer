@@ -272,6 +272,10 @@ fn update_openvr_mesh(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevicePose],
 	}
 }
 
+fn get_terrain_height(xpos: f32, zpos: f32, simplex_generator: OpenSimplex, amplitude: f32, terrain_scale: f32, simplex_scale: f64) -> f32 {
+	amplitude * simplex_generator.get([xpos as f64 * simplex_scale / terrain_scale as f64, zpos as f64 * simplex_scale / terrain_scale as f64]) as f32
+}
+
 fn main() {
 	//Initialize OpenVR
 	let (openvr_context, openvr_system, openvr_compositor, openvr_rendermodels) = unsafe {
@@ -455,48 +459,50 @@ fn main() {
 
 	//Create the large tessellated surface
 	const SIMPLEX_SCALE: f64 = 3.0;
-	const TERRAIN_SCALE: f32 = 500.0;
+	const TERRAIN_SCALE: f32 = 350.0;
 	const TERRAIN_AMPLITUDE: f32 = TERRAIN_SCALE / 10.0;
+	const SURFACE_WIDTH: usize = 100; //Width (and height) in vertices
+	const SUBSQUARE_COUNT: usize = (SURFACE_WIDTH-1)*(SURFACE_WIDTH-1);
 	let surface_normals;
 	unsafe {
 		const ELEMENT_STRIDE: usize = 8;
-		const WIDTH: usize = 100; //Width (and height) in vertices
-		const TRIS: usize = (WIDTH - 1) * (WIDTH - 1) * 2;
+		const TRIS: usize = (SURFACE_WIDTH - 1) * (SURFACE_WIDTH - 1) * 2;
 
 		//Buffers to be filled
-		let mut vertices = vec![0.0; WIDTH * WIDTH * ELEMENT_STRIDE];
+		let mut vertices = vec![0.0; SURFACE_WIDTH * SURFACE_WIDTH * ELEMENT_STRIDE];
 		let mut indices: Vec<u16> = Vec::with_capacity(TRIS * 3);
 
 		//Calculate the positions and tex coords for each vertex
 		for i in (0..vertices.len()).step_by(ELEMENT_STRIDE) {
-			let xpos: usize = (i / ELEMENT_STRIDE) % WIDTH;
-			let ypos: usize = (i / ELEMENT_STRIDE) / WIDTH;
+			let xpos: usize = (i / ELEMENT_STRIDE) % SURFACE_WIDTH;
+			let zpos: usize = (i / ELEMENT_STRIDE) / SURFACE_WIDTH;
 
 			//Calculate vertex position
-			vertices[i] = (xpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
-			vertices[i + 2] = (ypos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
+			vertices[i] = (xpos as f32 / (SURFACE_WIDTH - 1) as f32) as f32 - 0.5;
+			vertices[i + 2] = (zpos as f32 / (SURFACE_WIDTH - 1) as f32) as f32 - 0.5;
 
+			//Retrieve the height from the simplex noise generator
 			vertices[i + 1] = simplex_generator.get([vertices[i] as f64 * SIMPLEX_SCALE, vertices[i + 2] as f64 * SIMPLEX_SCALE]) as f32;
 
 			//Calculate texture coordinates
-			vertices[i + 6] = TERRAIN_SCALE * (xpos as f32 / (WIDTH - 1) as f32) as f32;
-			vertices[i + 7] = TERRAIN_SCALE * (ypos as f32 / (WIDTH - 1) as f32) as f32;
+			vertices[i + 6] = TERRAIN_SCALE * (xpos as f32 / (SURFACE_WIDTH - 1) as f32) as f32;
+			vertices[i + 7] = TERRAIN_SCALE * (zpos as f32 / (SURFACE_WIDTH - 1) as f32) as f32;
 		}
 
 		//This loop executes once per subsquare on the plane, and pushes the indices of the two triangles that comprise said subsquare into the indices Vec
-		for i in 0..((WIDTH-1)*(WIDTH-1)) {
-			let xpos = i % (WIDTH-1);
-			let ypos = i / (WIDTH-1);
+		for i in 0..SUBSQUARE_COUNT {
+			let xpos = i % (SURFACE_WIDTH-1);
+			let ypos = i / (SURFACE_WIDTH-1);
 
 			//Push indices for bottom-left triangle
-			indices.push((xpos + ypos * WIDTH) as u16);
-			indices.push((xpos + ypos * WIDTH + WIDTH) as u16);
-			indices.push((xpos + ypos * WIDTH + 1) as u16);
+			indices.push((xpos + ypos * SURFACE_WIDTH) as u16);
+			indices.push((xpos + ypos * SURFACE_WIDTH + SURFACE_WIDTH) as u16);
+			indices.push((xpos + ypos * SURFACE_WIDTH + 1) as u16);
 			
 			//Push indices for top-right triangle
-			indices.push((xpos + ypos * WIDTH + 1) as u16);
-			indices.push((xpos + ypos * WIDTH + WIDTH) as u16);
-			indices.push((xpos + ypos * WIDTH + WIDTH + 1) as u16);
+			indices.push((xpos + ypos * SURFACE_WIDTH + 1) as u16);
+			indices.push((xpos + ypos * SURFACE_WIDTH + SURFACE_WIDTH) as u16);
+			indices.push((xpos + ypos * SURFACE_WIDTH + SURFACE_WIDTH + 1) as u16);
 		}
 
 		//The ith vertex will be shared by each surface in vertex_surface_map[i]
@@ -527,7 +533,7 @@ fn main() {
 				let u = glm::vec4_to_vec3(&(tri_verts[0] - tri_verts[1]));
 				let v = glm::vec4_to_vec3(&(tri_verts[1] - tri_verts[2]));
 
-				//The cross product of two edges of a surface must be normal to that surface
+				//The cross product of two vectors on a plane must be normal to that plane
 				norms.push(glm::cross::<f32, glm::U3>(&u, &v));
 			}
 			norms
@@ -556,6 +562,21 @@ fn main() {
 		order_tx.send(WorkOrder::Image("textures/grass.jpg")).unwrap();
 		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", vec![0, indices.len() as GLsizei], None))
 	};
+
+	//Plant trees
+	{
+		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
+		let vao = unsafe { create_vertex_array_object(&model_data.0, &model_data.1, &[3, 3, 2]) };
+		
+		for i in 1..100 {
+			let position = glm::rotate_vec3(&glm::vec3(2.0 * i as f32, 0.0, 0.0), rand::random::<f32>() * glm::two_pi::<f32>(), &glm::vec3(0.0, 1.0, 0.0));
+			
+			//Get height from simplex noise generator
+			let ypos = get_terrain_height(position.x, position.z, simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
+			
+			meshes.insert(Mesh::new(vao, glm::translation(&glm::vec3(position.x, ypos, position.z)) * uniform_scale(0.6), "", model_data.2.clone(), Some(model_data.3.clone())));
+		}
+	}
 
 	//Variables to keep track of the loaded models
 	let model_bounding_sphere_radius = 0.20;
@@ -587,7 +608,7 @@ fn main() {
 	let mut bgm_sink = match rodio::default_output_device() {
 		Some(device) => {
 			let sink = rodio::Sink::new(&device);
-			let source = rodio::Decoder::new(BufReader::new(File::open("audio/woodlands.mp3").unwrap())).unwrap();
+			let source = rodio::Decoder::new(BufReader::new(File::open("audio/riverlands.mp3").unwrap())).unwrap();
 			sink.append(source);
 			sink.play();
 			Some(sink)
@@ -891,8 +912,7 @@ fn main() {
 				tracking_position += movement_vector;
 
 				if !is_flying {
-					tracking_position.y = TERRAIN_AMPLITUDE * simplex_generator.get([tracking_position.x as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64,
-																			 		 tracking_position.z as f64 * SIMPLEX_SCALE / TERRAIN_SCALE as f64]) as f32;
+					tracking_position.y = get_terrain_height(tracking_position.x, tracking_position.z, simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
 				}
 			}
 			tracking_to_world = glm::translation(&glm::vec4_to_vec3(&tracking_position));
