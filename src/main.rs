@@ -276,6 +276,20 @@ fn get_terrain_height(xpos: f32, zpos: f32, simplex_generator: OpenSimplex, ampl
 	amplitude * simplex_generator.get([xpos as f64 * simplex_scale / terrain_scale as f64, zpos as f64 * simplex_scale / terrain_scale as f64]) as f32
 }
 
+fn halton_sequence(index: f32, base: f32) -> f32 {
+	let mut f = 1.0;
+	let mut r = 0.0;
+	let mut i = index;
+
+	while i > 0.0 {
+		f = f / base;
+		r = r + f * (i % base);
+		i = f32::floor(i / base);
+	}
+
+	return r;
+}
+
 fn main() {
 	//Initialize OpenVR
 	let (openvr_context, openvr_system, openvr_compositor, openvr_rendermodels) = unsafe {
@@ -568,13 +582,17 @@ fn main() {
 		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
 		let vao = unsafe { create_vertex_array_object(&model_data.0, &model_data.1, &[3, 3, 2]) };
 		
-		for i in 1..100 {
-			let position = glm::rotate_vec3(&glm::vec3(2.0 * i as f32, 0.0, 0.0), rand::random::<f32>() * glm::two_pi::<f32>(), &glm::vec3(0.0, 1.0, 0.0));
+		const TREE_COUNT: usize = 1200;
+		for i in 1..TREE_COUNT {
+			//let distance = TERRAIN_SCALE * i as f32 / TREE_COUNT as f32 / 2.0;
+			//let position = glm::rotate_vec3(&glm::vec3(distance as f32, 0.0, 0.0), rand::random::<f32>() * glm::two_pi::<f32>(), &glm::vec3(0.0, 1.0, 0.0));
+			let x = TERRAIN_SCALE * (halton_sequence(i as f32, 2.0) - 0.5);
+			let z = TERRAIN_SCALE * (halton_sequence(i as f32, 3.0) - 0.5);
 			
 			//Get height from simplex noise generator
-			let ypos = get_terrain_height(position.x, position.z, simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
+			let terrain_height = get_terrain_height(x, z, simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
 			
-			meshes.insert(Mesh::new(vao, glm::translation(&glm::vec3(position.x, ypos, position.z)) * uniform_scale(0.6), "", model_data.2.clone(), Some(model_data.3.clone())));
+			meshes.insert(Mesh::new(vao, glm::translation(&glm::vec3(x, terrain_height, z)) * uniform_scale(0.6), "", model_data.2.clone(), Some(model_data.3.clone())));
 		}
 	}
 
@@ -629,7 +647,7 @@ fn main() {
 
 	//Shadow map data
 	let shadow_map_resolution = 10240;
-	let projection_size = 15.0;
+	let projection_size = 30.0;
 	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, projection_size) *
 								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 3.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 	let (shadow_buffer, shadow_map) = unsafe {
