@@ -335,6 +335,7 @@ fn main() {
 
 	//Compile shaders
 	let model_shader = unsafe { compile_program_from_files("shaders/model_vertex.glsl", "shaders/model_fragment.glsl") };
+	let instanced_model_shader = unsafe { compile_program_from_files("shaders/instanced_vertex.glsl", "shaders/model_fragment.glsl") };
 	let skybox_shader = unsafe { compile_program_from_files("shaders/skybox_vertex.glsl", "shaders/skybox_fragment.glsl") };
 	let shadow_map_shader = unsafe { compile_program_from_files("shaders/shadow_vertex.glsl", "shaders/shadow_fragment.glsl") };
 
@@ -577,10 +578,10 @@ fn main() {
 	};
 
 	//Plant trees
-	unsafe {		
-		const TREE_COUNT: usize = 900;
+	const TREE_COUNT: usize = 900;
+	let (trees_vao, trees_geo_boundaries, trees_mats) = unsafe {
 
-		let model_data = load_wavefront_obj("models/tree3.obj").unwrap();
+		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
 		let vao = create_vertex_array_object(&model_data.0, &model_data.1, &[3, 3, 2]);
 		let mut positions = [0.0; TREE_COUNT * 3];
 
@@ -592,7 +593,7 @@ fn main() {
 			//Get height from simplex noise generator
 			positions[i * 3 + 1] = get_terrain_height(positions[i * 3 + 0], positions[i * 3 + 2], simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
 			
-			meshes.insert(Mesh::new(vao, glm::translation(&glm::vec3(positions[i * 3 + 0], positions[i * 3 + 1], positions[i * 3 + 2])) * uniform_scale(0.6), "", model_data.2.clone(), Some(model_data.3.clone())));
+			//meshes.insert(Mesh::new(vao, glm::translation(&glm::vec3(positions[i * 3 + 0], positions[i * 3 + 1], positions[i * 3 + 2])) * uniform_scale(0.6), "", model_data.2.clone(), Some(model_data.3.clone())));
 		}
 
 		let position_buffer = gl_gen_buffer();
@@ -600,7 +601,11 @@ fn main() {
 		gl::BufferData(gl::ARRAY_BUFFER, (TREE_COUNT * 3 * mem::size_of::<GLfloat>()) as GLsizeiptr, &positions[0] as *const f32 as *const c_void, gl::STATIC_DRAW);
 		gl::BindVertexArray(vao);
 		gl::VertexAttribPointer(3, 3, gl::FLOAT, gl::FALSE, 3 * mem::size_of::<GLfloat>() as GLsizei, ptr::null());
-	}
+		gl::VertexAttribDivisor(3, 1);
+		gl::EnableVertexAttribArray(3);
+
+		(vao, model_data.2, model_data.3)
+	};
 
 	//Variables to keep track of the loaded models
 	let model_bounding_sphere_radius = 0.20;
@@ -702,8 +707,7 @@ fn main() {
 		}
 
 		//Load controller meshes if we haven't already
-		//TODO: None == controllers.mesh_indices[0] || None == controllers.mesh_indices[1]
-		if let None = controllers.mesh_indices[0] {
+		if None == controllers.mesh_indices[0] || None == controllers.mesh_indices[1] {
 			if let Some(index) = controllers.device_indices[0] {
 				if let Some(mesh) = load_openvr_mesh(&openvr_system, &openvr_rendermodels, index) {
 					controllers.mesh_indices[0] = Some(meshes.insert(mesh.clone()));
@@ -1024,6 +1028,7 @@ fn main() {
 			gl::ReadBuffer(gl::NONE);
 			gl::Clear(gl::DEPTH_BUFFER_BIT);
 			gl::UseProgram(shadow_map_shader);
+
 			for option_mesh in meshes.iter() {
 				if let Some(mesh) = option_mesh {
 					let mvp = shadow_viewprojection * mesh.model_matrix;
@@ -1050,11 +1055,11 @@ fn main() {
 				//Compute the view-projection matrix for the skybox (the conversion functions are just there to nullify the translation component of the view matrix)
 				//The skybox vertices should obviously be rotated along with the camera, but shouldn't be translated in order to maintain the illusion
 				//that the sky is infinitely far away
-				let view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
+				let skybox_view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
 
 				//Render the skybox
 				gl::UseProgram(skybox_shader);
-				gl::UniformMatrix4fv(get_uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&(view_projection * uniform_scale(400.0))) as *const GLfloat);
+				gl::UniformMatrix4fv(get_uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&(skybox_view_projection * uniform_scale(400.0))) as *const GLfloat);
 				gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_cubemap);
 				gl::BindVertexArray(skybox_vao);
 				gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_SHORT, ptr::null());
@@ -1062,6 +1067,53 @@ fn main() {
 				//Render the regular meshes
 				gl::Enable(gl::CULL_FACE);
 				render_meshes(&meshes, model_shader, i, &render_context);
+
+				//Render the trees with instanced rendering
+				gl::UseProgram(instanced_model_shader);
+				
+				//Send matrix uniforms to GPU
+				let mat_locs = ["view_projection", "shadow_vp"];
+				let mats = [&(p_matrices[i] * v_matrices[i]), &shadow_viewprojection];
+				for i in 0..mat_locs.len() {
+					gl::UniformMatrix4fv(get_uniform_location(instanced_model_shader, mat_locs[i]), 1, gl::FALSE, &flatten_glm(mats[i]) as *const GLfloat);
+				}
+
+				//Send vector uniforms to GPU
+				let vec_locs = ["view_position", "light_direction"];
+				let vecs = [render_context.view_positions[i], light_direction];
+				for i in 0..vec_locs.len() {
+					gl::Uniform4fv(get_uniform_location(instanced_model_shader, vec_locs[i]), 1, &[vecs[i].x, vecs[i].y, vecs[i].z, vecs[i].w] as *const GLfloat);
+				}
+
+				gl::Uniform1i(get_uniform_location(instanced_model_shader, "using_material"), true as i32);
+				gl::Uniform1i(get_uniform_location(instanced_model_shader, "lighting"), true as i32);
+				gl::Uniform1i(get_uniform_location(instanced_model_shader, "shadow_map"), 0);
+				gl::ActiveTexture(gl::TEXTURE0);
+				gl::BindTexture(gl::TEXTURE_2D, shadow_map);
+
+				gl::BindVertexArray(trees_vao);
+
+				//Draw calls
+				for i in 0..trees_geo_boundaries.len()-1 {
+					const NAMES: [&str; 3] = ["ambient_material", "diffuse_material", "specular_material"];
+					let (colors, specular_coefficient) = match &trees_mats[i] {
+						Some(material) => {
+							let amb = [material.color_ambient.r as f32, material.color_ambient.g as f32, material.color_ambient.b as f32];
+							let diff = [material.color_diffuse.r as f32, material.color_diffuse.g as f32, material.color_diffuse.b as f32];
+							let spec = [material.color_specular.r as f32, material.color_specular.g as f32, material.color_specular.b as f32];
+							let spec_co = material.specular_coefficient as f32;
+							([amb, diff, spec], spec_co)
+						}
+						None => {
+							panic!("This really should be unreachable");
+						}
+					};
+					for i in 0..NAMES.len() {
+						gl::Uniform3fv(get_uniform_location(instanced_model_shader, NAMES[i]), 1, &colors[i] as *const GLfloat);
+					}
+					gl::Uniform1f(get_uniform_location(instanced_model_shader, "specular_coefficient"), specular_coefficient);
+					gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[i + 1] - trees_geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * trees_geo_boundaries[i]) as *const c_void, TREE_COUNT as GLsizei);
+				}
 
 				//Submit render to HMD
 				submit_to_hmd(eyes[i], &openvr_compositor, &openvr_texture_handle);
