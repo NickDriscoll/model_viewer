@@ -8,10 +8,9 @@ use std::collections::HashMap;
 use std::fs::{File, read_to_string};
 use std::io::BufReader;
 use std::os::raw::c_void;
-use std::thread;
+use std::{mem, ptr, thread};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::sync::mpsc;
-use std::ptr;
 use wavefront_obj::{mtl, obj};
 use noise::{NoiseFn, OpenSimplex, Seedable};
 use crate::structs::*;
@@ -46,11 +45,11 @@ enum WorkResult<'a> {
 
 fn openvr_to_mat4(mat: [[f32; 4]; 3]) -> glm::TMat4<f32> {
 	glm::mat4(
-			mat[0][0], mat[0][1], mat[0][2], mat[0][3],
-			mat[1][0], mat[1][1], mat[1][2], mat[1][3],
-			mat[2][0], mat[2][1], mat[2][2], mat[2][3],
-			0.0, 0.0, 0.0, 1.0
-		)
+		mat[0][0], mat[0][1], mat[0][2], mat[0][3],
+		mat[1][0], mat[1][1], mat[1][2], mat[1][3],
+		mat[2][0], mat[2][1], mat[2][2], mat[2][3],
+		0.0, 0.0, 0.0, 1.0
+	)
 }
 
 fn flatten_glm(mat: &glm::TMat4<f32>) -> [f32; 16] {
@@ -578,22 +577,29 @@ fn main() {
 	};
 
 	//Plant trees
-	{
-		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
-		let vao = unsafe { create_vertex_array_object(&model_data.0, &model_data.1, &[3, 3, 2]) };
-		
-		const TREE_COUNT: usize = 1200;
-		for i in 1..TREE_COUNT {
-			//let distance = TERRAIN_SCALE * i as f32 / TREE_COUNT as f32 / 2.0;
-			//let position = glm::rotate_vec3(&glm::vec3(distance as f32, 0.0, 0.0), rand::random::<f32>() * glm::two_pi::<f32>(), &glm::vec3(0.0, 1.0, 0.0));
-			let x = TERRAIN_SCALE * (halton_sequence(i as f32, 2.0) - 0.5);
-			let z = TERRAIN_SCALE * (halton_sequence(i as f32, 3.0) - 0.5);
+	unsafe {		
+		const TREE_COUNT: usize = 900;
+
+		let model_data = load_wavefront_obj("models/tree3.obj").unwrap();
+		let vao = create_vertex_array_object(&model_data.0, &model_data.1, &[3, 3, 2]);
+		let mut positions = [0.0; TREE_COUNT * 3];
+
+		//Populate the buffer
+		for i in 0..TREE_COUNT {
+			positions[i * 3 + 0] = TERRAIN_SCALE * (halton_sequence(i as f32 + 1.0, 2.0) - 0.5);
+			positions[i * 3 + 2] = TERRAIN_SCALE * (halton_sequence(i as f32 + 1.0, 3.0) - 0.5);
 			
 			//Get height from simplex noise generator
-			let terrain_height = get_terrain_height(x, z, simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
+			positions[i * 3 + 1] = get_terrain_height(positions[i * 3 + 0], positions[i * 3 + 2], simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
 			
-			meshes.insert(Mesh::new(vao, glm::translation(&glm::vec3(x, terrain_height, z)) * uniform_scale(0.6), "", model_data.2.clone(), Some(model_data.3.clone())));
+			meshes.insert(Mesh::new(vao, glm::translation(&glm::vec3(positions[i * 3 + 0], positions[i * 3 + 1], positions[i * 3 + 2])) * uniform_scale(0.6), "", model_data.2.clone(), Some(model_data.3.clone())));
 		}
+
+		let position_buffer = gl_gen_buffer();
+		gl::BindBuffer(gl::ARRAY_BUFFER, position_buffer);
+		gl::BufferData(gl::ARRAY_BUFFER, (TREE_COUNT * 3 * mem::size_of::<GLfloat>()) as GLsizeiptr, &positions[0] as *const f32 as *const c_void, gl::STATIC_DRAW);
+		gl::BindVertexArray(vao);
+		gl::VertexAttribPointer(3, 3, gl::FLOAT, gl::FALSE, 3 * mem::size_of::<GLfloat>() as GLsizei, ptr::null());
 	}
 
 	//Variables to keep track of the loaded models
@@ -642,13 +648,12 @@ fn main() {
 	let mut is_wireframe = false;
 	let mut is_lighting = true;
 
-	let light_direction = glm::normalize(&glm::vec4(0.2, 1.0, 1.0, 0.0));
-	//println!("{:?}", light_direction);
+	let light_direction = glm::normalize(&glm::vec4(0.8, 1.0, 1.0, 0.0));
 
 	//Shadow map data
 	let shadow_map_resolution = 10240;
-	let projection_size = 30.0;
-	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, projection_size) *
+	let projection_size = 20.0;
+	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 5.0 * projection_size) *
 								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 3.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 	let (shadow_buffer, shadow_map) = unsafe {
 		let mut framebuffer = 0;

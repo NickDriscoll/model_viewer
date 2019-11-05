@@ -35,7 +35,8 @@ void main() {
 
 	//Check if we're in shadow
 	float shadow = 1.0;
-	float threshold = max(0.005, 0.05 * (1.0 - dot(light_direction, norm)));
+	//float threshold = max(0.005, 0.05 * (1.0 - dot(light_direction, norm)));
+	float threshold = 0.001;
 	vec4 normalized_shadow_coord = shadow_coord * 0.5 + 0.5;
 	if (!(normalized_shadow_coord.x < 0.0 || normalized_shadow_coord.x > 1.0 || 
 	    normalized_shadow_coord.y < 0.0 || normalized_shadow_coord.y > 1.0)) {

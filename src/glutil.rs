@@ -86,6 +86,12 @@ pub unsafe fn get_uniform_location(program: GLuint, name: &str) -> GLint {
 	gl::GetUniformLocation(program, cstring.as_ptr())
 }
 
+pub unsafe fn gl_gen_buffer() -> GLuint {
+	let mut buffer = 0;
+	gl::GenBuffers(1, &mut buffer);
+	buffer
+}
+
 pub unsafe fn submit_to_hmd(eye: Option<Eye>, openvr_compositor: &Option<Compositor>, target_handle: &openvr::compositor::texture::Texture) {
 	if let (Some(ref comp), Some(e)) = (openvr_compositor, eye) {
 		if let Err(err) = comp.submit(e, target_handle, None, None) {
@@ -94,6 +100,8 @@ pub unsafe fn submit_to_hmd(eye: Option<Eye>, openvr_compositor: &Option<Composi
 	}
 }
 
+//Input: array of vertex data, an array of indices, and an array representing the number of elements per vertex attribute
+//Output: A vertex array object with the vertex data bound as a GL_ARRAY_BUFFER, and the index data bound as a GL_ELEMENT_ARRAY_BUFFER
 pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16], attribute_strides: &[i32]) -> GLuint {
 	let (mut vbo, mut vao, mut ebo) = (0, 0, 0);
 	gl::GenVertexArrays(1, &mut vao);
@@ -125,25 +133,23 @@ pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16], attr
 	//Configure and enable the vertex attributes
 	let mut cumulative_size = 0;
 	for i in 0..attribute_strides.len() {
-		gl::VertexAttribPointer(i as u32,
+		gl::VertexAttribPointer(i as GLuint,
 								attribute_strides[i],
 								gl::FLOAT,
 								gl::FALSE,
 								byte_stride,
-								(cumulative_size * mem::size_of::<GLfloat>() as u32) as *const c_void);
+								(cumulative_size * mem::size_of::<GLfloat>() as GLuint) as *const c_void);
 		
-		gl::EnableVertexAttribArray(i as u32);
+		gl::EnableVertexAttribArray(i as GLuint);
 		cumulative_size += attribute_strides[i] as u32;
 	}
 
 	vao
 }
 
-/*
-pub unsafe fn load_texture(path: &str) -> GLuint {
+pub unsafe fn _load_texture(path: &str) -> GLuint {
 	load_texture_from_data(image_data_from_path(path))
 }
-*/
 
 pub fn image_data_from_path(path: &str) -> ImageData {
 	match image::open(&Path::new(path)) {
