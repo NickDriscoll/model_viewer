@@ -237,6 +237,43 @@ pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint
 	render_target
 }
 
+pub unsafe fn bind_uniforms(program: GLuint, mat_uniforms: &[&str], mats: &[&glm::TMat4<f32>], vec_uniforms: &[&str], vecs: &[&glm::TVec4<f32>], byte_uniforms: &[&str], bytes: &[GLint]) {
+	//Send matrix uniforms to GPU
+	for i in 0..mat_uniforms.len() {
+		gl::UniformMatrix4fv(get_uniform_location(program, mat_uniforms[i]), 1, gl::FALSE, &flatten_glm(mats[i]) as *const GLfloat);
+	}
+
+	//Send vector uniforms to GPU
+	for i in 0..vec_uniforms.len() {
+		gl::Uniform4fv(get_uniform_location(program, vec_uniforms[i]), 1, &[vecs[i].x, vecs[i].y, vecs[i].z, vecs[i].w] as *const GLfloat);
+	}
+
+	//Send byte uniforms to the GPU
+	for i in 0..byte_uniforms.len() {
+		gl::Uniform1i(get_uniform_location(program, byte_uniforms[i]), bytes[i]);
+	}
+}
+
+pub unsafe fn bind_material(program: GLuint, material: &Option<mtl::Material>) {
+	const NAMES: [&str; 3] = ["ambient_material", "diffuse_material", "specular_material"];
+	let (colors, specular_coefficient) = match material {
+		Some(material) => {
+			let amb = [material.color_ambient.r as f32, material.color_ambient.g as f32, material.color_ambient.b as f32];
+			let diff = [material.color_diffuse.r as f32, material.color_diffuse.g as f32, material.color_diffuse.b as f32];
+			let spec = [material.color_specular.r as f32, material.color_specular.g as f32, material.color_specular.b as f32];
+			let spec_co = material.specular_coefficient as f32;
+			([amb, diff, spec], spec_co)
+		}
+		None => {
+			panic!("This really should be unreachable");
+		}
+	};
+	for i in 0..NAMES.len() {
+		gl::Uniform3fv(get_uniform_location(program, NAMES[i]), 1, &colors[i] as *const GLfloat);
+	}
+	gl::Uniform1f(get_uniform_location(program, "specular_coefficient"), specular_coefficient);
+}
+
 pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pass: usize, context: &RenderContext) {
 	gl::UseProgram(program);
 	gl::Uniform1i(get_uniform_location(program, "tex"), 0);
@@ -247,22 +284,13 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 				//Calculate model-view-projection for this mesh
 				let mvp = context.p_matrices[render_pass] * context.v_matrices[render_pass] * mesh.model_matrix;
 
-				//Send matrix uniforms to GPU
-				let mat_locs = ["mvp", "model_matrix", "shadow_vp"];
-				let mats = [&mvp, &mesh.model_matrix, context.shadow_vp];
-				for i in 0..mat_locs.len() {
-					gl::UniformMatrix4fv(get_uniform_location(program, mat_locs[i]), 1, gl::FALSE, &flatten_glm(mats[i]) as *const GLfloat);
-				}
-
-				//Send vector uniforms to GPU
-				let vec_locs = ["view_position", "light_direction"];
-				let vecs = [context.view_positions[render_pass], *context.light_direction];
-				for i in 0..vec_locs.len() {
-					gl::Uniform4fv(get_uniform_location(program, vec_locs[i]), 1, &[vecs[i].x, vecs[i].y, vecs[i].z, vecs[i].w] as *const GLfloat);
-				}
-
-				//Send bool uniform to GPU
-				gl::Uniform1i(get_uniform_location(program, "lighting"), context.is_lighting as i32);
+				bind_uniforms(program,
+								   &["mvp", "model_matrix", "shadow_vp"],
+								   &[&mvp, &mesh.model_matrix, context.shadow_vp],
+								   &["view_position", "light_direction"],
+								   &[&context.view_positions[render_pass], context.light_direction],
+								   &["lighting"],
+								   &[context.is_lighting as GLint]);
 
 				//Bind the textures
 				gl::ActiveTexture(gl::TEXTURE0);
@@ -280,23 +308,7 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 
 						//Draw calls
 						for i in 0..mesh.geo_boundaries.len()-1 {
-							const NAMES: [&str; 3] = ["ambient_material", "diffuse_material", "specular_material"];
-							let (colors, specular_coefficient) = match &mats[i] {
-								Some(material) => {
-									let amb = [material.color_ambient.r as f32, material.color_ambient.g as f32, material.color_ambient.b as f32];
-									let diff = [material.color_diffuse.r as f32, material.color_diffuse.g as f32, material.color_diffuse.b as f32];
-									let spec = [material.color_specular.r as f32, material.color_specular.g as f32, material.color_specular.b as f32];
-									let spec_co = material.specular_coefficient as f32;
-									([amb, diff, spec], spec_co)
-								}
-								None => {
-									panic!("This really should be unreachable");
-								}
-							};
-							for i in 0..NAMES.len() {
-								gl::Uniform3fv(get_uniform_location(program, NAMES[i]), 1, &colors[i] as *const GLfloat);
-							}
-							gl::Uniform1f(get_uniform_location(program, "specular_coefficient"), specular_coefficient);
+							bind_material(program, &mats[i]);
 							gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
 						}
 					}

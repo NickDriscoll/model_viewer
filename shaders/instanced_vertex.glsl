@@ -1,9 +1,9 @@
 #version 330 core
 
-in vec3 position;
-in vec3 normal;
-in vec2 tex_coords;
-in vec3 origin;
+layout(location = 0) in vec3 position;
+layout(location = 1) in vec3 normal;
+layout(location = 2) in vec2 tex_coords;
+layout(location = 3) in vec3 origin;
 out vec4 f_pos;
 out vec4 f_normal;
 out vec2 v_tex_coords;

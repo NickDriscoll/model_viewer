@@ -338,6 +338,7 @@ fn main() {
 	let instanced_model_shader = unsafe { compile_program_from_files("shaders/instanced_vertex.glsl", "shaders/model_fragment.glsl") };
 	let skybox_shader = unsafe { compile_program_from_files("shaders/skybox_vertex.glsl", "shaders/skybox_fragment.glsl") };
 	let shadow_map_shader = unsafe { compile_program_from_files("shaders/shadow_vertex.glsl", "shaders/shadow_fragment.glsl") };
+	let instanced_shadow_map_shader = unsafe { compile_program_from_files("shaders/instanced_shadow_vertex.glsl", "shaders/shadow_fragment.glsl") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -592,8 +593,6 @@ fn main() {
 			
 			//Get height from simplex noise generator
 			positions[i * 3 + 1] = get_terrain_height(positions[i * 3 + 0], positions[i * 3 + 2], simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
-			
-			//meshes.insert(Mesh::new(vao, glm::translation(&glm::vec3(positions[i * 3 + 0], positions[i * 3 + 1], positions[i * 3 + 2])) * uniform_scale(0.6), "", model_data.2.clone(), Some(model_data.3.clone())));
 		}
 
 		let position_buffer = gl_gen_buffer();
@@ -1027,8 +1026,9 @@ fn main() {
 			gl::DrawBuffer(gl::NONE);
 			gl::ReadBuffer(gl::NONE);
 			gl::Clear(gl::DEPTH_BUFFER_BIT);
-			gl::UseProgram(shadow_map_shader);
 
+			//Render meshes
+			gl::UseProgram(shadow_map_shader);
 			for option_mesh in meshes.iter() {
 				if let Some(mesh) = option_mesh {
 					let mvp = shadow_viewprojection * mesh.model_matrix;
@@ -1039,6 +1039,16 @@ fn main() {
 					}
 				}
 			}
+
+			//Render instanced trees
+			/*
+			gl::UseProgram(instanced_shadow_map_shader);
+			gl::UniformMatrix4fv(get_uniform_location(instanced_shadow_map_shader, "shadowVP"), 1, gl::FALSE, &flatten_glm(&shadow_viewprojection) as *const GLfloat);
+			gl::BindVertexArray(trees_vao);
+			for i in 0..trees_geo_boundaries.len()-1 {			
+				gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[i + 1] - trees_geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * trees_geo_boundaries[i]) as *const c_void, TREE_COUNT as GLsizei);
+			}
+			*/
 
 			//Turn the color buffer back on now that we're done rendering the shadow map
 			gl::DrawBuffer(gl::BACK);
@@ -1071,23 +1081,14 @@ fn main() {
 				//Render the trees with instanced rendering
 				gl::UseProgram(instanced_model_shader);
 				
-				//Send matrix uniforms to GPU
-				let mat_locs = ["view_projection", "shadow_vp"];
-				let mats = [&(p_matrices[i] * v_matrices[i]), &shadow_viewprojection];
-				for i in 0..mat_locs.len() {
-					gl::UniformMatrix4fv(get_uniform_location(instanced_model_shader, mat_locs[i]), 1, gl::FALSE, &flatten_glm(mats[i]) as *const GLfloat);
-				}
+				bind_uniforms(instanced_model_shader,
+								   &["view_projection", "shadow_vp"],
+								   &[&(p_matrices[i] * v_matrices[i]), &shadow_viewprojection],
+								   &["view_position", "light_direction"],
+								   &[&render_context.view_positions[i], &light_direction],
+								   &["using_material", "lighting", "shadow_map"],
+								   &[1, 1, 0]);
 
-				//Send vector uniforms to GPU
-				let vec_locs = ["view_position", "light_direction"];
-				let vecs = [render_context.view_positions[i], light_direction];
-				for i in 0..vec_locs.len() {
-					gl::Uniform4fv(get_uniform_location(instanced_model_shader, vec_locs[i]), 1, &[vecs[i].x, vecs[i].y, vecs[i].z, vecs[i].w] as *const GLfloat);
-				}
-
-				gl::Uniform1i(get_uniform_location(instanced_model_shader, "using_material"), true as i32);
-				gl::Uniform1i(get_uniform_location(instanced_model_shader, "lighting"), true as i32);
-				gl::Uniform1i(get_uniform_location(instanced_model_shader, "shadow_map"), 0);
 				gl::ActiveTexture(gl::TEXTURE0);
 				gl::BindTexture(gl::TEXTURE_2D, shadow_map);
 
@@ -1095,23 +1096,7 @@ fn main() {
 
 				//Draw calls
 				for i in 0..trees_geo_boundaries.len()-1 {
-					const NAMES: [&str; 3] = ["ambient_material", "diffuse_material", "specular_material"];
-					let (colors, specular_coefficient) = match &trees_mats[i] {
-						Some(material) => {
-							let amb = [material.color_ambient.r as f32, material.color_ambient.g as f32, material.color_ambient.b as f32];
-							let diff = [material.color_diffuse.r as f32, material.color_diffuse.g as f32, material.color_diffuse.b as f32];
-							let spec = [material.color_specular.r as f32, material.color_specular.g as f32, material.color_specular.b as f32];
-							let spec_co = material.specular_coefficient as f32;
-							([amb, diff, spec], spec_co)
-						}
-						None => {
-							panic!("This really should be unreachable");
-						}
-					};
-					for i in 0..NAMES.len() {
-						gl::Uniform3fv(get_uniform_location(instanced_model_shader, NAMES[i]), 1, &colors[i] as *const GLfloat);
-					}
-					gl::Uniform1f(get_uniform_location(instanced_model_shader, "specular_coefficient"), specular_coefficient);
+					bind_material(instanced_model_shader, &trees_mats[i]);
 					gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[i + 1] - trees_geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * trees_geo_boundaries[i]) as *const c_void, TREE_COUNT as GLsizei);
 				}
 
