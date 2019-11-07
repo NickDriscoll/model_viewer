@@ -15,12 +15,11 @@ uniform mat4 shadow_vp;
 void main() {
     //Calculate model_matrix with this instance's position
     mat4 model_matrix = mat4(
-        1.0, 0.0, 0.0, origin.x,
-        0.0, 1.0, 0.0, origin.y,
-        0.0, 0.0, 1.0, origin.z,
-        0.0, 0.0, 0.0, 1.0
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        origin.x, origin.y, origin.z, 1.0
     );
-    model_matrix = transpose(model_matrix);
 
 	//Send world space representation of position
 	f_pos = model_matrix * vec4(position, 1.0);

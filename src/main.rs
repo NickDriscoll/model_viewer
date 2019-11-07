@@ -930,15 +930,11 @@ fn main() {
 					}
 				}
 
-				//Handle right hand controls
-				if i == 1 {
-					//Check if the user toggled flying controls
-					if controllers.released_this_frame(i, button_id::APPLICATION_MENU) {
-						is_flying = !is_flying;
-					}
+				//Check if the user toggled flying controls
+				if i == 1 && controllers.released_this_frame(i, button_id::APPLICATION_MENU) {
+					is_flying = !is_flying;
 				}
 				
-				//tracking_to_world = glm::translation(&glm::vec4_to_vec3(&movement_vector)) * tracking_to_world;
 				tracking_position += movement_vector;
 
 				if !is_flying {
@@ -1030,7 +1026,7 @@ fn main() {
 			gl::ReadBuffer(gl::NONE);
 			gl::Clear(gl::DEPTH_BUFFER_BIT);
 
-			//Render meshes
+			//Render meshes into shadow map
 			gl::UseProgram(shadow_map_shader);
 			for option_mesh in meshes.iter() {
 				if let Some(mesh) = option_mesh {
@@ -1043,7 +1039,7 @@ fn main() {
 				}
 			}
 
-			//Render instanced trees			
+			//Render instanced trees into shadow map
 			gl::UseProgram(instanced_shadow_map_shader);
 			gl::UniformMatrix4fv(get_uniform_location(instanced_shadow_map_shader, "shadowVP"), 1, gl::FALSE, &flatten_glm(&shadow_viewprojection) as *const GLfloat);
 			gl::BindVertexArray(trees_vao);
