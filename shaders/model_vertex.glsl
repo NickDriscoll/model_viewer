@@ -10,7 +10,7 @@ out vec4 shadow_coord;
 
 uniform mat4 mvp;
 uniform mat4 model_matrix;
-uniform mat4 shadow_vp;
+uniform mat4 shadow_mvp;
 
 void main() {
 	//Send world space representation of position
@@ -25,7 +25,7 @@ void main() {
 	v_tex_coords = tex_coords;
 
 	//Calculate vertex's position in light space
-	shadow_coord = shadow_vp * model_matrix * vec4(position, 1.0);
+	shadow_coord = shadow_mvp * vec4(position, 1.0);
 
 	//Transform vertex position with model-view-projection matrix
 	gl_Position = mvp * vec4(position, 1.0);

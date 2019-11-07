@@ -11,7 +11,7 @@ use openvr::{Compositor, Eye};
 use crate::*;
 
 pub type ImageData = (Vec<u8>, u32, u32, GLenum); //(data, width, height, format)
-const INFO_LOG_SIZE: usize = 512;
+const INFO_LOG_SIZE: usize = 2048;
 
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
 	let shader = gl::CreateShader(shadertype);
@@ -285,8 +285,8 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 				let mvp = context.p_matrices[render_pass] * context.v_matrices[render_pass] * mesh.model_matrix;
 
 				bind_uniforms(program,
-								   &["mvp", "model_matrix", "shadow_vp"],
-								   &[&mvp, &mesh.model_matrix, context.shadow_vp],
+								   &["mvp", "model_matrix", "shadow_mvp"],
+								   &[&mvp, &mesh.model_matrix, &(context.shadow_vp * mesh.model_matrix)],
 								   &["view_position", "light_direction"],
 								   &[&context.view_positions[render_pass], context.light_direction],
 								   &["lighting"],

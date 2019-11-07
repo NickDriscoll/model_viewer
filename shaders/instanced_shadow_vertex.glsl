@@ -1,7 +1,7 @@
 #version 330 core
 
 in vec3 position;
-in vec3 origin;
+layout(location = 3) in vec3 origin;
 
 uniform mat4 shadowVP;
 
@@ -12,6 +12,7 @@ void main() {
         0.0, 0.0, 1.0, origin.z,
         0.0, 0.0, 0.0, 1.0
     );
+    model_matrix = transpose(model_matrix);
 
     gl_Position = shadowVP * model_matrix * vec4(position, 1.0);
 }

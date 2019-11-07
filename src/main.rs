@@ -583,7 +583,9 @@ fn main() {
 	let (trees_vao, trees_geo_boundaries, trees_mats) = unsafe {
 
 		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
-		let vao = create_vertex_array_object(&model_data.0, &model_data.1, &[3, 3, 2]);
+
+		let attribute_offsets = [3, 3, 2];
+		let vao = create_vertex_array_object(&model_data.0, &model_data.1, &attribute_offsets);
 		let mut positions = [0.0; TREE_COUNT * 3];
 
 		//Populate the buffer
@@ -597,11 +599,11 @@ fn main() {
 
 		let position_buffer = gl_gen_buffer();
 		gl::BindBuffer(gl::ARRAY_BUFFER, position_buffer);
-		gl::BufferData(gl::ARRAY_BUFFER, (TREE_COUNT * 3 * mem::size_of::<GLfloat>()) as GLsizeiptr, &positions[0] as *const f32 as *const c_void, gl::STATIC_DRAW);
+		gl::BufferData(gl::ARRAY_BUFFER, (TREE_COUNT * 3 * mem::size_of::<GLfloat>()) as GLsizeiptr, &positions[0] as *const GLfloat as *const c_void, gl::STATIC_DRAW);
 		gl::BindVertexArray(vao);
-		gl::VertexAttribPointer(3, 3, gl::FLOAT, gl::FALSE, 3 * mem::size_of::<GLfloat>() as GLsizei, ptr::null());
-		gl::VertexAttribDivisor(3, 1);
-		gl::EnableVertexAttribArray(3);
+		gl::VertexAttribPointer(attribute_offsets.len() as GLuint, 3, gl::FLOAT, gl::FALSE, 3 * mem::size_of::<GLfloat>() as GLsizei, ptr::null());
+		gl::VertexAttribDivisor(attribute_offsets.len() as GLuint, 1);
+		gl::EnableVertexAttribArray(attribute_offsets.len() as GLuint);
 
 		(vao, model_data.2, model_data.3)
 	};
@@ -652,6 +654,7 @@ fn main() {
 	let mut is_wireframe = false;
 	let mut is_lighting = true;
 
+	//Unit vector pointing towards the sun
 	let light_direction = glm::normalize(&glm::vec4(0.8, 1.0, 1.0, 0.0));
 
 	//Shadow map data
@@ -1035,20 +1038,18 @@ fn main() {
 					gl::UniformMatrix4fv(get_uniform_location(shadow_map_shader, "shadowMVP"), 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
 					gl::BindVertexArray(mesh.vao);
 					for i in 0..mesh.geo_boundaries.len()-1 {
-						gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
+						gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * mesh.geo_boundaries[i]) as *const c_void);
 					}
 				}
 			}
 
-			//Render instanced trees
-			/*
+			//Render instanced trees			
 			gl::UseProgram(instanced_shadow_map_shader);
 			gl::UniformMatrix4fv(get_uniform_location(instanced_shadow_map_shader, "shadowVP"), 1, gl::FALSE, &flatten_glm(&shadow_viewprojection) as *const GLfloat);
 			gl::BindVertexArray(trees_vao);
 			for i in 0..trees_geo_boundaries.len()-1 {			
-				gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[i + 1] - trees_geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * trees_geo_boundaries[i]) as *const c_void, TREE_COUNT as GLsizei);
-			}
-			*/
+				gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[i + 1] - trees_geo_boundaries[i], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * trees_geo_boundaries[i]) as *const c_void, TREE_COUNT as GLsizei);
+			}			
 
 			//Turn the color buffer back on now that we're done rendering the shadow map
 			gl::DrawBuffer(gl::BACK);
@@ -1062,17 +1063,20 @@ fn main() {
 				//Clear the framebuffer's color buffer and depth buffer
 				gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-				//Compute the view-projection matrix for the skybox (the conversion functions are just there to nullify the translation component of the view matrix)
-				//The skybox vertices should obviously be rotated along with the camera, but shouldn't be translated in order to maintain the illusion
-				//that the sky is infinitely far away
-				let skybox_view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
+				//Don't draw the skybox in wireframe mode
+				if !is_wireframe {
+					//Compute the view-projection matrix for the skybox (the conversion functions are just there to nullify the translation component of the view matrix)
+					//The skybox vertices should obviously be rotated along with the camera, but shouldn't be translated in order to maintain the illusion
+					//that the sky is infinitely far away
+					let skybox_view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
 
-				//Render the skybox
-				gl::UseProgram(skybox_shader);
-				gl::UniformMatrix4fv(get_uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&(skybox_view_projection * uniform_scale(400.0))) as *const GLfloat);
-				gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_cubemap);
-				gl::BindVertexArray(skybox_vao);
-				gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_SHORT, ptr::null());
+					//Render the skybox
+					gl::UseProgram(skybox_shader);
+					gl::UniformMatrix4fv(get_uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&(skybox_view_projection * uniform_scale(400.0))) as *const GLfloat);
+					gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_cubemap);
+					gl::BindVertexArray(skybox_vao);
+					gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_SHORT, ptr::null());
+				}
 
 				//Render the regular meshes
 				gl::Enable(gl::CULL_FACE);
@@ -1095,9 +1099,9 @@ fn main() {
 				gl::BindVertexArray(trees_vao);
 
 				//Draw calls
-				for i in 0..trees_geo_boundaries.len()-1 {
-					bind_material(instanced_model_shader, &trees_mats[i]);
-					gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[i + 1] - trees_geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * trees_geo_boundaries[i]) as *const c_void, TREE_COUNT as GLsizei);
+				for j in 0..trees_geo_boundaries.len()-1 {
+					bind_material(instanced_model_shader, &trees_mats[j]);
+					gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[j + 1] - trees_geo_boundaries[j], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * trees_geo_boundaries[j]) as *const c_void, TREE_COUNT as GLsizei);
 				}
 
 				//Submit render to HMD
