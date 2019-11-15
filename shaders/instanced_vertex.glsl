@@ -3,7 +3,7 @@
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec2 tex_coords;
-layout(location = 3) in vec3 origin;
+layout(location = 3) in mat4 model_matrix;
 out vec4 f_pos;
 out vec4 f_normal;
 out vec2 v_tex_coords;
@@ -13,14 +13,6 @@ uniform mat4 view_projection;
 uniform mat4 shadow_vp;
 
 void main() {
-    //Calculate model_matrix with this instance's position
-    mat4 model_matrix = mat4(
-        1.0, 0.0, 0.0, 0.0,
-        0.0, 1.0, 0.0, 0.0,
-        0.0, 0.0, 1.0, 0.0,
-        origin.x, origin.y, origin.z, 1.0
-    );
-
 	//Send world space representation of position
 	f_pos = model_matrix * vec4(position, 1.0);
 

@@ -94,7 +94,7 @@ fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Option
 			}
 			
 			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]) };
-			let t = unsafe { load_texture_from_data(([25, 140, 15].to_vec(), 1, 1, gl::RGB)) };
+			let t = unsafe { load_texture_from_data((vec![25, 140, 15], 1, 1, gl::RGB)) };
 			let mut mesh = Mesh::new(vao, glm::identity(), "", vec![0, model.indices().len() as GLsizei], None);
 			mesh.texture = t;
 
@@ -138,10 +138,10 @@ fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 
 	//Load .mtl file's contents as a string
 	let mtl_contents = match read_to_string(format!("{}.mtl", path.split_at(path.len() - 4).0)) {
-		Ok(s) => { s }
+		Ok(s) => { Some(s) }
 		Err(e) => {
 			println!("{}", e);
-			return None;
+			None
 		}
 	};
 	
@@ -155,12 +155,17 @@ fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 	};
 
 	//Parse the Materials from the file
-	let mtl_set = match mtl::parse(mtl_contents) {
-		Ok(m) => { m }
-		Err(e) => {
-			println!("{:?}", e);
-			return None;
+	let mtl_set = match mtl_contents {
+		Some(contents) => {
+			match mtl::parse(contents) {
+				Ok(m) => { Some(m) }
+				Err(e) => {
+					println!("{:?}", e);
+					None
+				}
+			}
 		}
+		None => None
 	};
 
 	//Transform the object into something the engine can actually use
@@ -177,18 +182,23 @@ fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 			geometry_boundaries.push(indices.len() as GLsizei);
 
 			//Copy the current material into materials_in_order
-			match &geo.material_name {
-				Some(name) => {
-					for material in &mtl_set.materials {
-						if *name == material.name {
-							materials_in_order.push(Some(material.clone()));
-							break;
+			match &mtl_set {
+				Some(set) => {
+					match &geo.material_name {
+						Some(name) => {
+							for material in &set.materials {
+								if *name == material.name {
+									materials_in_order.push(Some(material.clone()));
+									break;
+								}
+							}
+						}
+						None => {
+							materials_in_order.push(None);
 						}
 					}
 				}
-				None => {
-					materials_in_order.push(None);
-				}
+				None => materials_in_order.push(None)
 			}
 
 			for shape in &geo.shapes {
@@ -438,7 +448,7 @@ fn main() {
 		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as i32);
 		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
 		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-
+		
 		const PATHS: [&str; 6] = ["textures/skybox/totality_rt.tga",
 								  "textures/skybox/totality_lf.tga",
 								  "textures/skybox/totality_up.tga",
@@ -476,48 +486,48 @@ fn main() {
 	const SIMPLEX_SCALE: f64 = 3.0;
 	const TERRAIN_SCALE: f32 = 350.0;
 	const TERRAIN_AMPLITUDE: f32 = TERRAIN_SCALE / 10.0;
-	const SURFACE_WIDTH: usize = 100; //Width (and height) in vertices
-	const SUBSQUARE_COUNT: usize = (SURFACE_WIDTH-1)*(SURFACE_WIDTH-1);
+	const TERRAIN_WIDTH: usize = 100; //Width (and height) in vertices
+	const SUBSQUARE_COUNT: usize = (TERRAIN_WIDTH-1)*(TERRAIN_WIDTH-1);
 	let surface_normals;
 	unsafe {
 		const ELEMENT_STRIDE: usize = 8;
-		const TRIS: usize = (SURFACE_WIDTH - 1) * (SURFACE_WIDTH - 1) * 2;
+		const TRIS: usize = (TERRAIN_WIDTH - 1) * (TERRAIN_WIDTH - 1) * 2;
 
 		//Buffers to be filled
-		let mut vertices = vec![0.0; SURFACE_WIDTH * SURFACE_WIDTH * ELEMENT_STRIDE];
+		let mut vertices = vec![0.0; TERRAIN_WIDTH * TERRAIN_WIDTH * ELEMENT_STRIDE];
 		let mut indices: Vec<u16> = Vec::with_capacity(TRIS * 3);
 
 		//Calculate the positions and tex coords for each vertex
 		for i in (0..vertices.len()).step_by(ELEMENT_STRIDE) {
-			let xpos: usize = (i / ELEMENT_STRIDE) % SURFACE_WIDTH;
-			let zpos: usize = (i / ELEMENT_STRIDE) / SURFACE_WIDTH;
+			let xpos: usize = (i / ELEMENT_STRIDE) % TERRAIN_WIDTH;
+			let zpos: usize = (i / ELEMENT_STRIDE) / TERRAIN_WIDTH;
 
 			//Calculate vertex position
-			vertices[i] = (xpos as f32 / (SURFACE_WIDTH - 1) as f32) as f32 - 0.5;
-			vertices[i + 2] = (zpos as f32 / (SURFACE_WIDTH - 1) as f32) as f32 - 0.5;
+			vertices[i] = (xpos as f32 / (TERRAIN_WIDTH - 1) as f32) as f32 - 0.5;
+			vertices[i + 2] = (zpos as f32 / (TERRAIN_WIDTH - 1) as f32) as f32 - 0.5;
 
 			//Retrieve the height from the simplex noise generator
 			vertices[i + 1] = simplex_generator.get([vertices[i] as f64 * SIMPLEX_SCALE, vertices[i + 2] as f64 * SIMPLEX_SCALE]) as f32;
 
 			//Calculate texture coordinates
-			vertices[i + 6] = TERRAIN_SCALE * (xpos as f32 / (SURFACE_WIDTH - 1) as f32) as f32;
-			vertices[i + 7] = TERRAIN_SCALE * (zpos as f32 / (SURFACE_WIDTH - 1) as f32) as f32;
+			vertices[i + 6] = TERRAIN_SCALE * (xpos as f32 / (TERRAIN_WIDTH - 1) as f32) as f32;
+			vertices[i + 7] = TERRAIN_SCALE * (zpos as f32 / (TERRAIN_WIDTH - 1) as f32) as f32;
 		}
 
 		//This loop executes once per subsquare on the plane, and pushes the indices of the two triangles that comprise said subsquare into the indices Vec
 		for i in 0..SUBSQUARE_COUNT {
-			let xpos = i % (SURFACE_WIDTH-1);
-			let ypos = i / (SURFACE_WIDTH-1);
+			let xpos = i % (TERRAIN_WIDTH-1);
+			let ypos = i / (TERRAIN_WIDTH-1);
 
 			//Push indices for bottom-left triangle
-			indices.push((xpos + ypos * SURFACE_WIDTH) as u16);
-			indices.push((xpos + ypos * SURFACE_WIDTH + SURFACE_WIDTH) as u16);
-			indices.push((xpos + ypos * SURFACE_WIDTH + 1) as u16);
+			indices.push((xpos + ypos * TERRAIN_WIDTH) as u16);
+			indices.push((xpos + ypos * TERRAIN_WIDTH + TERRAIN_WIDTH) as u16);
+			indices.push((xpos + ypos * TERRAIN_WIDTH + 1) as u16);
 			
 			//Push indices for top-right triangle
-			indices.push((xpos + ypos * SURFACE_WIDTH + 1) as u16);
-			indices.push((xpos + ypos * SURFACE_WIDTH + SURFACE_WIDTH) as u16);
-			indices.push((xpos + ypos * SURFACE_WIDTH + SURFACE_WIDTH + 1) as u16);
+			indices.push((xpos + ypos * TERRAIN_WIDTH + 1) as u16);
+			indices.push((xpos + ypos * TERRAIN_WIDTH + TERRAIN_WIDTH) as u16);
+			indices.push((xpos + ypos * TERRAIN_WIDTH + TERRAIN_WIDTH + 1) as u16);
 		}
 
 		//The ith vertex will be shared by each surface in vertex_surface_map[i]
@@ -549,7 +559,8 @@ fn main() {
 				let v = glm::vec4_to_vec3(&(tri_verts[1] - tri_verts[2]));
 
 				//The cross product of two vectors on a plane must be normal to that plane
-				norms.push(glm::cross::<f32, glm::U3>(&u, &v));
+				let norm = glm::normalize(&glm::cross::<f32, glm::U3>(&u, &v));
+				norms.push(norm);
 			}
 			norms
 		};
@@ -579,31 +590,59 @@ fn main() {
 	};
 
 	//Plant trees
-	const TREE_COUNT: usize = 900;
+	const TREE_COUNT: usize = 1000;
 	let (trees_vao, trees_geo_boundaries, trees_mats) = unsafe {
-
 		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
 
 		let attribute_offsets = [3, 3, 2];
 		let vao = create_vertex_array_object(&model_data.0, &model_data.1, &attribute_offsets);
-		let mut positions = [0.0; TREE_COUNT * 3];
+		let mut model_matrices = [0.0f32; TREE_COUNT * 16];
 
 		//Populate the buffer
 		for i in 0..TREE_COUNT {
-			positions[i * 3 + 0] = TERRAIN_SCALE * (halton_sequence(i as f32 + 1.0, 2.0) - 0.5);
-			positions[i * 3 + 2] = TERRAIN_SCALE * (halton_sequence(i as f32 + 1.0, 3.0) - 0.5);
+			let xpos = TERRAIN_SCALE * (halton_sequence(i as f32 + 1.0, 2.0) - 0.5);
+			let zpos = TERRAIN_SCALE * (halton_sequence(i as f32 + 1.0, 3.0) - 0.5);			
 			
 			//Get height from simplex noise generator
-			positions[i * 3 + 1] = get_terrain_height(positions[i * 3 + 0], positions[i * 3 + 2], simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
+			let ypos = get_terrain_height(xpos, zpos, simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
+
+			//Determine which floor triangle this tree is on
+			let (moved_xpos, moved_zpos) = (xpos + (TERRAIN_SCALE / 2.0), zpos + (TERRAIN_SCALE / 2.0));
+			let (subsquare_x, subsquare_z) = (f32::floor(moved_xpos * ((TERRAIN_WIDTH - 1) as f32 / TERRAIN_SCALE)) as usize,
+											  f32::floor(moved_zpos * ((TERRAIN_WIDTH - 1) as f32 / TERRAIN_SCALE)) as usize);
+			let subsquare_index = subsquare_x + subsquare_z * (TERRAIN_WIDTH - 1);
+			let (norm_x, norm_z) = (moved_xpos / (TERRAIN_WIDTH - 1) as f32 + subsquare_x as f32 * TERRAIN_SCALE / (TERRAIN_WIDTH - 1) as f32,
+						  			moved_zpos / (TERRAIN_WIDTH - 1) as f32 + subsquare_z as f32 * TERRAIN_SCALE / (TERRAIN_WIDTH - 1) as f32);
+			let normal_index = if norm_x + norm_z <= 1.0 {
+				subsquare_index * 2
+			} else {
+				subsquare_index * 2 + 1
+			};
+
+			let rotation_vector = glm::cross::<f32, glm::U3>(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]);
+			let rotation_magnitude = f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]));
+			//let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(-rotation_magnitude, &rotation_vector);
+			let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos));
+
+			//Write this matrix to the buffer
+			let mut count = 0;
+			for j in glm::value_ptr(&matrix) {
+				model_matrices[i * 16 + count] = *j;
+				count += 1;
+			}
 		}
 
 		let position_buffer = gl_gen_buffer();
 		gl::BindBuffer(gl::ARRAY_BUFFER, position_buffer);
-		gl::BufferData(gl::ARRAY_BUFFER, (TREE_COUNT * 3 * mem::size_of::<GLfloat>()) as GLsizeiptr, &positions[0] as *const GLfloat as *const c_void, gl::STATIC_DRAW);
+		gl::BufferData(gl::ARRAY_BUFFER, (TREE_COUNT * 16 * mem::size_of::<GLfloat>()) as GLsizeiptr, &model_matrices[0] as *const GLfloat as *const c_void, gl::STATIC_DRAW);
 		gl::BindVertexArray(vao);
-		gl::VertexAttribPointer(attribute_offsets.len() as GLuint, 3, gl::FLOAT, gl::FALSE, 3 * mem::size_of::<GLfloat>() as GLsizei, ptr::null());
-		gl::VertexAttribDivisor(attribute_offsets.len() as GLuint, 1);
-		gl::EnableVertexAttribArray(attribute_offsets.len() as GLuint);
+
+		for i in 0..4 {
+			let current_attribute = (attribute_offsets.len() + i) as GLuint;
+			gl::VertexAttribPointer(current_attribute, 4, gl::FLOAT, gl::FALSE, 16 * mem::size_of::<GLfloat>() as GLsizei, (4 * i * mem::size_of::<GLfloat>()) as *const c_void);
+			gl::VertexAttribDivisor(current_attribute, 1);
+			gl::EnableVertexAttribArray(current_attribute);
+		}
 
 		(vao, model_data.2, model_data.3)
 	};
@@ -661,7 +700,7 @@ fn main() {
 	let shadow_map_resolution = 10240;
 	let projection_size = 20.0;
 	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 5.0 * projection_size) *
-								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 3.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
+								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 4.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 	let (shadow_buffer, shadow_map) = unsafe {
 		let mut framebuffer = 0;
 		gl::GenFramebuffers(1, &mut framebuffer);
@@ -685,6 +724,8 @@ fn main() {
 
 		(framebuffer, depth_texture)
 	};
+
+	order_tx.send(WorkOrder::Image("textures/checkerboard.jpg")).unwrap();
 
 	//Main loop
 	while !window.should_close() {
@@ -750,7 +791,7 @@ fn main() {
 				WorkResult::Model(option_mesh) => {
 					if let Some(package) = option_mesh {
 						let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
-						let mesh = Mesh::new(vao, glm::translation(&glm::vec4_to_vec3(&(light_direction * 2.0))) * uniform_scale(0.3), "textures/bricks.jpg", package.2, Some(package.3));
+						let mesh = Mesh::new(vao, glm::translation(&glm::vec4_to_vec3(&(light_direction * 2.0))) * uniform_scale(0.3), "textures/checkerboard.jpg", package.2, Some(package.3));
 						model_indices.push(Some(meshes.insert(mesh)));
 						bound_controller_indices.push(None);
 						model_to_controller_matrices.push(glm::identity());
@@ -1087,7 +1128,7 @@ fn main() {
 								   &["view_position", "light_direction"],
 								   &[&render_context.view_positions[i], &light_direction],
 								   &["using_material", "lighting", "shadow_map"],
-								   &[1, 1, 0]);
+								   &[1, is_lighting as GLint, 0]);
 
 				gl::ActiveTexture(gl::TEXTURE0);
 				gl::BindTexture(gl::TEXTURE_2D, shadow_map);

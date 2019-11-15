@@ -10,7 +10,7 @@ use image::DynamicImage;
 use openvr::{Compositor, Eye};
 use crate::*;
 
-pub type ImageData = (Vec<u8>, u32, u32, GLenum); //(data, width, height, format)
+pub type ImageData = (Vec<u8>, i32, i32, GLenum); //(data, width, height, format)
 const INFO_LOG_SIZE: usize = 2048;
 
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
@@ -103,10 +103,10 @@ pub unsafe fn submit_to_hmd(eye: Option<Eye>, openvr_compositor: &Option<Composi
 //Input: array of vertex data, an array of indices, and an array representing the number of elements per vertex attribute
 //Output: A vertex array object with the vertex data bound as a GL_ARRAY_BUFFER, and the index data bound as a GL_ELEMENT_ARRAY_BUFFER
 pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16], attribute_strides: &[i32]) -> GLuint {
-	let (mut vbo, mut vao, mut ebo) = (0, 0, 0);
+	let mut vao = 0;
 	gl::GenVertexArrays(1, &mut vao);
-	gl::GenBuffers(1, &mut vbo);
-	gl::GenBuffers(1, &mut ebo);
+	let vbo = gl_gen_buffer();
+	let ebo = gl_gen_buffer();
 
 	gl::BindVertexArray(vao);
 
@@ -157,13 +157,13 @@ pub fn image_data_from_path(path: &str) -> ImageData {
 			let width = im.width();
 			let height = im.height();
 			let raw = im.into_raw();
-			(raw, width, height, gl::RGB)
+			(raw, width as GLint, height as GLint, gl::RGB)
 		}
 		Ok(DynamicImage::ImageRgba8(im)) => {
 			let width = im.width();
 			let height = im.height();
 			let raw = im.into_raw();
-			(raw, width, height, gl::RGBA)
+			(raw, width as GLint, height as GLint, gl::RGBA)
 		}
 		Ok(_) => {
 			panic!("{} is of unsupported image type", path);
@@ -186,8 +186,8 @@ pub unsafe fn load_texture_from_data(image_data: ImageData) -> GLuint {
 	gl::TexImage2D(gl::TEXTURE_2D,
 				   0,
 				   image_data.3 as i32,
-				   image_data.1 as i32,
-				   image_data.2 as i32,
+				   image_data.1,
+				   image_data.2,
 				   0,
 				   image_data.3,
 				   gl::UNSIGNED_BYTE,
