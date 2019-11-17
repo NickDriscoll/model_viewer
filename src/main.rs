@@ -541,6 +541,7 @@ fn main() {
 			const INDICES_PER_TRIANGLE: usize = 3;
 			let mut norms = Vec::with_capacity(indices.len() / INDICES_PER_TRIANGLE);
 
+			//This loop executes once per triangle in the mesh
 			for i in (0..indices.len()).step_by(INDICES_PER_TRIANGLE) {
 				let mut tri_verts = [glm::zero(); INDICES_PER_TRIANGLE];
 
@@ -607,7 +608,7 @@ fn main() {
 			let ypos = get_terrain_height(xpos, zpos, simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
 
 			//Determine which floor triangle this tree is on
-			let (moved_xpos, moved_zpos) = (xpos + (TERRAIN_SCALE / 2.0), zpos + (TERRAIN_SCALE / 2.0));
+			let (moved_xpos, moved_zpos) = (xpos + (TERRAIN_SCALE / 2.0), zpos + (TERRAIN_SCALE / 2.0));			
 			let (subsquare_x, subsquare_z) = (f32::floor(moved_xpos * ((TERRAIN_WIDTH - 1) as f32 / TERRAIN_SCALE)) as usize,
 											  f32::floor(moved_zpos * ((TERRAIN_WIDTH - 1) as f32 / TERRAIN_SCALE)) as usize);
 			let subsquare_index = subsquare_x + subsquare_z * (TERRAIN_WIDTH - 1);
@@ -618,11 +619,10 @@ fn main() {
 			} else {
 				subsquare_index * 2 + 1
 			};
-
+			
 			let rotation_vector = glm::cross::<f32, glm::U3>(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]);
 			let rotation_magnitude = f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]));
-			//let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(-rotation_magnitude, &rotation_vector);
-			let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos));
+			let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(rotation_magnitude*0.2, &rotation_vector);
 
 			//Write this matrix to the buffer
 			let mut count = 0;
