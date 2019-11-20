@@ -12,20 +12,18 @@ pub struct Mesh {
 	pub materials: Option<Vec<Option<mtl::Material>>>, //The materials associated with this mesh, in the same order as geo_boundaries
 	pub model_matrix: glm::TMat4<f32>, //Matrix that transforms points in model space to world space
 	pub texture: GLuint, //Texture
-	pub texture_path: String,
 	pub specular_coefficient: f32,
 	pub render_pass_visibilities: [bool; RENDER_PASSES]
 }
 
 impl Mesh {
-	pub fn new(vao: GLuint, model_matrix: glm::TMat4<f32>, path: &str, geo_boundaries: Vec<GLsizei>, materials: Option<Vec<Option<mtl::Material>>>) -> Self {
+	pub fn new(vao: GLuint, model_matrix: glm::TMat4<f32>, texture: GLuint, geo_boundaries: Vec<GLsizei>, materials: Option<Vec<Option<mtl::Material>>>) -> Self {
 		Mesh {
 			vao,
 			geo_boundaries,
 			materials,
 			model_matrix,
-			texture: 0,
-			texture_path: path.to_string(),
+			texture,
 			specular_coefficient: 8.0,
 			render_pass_visibilities: [true, true, true]
 		}

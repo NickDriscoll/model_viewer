@@ -33,15 +33,13 @@ const RENDER_PASSES: usize = 3;
 type MeshData = (Vec<f32>, Vec<u16>, Vec<GLsizei>, Vec<Option<mtl::Material>>);
 
 //Things you can request the worker thread to do
-enum WorkOrder<'a> {
-	Image(&'a str),
+enum WorkOrder {
 	Model,
 	Quit
 }
 
 //Things the worker thread can send back to the main thread
-enum WorkResult<'a> {
-	Image(&'a str, ImageData),
+enum WorkResult {
 	Model(Option<MeshData>)
 }
 
@@ -114,11 +112,6 @@ fn main() {
 	let worker_handle = thread::spawn(move || {
 		loop {
 			match order_rx.recv() {
-				Ok(WorkOrder::Image(path)) => {
-					if let Err(e) = result_tx.send(WorkResult::Image(path, image_data_from_path(path))) {
-						println!("{}", e);
-					}
-				}
 				Ok(WorkOrder::Model) => {
 					//Invoke file selection dialogue
 					let path = match nfd::open_file_dialog(None, None).unwrap() {
@@ -332,12 +325,11 @@ fn main() {
 		println!("The generated surface contains {} vertices", vertices.len() / ELEMENT_STRIDE);
 		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
 		let model_matrix = glm::scaling(&glm::vec3(TERRAIN_SCALE, TERRAIN_AMPLITUDE, TERRAIN_SCALE));
-		order_tx.send(WorkOrder::Image("textures/grass.jpg")).unwrap();
-		meshes.insert(Mesh::new(vao, model_matrix, "textures/grass.jpg", vec![0, indices.len() as GLsizei], None))
+		meshes.insert(Mesh::new(vao, model_matrix, load_texture("textures/grass.jpg"), vec![0, indices.len() as GLsizei], None))
 	};
 
 	//Plant trees
-	const TREE_COUNT: usize = 1000;
+	const TREE_COUNT: usize = 750;
 	let (trees_vao, trees_geo_boundaries, trees_mats) = unsafe {
 		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
 
@@ -394,6 +386,7 @@ fn main() {
 	};
 
 	//Variables to keep track of the loaded models
+	let model_texture = unsafe { load_texture("textures/checkerboard.jpg") };
 	let model_bounding_sphere_radius = 0.20;
 	let mut bound_controller_indices = Vec::new();
 	let mut model_indices = Vec::new();
@@ -471,8 +464,6 @@ fn main() {
 		(framebuffer, depth_texture)
 	};
 
-	order_tx.send(WorkOrder::Image("textures/checkerboard.jpg")).unwrap();
-
 	//Main loop
 	while !window.should_close() {
 		//Calculate time since the last frame started
@@ -530,30 +521,13 @@ fn main() {
 		//Check if the worker thread has new results for us
 		if let Ok(work_result) = result_rx.try_recv() {
 			match work_result {
-				WorkResult::Image(path, tex_data) => {
-					let tex_id = unsafe { load_texture_from_data(tex_data) };
-					textures.insert(path.to_string(), tex_id);
-				}
 				WorkResult::Model(option_mesh) => {
 					if let Some(package) = option_mesh {
 						let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
-						let mesh = Mesh::new(vao, glm::translation(&glm::vec4_to_vec3(&(light_direction * 2.0))) * uniform_scale(0.3), "textures/checkerboard.jpg", package.2, Some(package.3));
+						let mesh = Mesh::new(vao, uniform_scale(0.3), model_texture, package.2, Some(package.3));
 						model_indices.push(Some(meshes.insert(mesh)));
 						bound_controller_indices.push(None);
 						model_to_controller_matrices.push(glm::identity());
-					}
-				}
-			}
-		}
-
-		//Connect all meshes to their textures
-		//TODO: Change so that when a texture is loaded, all meshes are checked, and when a mesh is created, there's a check for the texture it needs
-		//instead of this check that just happens every frame indiscriminantly
-		for option_mesh in meshes.iter_mut() {
-			if let Some(mesh) = option_mesh {
-				if mesh.texture == 0 {
-					if let Some(tex_id) = textures.get(&mesh.texture_path) {
-						mesh.texture = *tex_id;
 					}
 				}
 			}
@@ -897,7 +871,10 @@ fn main() {
 	}
 
 	//Shut down the worker thread
-	order_tx.send(WorkOrder::Quit).unwrap();
+	if let Err(e) = order_tx.send(WorkOrder::Quit) {
+		println!("{}", e);
+	}
+
 	worker_handle.join().unwrap();
 
 	//Shut down OpenVR

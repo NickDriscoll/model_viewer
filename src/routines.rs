@@ -51,11 +51,10 @@ pub fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Op
 				vertices.push(vertex.texture_coord[1]);
 			}
 			
-			let vao = unsafe { create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]) };
-			let t = unsafe { load_texture_from_data((vec![25, 140, 15], 1, 1, gl::RGB)) };
-			let mut mesh = Mesh::new(vao, glm::identity(), "", vec![0, model.indices().len() as GLsizei], None);
-			mesh.texture = t;
-
+			let mesh = unsafe {
+				let vao = create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]);
+				Mesh::new(vao, glm::identity(), load_texture_from_data((vec![25, 140, 15], 1, 1, gl::RGB)), vec![0, model.indices().len() as GLsizei], None)
+			};
 			result = Some(mesh);
 		}
 	}
