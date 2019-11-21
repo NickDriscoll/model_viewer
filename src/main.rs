@@ -105,9 +105,6 @@ fn main() {
 	let (order_tx, order_rx) = mpsc::channel::<WorkOrder>();
 	let (result_tx, result_rx) = mpsc::channel::<WorkResult>();
 
-	//Map of texture paths to texture ids
-	let mut textures: HashMap<String, GLuint> = HashMap::new();
-
 	//Spawn thread to do work
 	let worker_handle = thread::spawn(move || {
 		loop {
@@ -121,9 +118,7 @@ fn main() {
 
 					//Send model data back to the main thread
 					if let Some(p) = path {
-						if let Err(e) = result_tx.send(WorkResult::Model(load_wavefront_obj(&p))) {
-							println!("{}", e);
-						}
+						handle_result(result_tx.send(WorkResult::Model(load_wavefront_obj(&p))));
 					}					
 				}
 				Ok(WorkOrder::Quit) => { return; }
@@ -416,7 +411,7 @@ fn main() {
 	let mut bgm_sink = match rodio::default_output_device() {
 		Some(device) => {
 			let sink = rodio::Sink::new(&device);
-			let source = rodio::Decoder::new(BufReader::new(File::open("audio/riverlands.mp3").unwrap())).unwrap();
+			let source = rodio::Decoder::new(BufReader::new(File::open("audio/dark_ruins.mp3").unwrap())).unwrap();
 			sink.append(source);
 			sink.set_volume(0.25);
 			sink.play();
@@ -437,7 +432,7 @@ fn main() {
 
 	//Shadow map data
 	let shadow_map_resolution = 10240;
-	let projection_size = 20.0;
+	let projection_size = 10.0;
 	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 5.0 * projection_size) *
 								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 4.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 	let (shadow_buffer, shadow_map) = unsafe {
@@ -551,10 +546,8 @@ fn main() {
 						Key::I => { camera.fov = 90.0; }
 						Key::G => { is_lighting = !is_lighting; }
 						Key::LeftShift => { camera.velocity *= 15.0; }
-						Key::L => {							
-							if let Err(e) = order_tx.send(WorkOrder::Model) {
-								println!("{}", e);
-							}							
+						Key::L => {		
+							handle_result(order_tx.send(WorkOrder::Model));
 						}
 						Key::M => {
 							if let Some(sink) = &mut bgm_sink {
@@ -766,12 +759,10 @@ fn main() {
 			}
 		}
 
-		//Set up render data
+		//Rendering code
 		let framebuffers = [vr_render_target, vr_render_target, 0];
 		let eyes = [Some(Eye::Left), Some(Eye::Right), None];
 		let sizes = [render_target_size, render_target_size, window_size];
-
-		//Rendering code
 		let render_context = RenderContext::new(&p_matrices, &v_matrices, &light_direction, shadow_map, &shadow_viewprojection, is_lighting);
 		unsafe {
 			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
@@ -871,9 +862,7 @@ fn main() {
 	}
 
 	//Shut down the worker thread
-	if let Err(e) = order_tx.send(WorkOrder::Quit) {
-		println!("{}", e);
-	}
+	handle_result(order_tx.send(WorkOrder::Quit));
 
 	worker_handle.join().unwrap();
 

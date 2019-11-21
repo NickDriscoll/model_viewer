@@ -94,9 +94,7 @@ pub unsafe fn gl_gen_buffer() -> GLuint {
 
 pub unsafe fn submit_to_hmd(eye: Option<Eye>, openvr_compositor: &Option<Compositor>, target_handle: &openvr::compositor::texture::Texture) {
 	if let (Some(ref comp), Some(e)) = (openvr_compositor, eye) {
-		if let Err(err) = comp.submit(e, target_handle, None, None) {
-			println!("{}", err);
-		}
+		handle_result(comp.submit(e, target_handle, None, None));
 	}
 }
 

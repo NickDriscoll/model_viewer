@@ -255,3 +255,9 @@ pub fn halton_sequence(index: f32, base: f32) -> f32 {
 
 	return r;
 }
+
+pub fn handle_result<T, E: std::fmt::Display>(result: Result<T, E>) {
+	if let Err(e) = result {
+		println!("{}", e);
+	}
+}
