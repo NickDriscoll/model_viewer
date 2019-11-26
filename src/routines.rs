@@ -224,7 +224,12 @@ pub fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 		index_offset += current_index as usize;
 	}
 	geometry_boundaries.push(indices.len() as GLsizei);
-	Some((vertices, indices, geometry_boundaries, materials_in_order))
+	Some(MeshData {
+		vertices,
+		indices,
+		geo_boundaries: geometry_boundaries,
+		materials: materials_in_order
+	})
 }
 
 pub fn uniform_scale(scale: f32) -> glm::TMat4<f32> {

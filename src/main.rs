@@ -30,8 +30,6 @@ const FAR_Z: f32 = 800.0;
 //Left eye, Right eye, Companion window
 const RENDER_PASSES: usize = 3;
 
-type MeshData = (Vec<f32>, Vec<u16>, Vec<GLsizei>, Vec<Option<mtl::Material>>);
-
 //Things you can request the worker thread to do
 enum WorkOrder {
 	Model,
@@ -329,7 +327,7 @@ fn main() {
 		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
 
 		let attribute_offsets = [3, 3, 2];
-		let vao = create_vertex_array_object(&model_data.0, &model_data.1, &attribute_offsets);
+		let vao = create_vertex_array_object(&model_data.vertices, &model_data.indices, &attribute_offsets);
 		let mut model_matrices = [0.0f32; TREE_COUNT * 16];
 
 		//Populate the buffer
@@ -377,7 +375,7 @@ fn main() {
 			gl::EnableVertexAttribArray(current_attribute);
 		}
 
-		(vao, model_data.2, model_data.3)
+		(vao, model_data.geo_boundaries, model_data.materials)
 	};
 
 	//Variables to keep track of the loaded models
@@ -518,8 +516,8 @@ fn main() {
 			match work_result {
 				WorkResult::Model(option_mesh) => {
 					if let Some(package) = option_mesh {
-						let vao = unsafe { create_vertex_array_object(&package.0, &package.1, &[3, 3, 2]) };
-						let mesh = Mesh::new(vao, uniform_scale(0.3), model_texture, package.2, Some(package.3));
+						let vao = unsafe { create_vertex_array_object(&package.vertices, &package.indices, &[3, 3, 2]) };
+						let mesh = Mesh::new(vao, uniform_scale(0.3), model_texture, package.geo_boundaries, Some(package.materials));
 						model_indices.push(Some(meshes.insert(mesh)));
 						bound_controller_indices.push(None);
 						model_to_controller_matrices.push(glm::identity());
@@ -766,7 +764,7 @@ fn main() {
 		let render_context = RenderContext::new(&p_matrices, &v_matrices, &light_direction, shadow_map, &shadow_viewprojection, is_lighting);
 		unsafe {
 			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
-			gl::DepthFunc(gl::LESS);	//Pass the fragment with the smallest z-value
+			gl::DepthFunc(gl::LEQUAL);	//Pass the fragment with the smallest z-value
 
 			//Set clear color
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
@@ -811,21 +809,6 @@ fn main() {
 				//Clear the framebuffer's color buffer and depth buffer
 				gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
-				//Don't draw the skybox in wireframe mode
-				if !is_wireframe {
-					//Compute the view-projection matrix for the skybox (the conversion functions are just there to nullify the translation component of the view matrix)
-					//The skybox vertices should obviously be rotated along with the camera, but shouldn't be translated in order to maintain the illusion
-					//that the sky is infinitely far away
-					let skybox_view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
-
-					//Render the skybox
-					gl::UseProgram(skybox_shader);
-					gl::UniformMatrix4fv(get_uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&(skybox_view_projection * uniform_scale(400.0))) as *const GLfloat);
-					gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_cubemap);
-					gl::BindVertexArray(skybox_vao);
-					gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_SHORT, ptr::null());
-				}
-
 				//Render the regular meshes
 				gl::Enable(gl::CULL_FACE);
 				render_meshes(&meshes, model_shader, i, &render_context);
@@ -834,12 +817,12 @@ fn main() {
 				gl::UseProgram(instanced_model_shader);
 				
 				bind_uniforms(instanced_model_shader,
-								   &["view_projection", "shadow_vp"],
-								   &[&(p_matrices[i] * v_matrices[i]), &shadow_viewprojection],
-								   &["view_position", "light_direction"],
-								   &[&render_context.view_positions[i], &light_direction],
-								   &["using_material", "lighting", "shadow_map"],
-								   &[1, is_lighting as GLint, 0]);
+							  &["view_projection", "shadow_vp"],
+							  &[&(p_matrices[i] * v_matrices[i]), &shadow_viewprojection],
+							  &["view_position", "light_direction"],
+							  &[&render_context.view_positions[i], &light_direction],
+							  &["using_material", "lighting", "shadow_map"],
+							  &[1, is_lighting as GLint, 0]);
 
 				gl::ActiveTexture(gl::TEXTURE0);
 				gl::BindTexture(gl::TEXTURE_2D, shadow_map);
@@ -850,6 +833,22 @@ fn main() {
 				for j in 0..trees_geo_boundaries.len()-1 {
 					bind_material(instanced_model_shader, &trees_mats[j]);
 					gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[j + 1] - trees_geo_boundaries[j], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * trees_geo_boundaries[j]) as *const c_void, TREE_COUNT as GLsizei);
+				}
+
+				//Draw the skybox last to take advantage of early depth testing
+				//Don't draw the skybox in wireframe mode
+				if !is_wireframe {
+					//Compute the view-projection matrix for the skybox (the conversion functions are just there to nullify the translation component of the view matrix)
+					//The skybox vertices should obviously be rotated along with the camera, but shouldn't be translated in order to maintain the illusion
+					//that the sky is infinitely far away
+					let skybox_view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
+
+					//Render the skybox
+					gl::UseProgram(skybox_shader);
+					gl::UniformMatrix4fv(get_uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&skybox_view_projection) as *const GLfloat);
+					gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_cubemap);
+					gl::BindVertexArray(skybox_vao);
+					gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_SHORT, ptr::null());
 				}
 
 				//Submit render to HMD

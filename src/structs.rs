@@ -4,6 +4,13 @@ use std::slice::{Iter, IterMut};
 use std::ops::{Index, IndexMut};
 use crate::*;
 
+pub struct MeshData {
+	pub vertices: Vec<f32>,
+	pub indices: Vec<u16>,
+	pub geo_boundaries: Vec<GLsizei>,
+	pub materials: Vec<Option<mtl::Material>>
+}
+
 //A renderable 3D thing
 #[derive(Clone)]
 pub struct Mesh {
