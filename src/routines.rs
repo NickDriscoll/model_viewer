@@ -1,4 +1,5 @@
 use openvr::{Eye, System, RenderModels, TrackedDevicePose};
+use noise::OpenSimplex;
 use crate::*;
 
 pub fn openvr_to_mat4(mat: [[f32; 4]; 3]) -> glm::TMat4<f32> {
@@ -265,4 +266,47 @@ pub fn handle_result<T, E: std::fmt::Display>(result: Result<T, E>) {
 	if let Err(e) = result {
 		println!("{}", e);
 	}
+}
+
+//Returns an array of count 4x4 matrices tightly packed in an array in column-major format
+pub fn model_matrices_from_terrain(count: usize, halton_counter: &mut usize, surface_normals: &[glm::TVec3<f32>], simplex_terrain: OpenSimplex, simplex_scale: f64, terrain_scale: f32, terrain_amplitude: f32, terrain_width: usize) -> Vec<f32> {
+	let mut model_matrices = vec![0.0f32; count * 16];
+
+	//Populate the buffer
+	for i in 0..count {
+		let xpos = terrain_scale * (halton_sequence(*halton_counter as f32, 2.0) - 0.5);
+		let zpos = terrain_scale * (halton_sequence(*halton_counter as f32, 3.0) - 0.5);
+		*halton_counter += 1;
+			
+		//Get height from simplex noise generator
+		let ypos = get_terrain_height(xpos, zpos, simplex_terrain, terrain_amplitude, terrain_scale, simplex_scale);
+
+		//Determine which floor triangle this tree is on
+		let (moved_xpos, moved_zpos) = (xpos + (terrain_scale / 2.0), zpos + (terrain_scale / 2.0));			
+		let (subsquare_x, subsquare_z) = (f32::floor(moved_xpos * ((terrain_width - 1) as f32 / terrain_scale)) as usize,
+										  f32::floor(moved_zpos * ((terrain_width - 1) as f32 / terrain_scale)) as usize);
+		let subsquare_index = subsquare_x + subsquare_z * (terrain_width - 1);
+		let (norm_x, norm_z) = (moved_xpos / (terrain_width - 1) as f32 + subsquare_x as f32 * terrain_scale / (terrain_width - 1) as f32,
+					  			moved_zpos / (terrain_width - 1) as f32 + subsquare_z as f32 * terrain_scale / (terrain_width - 1) as f32);
+		let normal_index = if norm_x + norm_z <= 1.0 {
+			subsquare_index * 2
+		} else {
+			subsquare_index * 2 + 1
+		};
+
+		let rotation_vector = glm::cross::<f32, glm::U3>(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]);
+		let rotation_magnitude = f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]));
+
+		//Note: Multiplying rotation angle by 0.2 because that looks good enough and I can't tell how my math is wrong
+		let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(rotation_magnitude*0.2, &rotation_vector);
+
+		//Write this matrix to the buffer
+		let mut count = 0;
+		for j in glm::value_ptr(&matrix) {
+			model_matrices[i * 16 + count] = *j;
+			count += 1;
+		}
+	}
+
+	model_matrices
 }
