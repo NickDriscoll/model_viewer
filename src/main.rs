@@ -25,7 +25,7 @@ mod routines;
 
 //The distances of the near and far clipping planes from the origin
 const NEAR_Z: f32 = 0.1;
-const FAR_Z: f32 = 800.0;
+const FAR_Z: f32 = 200.0;
 
 //Left eye, Right eye, Companion window
 const RENDER_PASSES: usize = 3;
@@ -128,7 +128,7 @@ fn main() {
 	});
 
 	//Create the cube that will be user to render the skybox
-	let skybox_vao = unsafe {
+	let (skybox_vao, skybox_indices_count) = unsafe {
 		let vertices = [
 			-1.0, -1.0, -1.0,
 			1.0, -1.0, -1.0,
@@ -165,7 +165,7 @@ fn main() {
 			7, 2, 3
 		];
 
-		create_vertex_array_object(&vertices, &indices, &[3])
+		(create_vertex_array_object(&vertices, &indices, &[3]), indices.len() as i32)
 	};
 
 	//Create the skybox cubemap
@@ -369,7 +369,7 @@ fn main() {
 
 		bind_instanced_matrices(vao, &attribute_offsets, &model_matrices, GRASS_COUNT);
 
-		(vao, indices.len())
+		(vao, indices.len() as i32)
 	};
 
 	//Variables to keep track of the loaded models
@@ -400,12 +400,14 @@ fn main() {
 
 	//Play background music
 	let mut is_muted = false;
+	let bgm_path = "audio/dark_ruins.mp3";
+	let mut bgm_volume = 0.25;
 	let mut bgm_sink = match rodio::default_output_device() {
 		Some(device) => {
 			let sink = rodio::Sink::new(&device);
-			let source = rodio::Decoder::new(BufReader::new(File::open("audio/dark_ruins.mp3").unwrap())).unwrap();
+			let source = rodio::Decoder::new(BufReader::new(File::open(bgm_path).unwrap())).unwrap();
 			sink.append(source);
-			sink.set_volume(0.25);
+			sink.set_volume(bgm_volume);
 			sink.play();
 			Some(sink)
 		}
@@ -423,8 +425,8 @@ fn main() {
 	let light_direction = glm::normalize(&glm::vec4(0.8, 1.0, 1.0, 0.0));
 
 	//Shadow map data
-	let shadow_map_resolution = 10240;
-	let projection_size = 10.0;
+	let shadow_map_resolution = 4096;
+	let projection_size = 25.0;
 	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 5.0 * projection_size) *
 								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 4.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 	let (shadow_buffer, shadow_map) = unsafe {
@@ -462,6 +464,14 @@ fn main() {
 			//There's an underlying assumption here that frames will always take less than one second to complete
 			(dur.subsec_millis() as f32 / 1000.0) + (dur.subsec_micros() as f32 / 1_000_000.0)
 		};
+
+		//Loop music
+		if let Some(sink) = &bgm_sink {
+			if sink.empty() {
+				let source = rodio::Decoder::new(BufReader::new(File::open(bgm_path).unwrap())).unwrap();
+				sink.append(source);
+			}
+		}
 
 		//Find controllers if we haven't already
 		if let Some(ref sys) = openvr_system {
@@ -543,7 +553,7 @@ fn main() {
 						}
 						Key::M => {
 							if let Some(sink) = &mut bgm_sink {
-								sink.set_volume(1.0 * is_muted as u32 as f32);
+								sink.set_volume(bgm_volume * is_muted as u32 as f32);
 								is_muted = !is_muted;
 							}
 						}
@@ -795,7 +805,7 @@ fn main() {
 
 			//Render instanced grass into shadow map
 			//gl::BindVertexArray(grass_vao);
-			//gl::DrawElementsInstanced(gl::TRIANGLES, grass_indices_count as GLint, gl::UNSIGNED_SHORT, ptr::null(), GRASS_COUNT as GLsizei);
+			//gl::DrawElementsInstanced(gl::TRIANGLES, grass_indices_count, gl::UNSIGNED_SHORT, ptr::null(), GRASS_COUNT as GLsizei);
 
 			//Turn the color buffer back on now that we're done rendering the shadow map
 			gl::DrawBuffer(gl::BACK);
@@ -842,8 +852,7 @@ fn main() {
 
 				//Disable backface culling before the draw call because we want the grass to be double-sided
 				gl::Disable(gl::CULL_FACE);
-
-				gl::DrawElementsInstanced(gl::TRIANGLES, grass_indices_count as GLint, gl::UNSIGNED_SHORT, ptr::null(), GRASS_COUNT as GLsizei);
+				gl::DrawElementsInstanced(gl::TRIANGLES, grass_indices_count, gl::UNSIGNED_SHORT, ptr::null(), GRASS_COUNT as GLsizei);
 
 				//Draw the skybox last to take advantage of early depth testing
 				//Don't draw the skybox in wireframe mode
@@ -858,7 +867,7 @@ fn main() {
 					gl::UniformMatrix4fv(get_uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&skybox_view_projection) as *const GLfloat);
 					gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_cubemap);
 					gl::BindVertexArray(skybox_vao);
-					gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_SHORT, ptr::null());
+					gl::DrawElements(gl::TRIANGLES, skybox_indices_count, gl::UNSIGNED_SHORT, ptr::null());
 				}
 
 				//Submit render to HMD
