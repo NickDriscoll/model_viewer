@@ -331,59 +331,16 @@ fn main() {
 
 		let attribute_offsets = [3, 3, 2];
 		let vao = create_vertex_array_object(&model_data.vertices, &model_data.indices, &attribute_offsets);
-		let mut model_matrices = [0.0f32; TREE_COUNT * 16];
 
-		//Populate the buffer
-		for i in 0..TREE_COUNT {
-			let xpos = TERRAIN_SCALE * (halton_sequence(halton_counter as f32, 2.0) - 0.5);
-			let zpos = TERRAIN_SCALE * (halton_sequence(halton_counter as f32, 3.0) - 0.5);
-			halton_counter += 1;
-			
-			//Get height from simplex noise generator
-			let ypos = get_terrain_height(xpos, zpos, simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
-
-			//Determine which floor triangle this tree is on
-			let (moved_xpos, moved_zpos) = (xpos + (TERRAIN_SCALE / 2.0), zpos + (TERRAIN_SCALE / 2.0));			
-			let (subsquare_x, subsquare_z) = (f32::floor(moved_xpos * ((TERRAIN_WIDTH - 1) as f32 / TERRAIN_SCALE)) as usize,
-											  f32::floor(moved_zpos * ((TERRAIN_WIDTH - 1) as f32 / TERRAIN_SCALE)) as usize);
-			let subsquare_index = subsquare_x + subsquare_z * (TERRAIN_WIDTH - 1);
-			let (norm_x, norm_z) = (moved_xpos / (TERRAIN_WIDTH - 1) as f32 + subsquare_x as f32 * TERRAIN_SCALE / (TERRAIN_WIDTH - 1) as f32,
-						  			moved_zpos / (TERRAIN_WIDTH - 1) as f32 + subsquare_z as f32 * TERRAIN_SCALE / (TERRAIN_WIDTH - 1) as f32);
-			let normal_index = if norm_x + norm_z <= 1.0 {
-				subsquare_index * 2
-			} else {
-				subsquare_index * 2 + 1
-			};
-			
-			let rotation_vector = glm::cross::<f32, glm::U3>(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]);
-			let rotation_magnitude = f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]));
-			let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(rotation_magnitude*0.2, &rotation_vector);
-
-			//Write this matrix to the buffer
-			let mut count = 0;
-			for j in glm::value_ptr(&matrix) {
-				model_matrices[i * 16 + count] = *j;
-				count += 1;
-			}
-		}
-
-		let position_buffer = gl_gen_buffer();
-		gl::BindBuffer(gl::ARRAY_BUFFER, position_buffer);
-		gl::BufferData(gl::ARRAY_BUFFER, (TREE_COUNT * 16 * mem::size_of::<GLfloat>()) as GLsizeiptr, &model_matrices[0] as *const GLfloat as *const c_void, gl::STATIC_DRAW);
-		gl::BindVertexArray(vao);
-
-		for i in 0..4 {
-			let current_attribute = (attribute_offsets.len() + i) as GLuint;
-			gl::VertexAttribPointer(current_attribute, 4, gl::FLOAT, gl::FALSE, 16 * mem::size_of::<GLfloat>() as GLsizei, (4 * i * mem::size_of::<GLfloat>()) as *const c_void);
-			gl::VertexAttribDivisor(current_attribute, 1);
-			gl::EnableVertexAttribArray(current_attribute);
-		}
+		let model_matrices = model_matrices_from_terrain(TREE_COUNT, &mut halton_counter, &surface_normals, &simplex_generator, SIMPLEX_SCALE, TERRAIN_SCALE, TERRAIN_AMPLITUDE, TERRAIN_WIDTH);
+		
+		bind_instanced_matrices(vao, &attribute_offsets, &model_matrices, TREE_COUNT);
 
 		(vao, model_data.geo_boundaries, model_data.materials)
 	};
 
 	//Plant grass
-	const GRASS_COUNT: usize = 100000;
+	const GRASS_COUNT: usize = 50000;
 	let grass_texture = unsafe { load_texture("textures/billboardgrass.png") };
 
 	//Calculate the model_matrices for the grass billboards
@@ -405,56 +362,12 @@ fn main() {
 			4, 5, 6,
 			7, 6, 5
 		];
-
-		let mut model_matrices = vec![0.0f32; GRASS_COUNT * 16];
-
-		//Populate the buffer
-		for i in 0..GRASS_COUNT {
-			let xpos = TERRAIN_SCALE * (halton_sequence(halton_counter as f32, 2.0) - 0.5);
-			let zpos = TERRAIN_SCALE * (halton_sequence(halton_counter as f32, 3.0) - 0.5);
-			halton_counter += 1;
-			
-			//Get height from simplex noise generator
-			let ypos = get_terrain_height(xpos, zpos, simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
-
-			//Determine which floor triangle this tree is on
-			let (moved_xpos, moved_zpos) = (xpos + (TERRAIN_SCALE / 2.0), zpos + (TERRAIN_SCALE / 2.0));			
-			let (subsquare_x, subsquare_z) = (f32::floor(moved_xpos * ((TERRAIN_WIDTH - 1) as f32 / TERRAIN_SCALE)) as usize,
-											  f32::floor(moved_zpos * ((TERRAIN_WIDTH - 1) as f32 / TERRAIN_SCALE)) as usize);
-			let subsquare_index = subsquare_x + subsquare_z * (TERRAIN_WIDTH - 1);
-			let (norm_x, norm_z) = (moved_xpos / (TERRAIN_WIDTH - 1) as f32 + subsquare_x as f32 * TERRAIN_SCALE / (TERRAIN_WIDTH - 1) as f32,
-						  			moved_zpos / (TERRAIN_WIDTH - 1) as f32 + subsquare_z as f32 * TERRAIN_SCALE / (TERRAIN_WIDTH - 1) as f32);
-			let normal_index = if norm_x + norm_z <= 1.0 {
-				subsquare_index * 2
-			} else {
-				subsquare_index * 2 + 1
-			};
-			
-			let rotation_vector = glm::cross::<f32, glm::U3>(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]);
-			let rotation_magnitude = f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]));
-			let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(rotation_magnitude*0.2, &rotation_vector) * uniform_scale(0.5);
-
-			//Write this matrix to the buffer
-			let mut count = 0;
-			for j in glm::value_ptr(&matrix) {
-				model_matrices[i * 16 + count] = *j;
-				count += 1;
-			}
-		}
-
-		let matrices_buffer = gl_gen_buffer();
 		let attribute_offsets = [3, 3, 2];
 		let vao = create_vertex_array_object(&vertices, &indices, &attribute_offsets);
-		gl::BindBuffer(gl::ARRAY_BUFFER, matrices_buffer);
-		gl::BufferData(gl::ARRAY_BUFFER, (GRASS_COUNT * 16 * mem::size_of::<GLfloat>()) as GLsizeiptr, &model_matrices[0] as *const GLfloat as *const c_void, gl::STATIC_DRAW);
-		gl::BindVertexArray(vao);
 
-		for i in 0..4 {
-			let current_attribute = (attribute_offsets.len() + i) as GLuint;
-			gl::VertexAttribPointer(current_attribute, 4, gl::FLOAT, gl::FALSE, 16 * mem::size_of::<GLfloat>() as GLsizei, (4 * i * mem::size_of::<GLfloat>()) as *const c_void);
-			gl::VertexAttribDivisor(current_attribute, 1);
-			gl::EnableVertexAttribArray(current_attribute);
-		}
+		let model_matrices = model_matrices_from_terrain(GRASS_COUNT, &mut halton_counter, &surface_normals, &simplex_generator, SIMPLEX_SCALE, TERRAIN_SCALE, TERRAIN_AMPLITUDE, TERRAIN_WIDTH);
+
+		bind_instanced_matrices(vao, &attribute_offsets, &model_matrices, GRASS_COUNT);
 
 		(vao, indices.len())
 	};
@@ -771,7 +684,7 @@ fn main() {
 				tracking_position += movement_vector;
 
 				if !is_flying {
-					tracking_position.y = get_terrain_height(tracking_position.x, tracking_position.z, simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
+					tracking_position.y = get_terrain_height(tracking_position.x, tracking_position.z, &simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
 				}
 			}
 			tracking_to_world = glm::translation(&glm::vec4_to_vec3(&tracking_position));

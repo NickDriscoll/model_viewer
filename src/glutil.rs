@@ -324,3 +324,18 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 		}
 	}
 }
+
+//Binds "buffer" to the next available attribute of vao as an array of mat4
+pub unsafe fn bind_instanced_matrices(vao: GLuint, attribute_offsets: &[i32], buffer: &[f32], count: usize) {
+	let matrices_buffer = gl_gen_buffer();
+	gl::BindBuffer(gl::ARRAY_BUFFER, matrices_buffer);
+	gl::BufferData(gl::ARRAY_BUFFER, (count * 16 * mem::size_of::<GLfloat>()) as GLsizeiptr, &buffer[0] as *const GLfloat as *const c_void, gl::STATIC_DRAW);
+	gl::BindVertexArray(vao);
+
+	for i in 0..4 {
+		let current_attribute = (attribute_offsets.len() + i) as GLuint;
+		gl::VertexAttribPointer(current_attribute, 4, gl::FLOAT, gl::FALSE, 16 * mem::size_of::<GLfloat>() as GLsizei, (4 * i * mem::size_of::<GLfloat>()) as *const c_void);
+		gl::VertexAttribDivisor(current_attribute, 1);
+		gl::EnableVertexAttribArray(current_attribute);
+	}
+}

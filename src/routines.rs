@@ -244,7 +244,7 @@ pub fn update_openvr_mesh(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevicePo
 	}
 }
 
-pub fn get_terrain_height(xpos: f32, zpos: f32, simplex_generator: OpenSimplex, amplitude: f32, terrain_scale: f32, simplex_scale: f64) -> f32 {
+pub fn get_terrain_height(xpos: f32, zpos: f32, simplex_generator: &OpenSimplex, amplitude: f32, terrain_scale: f32, simplex_scale: f64) -> f32 {
 	amplitude * simplex_generator.get([xpos as f64 * simplex_scale / terrain_scale as f64, zpos as f64 * simplex_scale / terrain_scale as f64]) as f32
 }
 
@@ -269,7 +269,7 @@ pub fn handle_result<T, E: std::fmt::Display>(result: Result<T, E>) {
 }
 
 //Returns an array of count 4x4 matrices tightly packed in an array in column-major format
-pub fn model_matrices_from_terrain(count: usize, halton_counter: &mut usize, surface_normals: &[glm::TVec3<f32>], simplex_terrain: OpenSimplex, simplex_scale: f64, terrain_scale: f32, terrain_amplitude: f32, terrain_width: usize) -> Vec<f32> {
+pub fn model_matrices_from_terrain(count: usize, halton_counter: &mut usize, surface_normals: &[glm::TVec3<f32>], simplex_terrain: &OpenSimplex, simplex_scale: f64, terrain_scale: f32, terrain_amplitude: f32, terrain_width: usize) -> Vec<f32> {
 	let mut model_matrices = vec![0.0f32; count * 16];
 
 	//Populate the buffer
