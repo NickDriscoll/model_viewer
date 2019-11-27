@@ -216,7 +216,7 @@ fn main() {
 
 	//Create the large tessellated surface
 	const SIMPLEX_SCALE: f64 = 3.0;
-	const TERRAIN_SCALE: f32 = 350.0;
+	const TERRAIN_SCALE: f32 = 200.0;
 	const TERRAIN_AMPLITUDE: f32 = TERRAIN_SCALE / 10.0;
 	const TERRAIN_WIDTH: usize = 100; //Width (and height) in vertices
 	const SUBSQUARE_COUNT: usize = (TERRAIN_WIDTH-1)*(TERRAIN_WIDTH-1);
@@ -325,7 +325,7 @@ fn main() {
 	let mut halton_counter = 1;
 
 	//Plant trees
-	const TREE_COUNT: usize = 750;
+	const TREE_COUNT: usize = 500;
 	let (trees_vao, trees_geo_boundaries, trees_mats) = unsafe {
 		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
 
@@ -383,26 +383,30 @@ fn main() {
 	};
 
 	//Plant grass
-	const GRASS_COUNT: usize = 750;
-	let grass_billboard_texture = unsafe { load_texture("textures/billboardgrass.png") };
+	const GRASS_COUNT: usize = 100000;
+	let grass_texture = unsafe { load_texture("textures/billboardgrass.png") };
 
 	//Calculate the model_matrices for the grass billboards
-	let grass_vao = unsafe {
+	let (grass_vao, grass_indices_count) = unsafe {
 		let vertices = [
 			//Position				Normals						Tex coords
-			-0.5, 0.0, 0.0,			0.0, 0.0, 1.0,				0.0, 0.0,
-			0.5, 0.0, 0.0,			0.0, 0.0, 1.0,				1.0, 0.0,
-			-0.5, 1.0, 0.0,			0.0, 0.0, 1.0,				0.0, 1.0,
-			0.5, 1.0, 0.0,			0.0, 0.0, 1.0,				1.0, 1.0
+			-0.5, 0.0, 0.0,			0.0, 0.0, 1.0,				0.0, 1.0,
+			0.5, 0.0, 0.0,			0.0, 0.0, 1.0,				1.0, 1.0,
+			-0.5, 1.0, 0.0,			0.0, 0.0, 1.0,				0.0, 0.0,
+			0.5, 1.0, 0.0,			0.0, 0.0, 1.0,				1.0, 0.0,
+			0.0, 0.0, -0.5,			0.0, 0.0, 1.0,				0.0, 1.0,
+			0.0, 0.0, 0.5,			0.0, 0.0, 1.0,				1.0, 1.0,
+			0.0, 1.0, -0.5,			0.0, 0.0, 1.0,				0.0, 0.0,
+			0.0, 1.0, 0.5,			0.0, 0.0, 1.0,				1.0, 0.0
 		];
 		let indices = [
 			0u16, 1, 2,
-			3, 2, 1
+			3, 2, 1,
+			4, 5, 6,
+			7, 6, 5
 		];
-		let attribute_offsets = [3, 3, 2];
-		let vao = create_vertex_array_object(&vertices, &indices, &attribute_offsets);
 
-		let mut model_matrices = [0.0f32; GRASS_COUNT * 16];
+		let mut model_matrices = vec![0.0f32; GRASS_COUNT * 16];
 
 		//Populate the buffer
 		for i in 0..GRASS_COUNT {
@@ -428,7 +432,7 @@ fn main() {
 			
 			let rotation_vector = glm::cross::<f32, glm::U3>(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]);
 			let rotation_magnitude = f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]));
-			let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(rotation_magnitude*0.2, &rotation_vector);
+			let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(rotation_magnitude*0.2, &rotation_vector) * uniform_scale(0.5);
 
 			//Write this matrix to the buffer
 			let mut count = 0;
@@ -439,6 +443,8 @@ fn main() {
 		}
 
 		let matrices_buffer = gl_gen_buffer();
+		let attribute_offsets = [3, 3, 2];
+		let vao = create_vertex_array_object(&vertices, &indices, &attribute_offsets);
 		gl::BindBuffer(gl::ARRAY_BUFFER, matrices_buffer);
 		gl::BufferData(gl::ARRAY_BUFFER, (GRASS_COUNT * 16 * mem::size_of::<GLfloat>()) as GLsizeiptr, &model_matrices[0] as *const GLfloat as *const c_void, gl::STATIC_DRAW);
 		gl::BindVertexArray(vao);
@@ -450,7 +456,7 @@ fn main() {
 			gl::EnableVertexAttribArray(current_attribute);
 		}
 
-		vao
+		(vao, indices.len())
 	};
 
 	//Variables to keep track of the loaded models
@@ -864,13 +870,19 @@ fn main() {
 				}
 			}
 
-			//Render instanced trees into shadow map
+			//Rendering instanced meshes
 			gl::UseProgram(instanced_shadow_map_shader);
 			gl::UniformMatrix4fv(get_uniform_location(instanced_shadow_map_shader, "shadowVP"), 1, gl::FALSE, &flatten_glm(&shadow_viewprojection) as *const GLfloat);
+
+			//Render instanced trees into shadow map
 			gl::BindVertexArray(trees_vao);
-			for i in 0..trees_geo_boundaries.len()-1 {			
-				gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[i + 1] - trees_geo_boundaries[i], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * trees_geo_boundaries[i]) as *const c_void, GRASS_COUNT as GLsizei);
-			}			
+			for i in 0..trees_geo_boundaries.len()-1 {
+				gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[i + 1] - trees_geo_boundaries[i], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * trees_geo_boundaries[i]) as *const c_void, TREE_COUNT as GLsizei);
+			}
+
+			//Render instanced grass into shadow map
+			//gl::BindVertexArray(grass_vao);
+			//gl::DrawElementsInstanced(gl::TRIANGLES, grass_indices_count as GLint, gl::UNSIGNED_SHORT, ptr::null(), GRASS_COUNT as GLsizei);
 
 			//Turn the color buffer back on now that we're done rendering the shadow map
 			gl::DrawBuffer(gl::BACK);
@@ -896,12 +908,11 @@ fn main() {
 							  &[&(p_matrices[i] * v_matrices[i]), &shadow_viewprojection],
 							  &["view_position", "light_direction"],
 							  &[&render_context.view_positions[i], &light_direction],
-							  &["using_material", "lighting", "shadow_map"],
-							  &[1, is_lighting as GLint, 0]);
+							  &["using_material", "lighting", "shadow_map", "tex", "shadow_map"],
+							  &[1, is_lighting as GLint, 0, 0, 1]);
 
-				gl::ActiveTexture(gl::TEXTURE0);
+				gl::ActiveTexture(gl::TEXTURE1);
 				gl::BindTexture(gl::TEXTURE_2D, shadow_map);
-
 				gl::BindVertexArray(trees_vao);
 
 				//Draw calls
@@ -911,7 +922,15 @@ fn main() {
 				}
 
 				//Render the grass billboards with instanced rendering
-				
+				gl::ActiveTexture(gl::TEXTURE0);
+				gl::BindTexture(gl::TEXTURE_2D, grass_texture);
+				gl::Uniform1i(get_uniform_location(instanced_model_shader, "using_material"), 0);
+				gl::BindVertexArray(grass_vao);
+
+				//Disable backface culling before the draw call because we want the grass to be double-sided
+				gl::Disable(gl::CULL_FACE);
+
+				gl::DrawElementsInstanced(gl::TRIANGLES, grass_indices_count as GLint, gl::UNSIGNED_SHORT, ptr::null(), GRASS_COUNT as GLsizei);
 
 				//Draw the skybox last to take advantage of early depth testing
 				//Don't draw the skybox in wireframe mode

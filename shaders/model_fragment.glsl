@@ -6,8 +6,8 @@ in vec2 v_tex_coords;
 in vec4 shadow_coord;
 out vec4 frag_color;
 
-uniform sampler2D tex;
-uniform sampler2D shadow_map;
+uniform sampler2D tex;			//Color texture
+uniform sampler2D shadow_map;	//Shadow map
 uniform vec4 view_position;		//Origin of view space
 uniform vec4 light_direction;	//Vector pointing at the parallel light source
 
@@ -32,6 +32,10 @@ void main() {
 
 	//Get raw texel
 	vec4 tex_color = texture(tex, v_tex_coords);
+
+	//Discard the fragment if alpha == 0.o
+	if (tex_color.a == 0.0)
+		discard;
 
 	//Check if we're in shadow
 	float shadow = 1.0;
