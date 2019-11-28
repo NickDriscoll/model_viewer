@@ -353,8 +353,6 @@ fn main() {
 	//Plant grass
 	const GRASS_COUNT: usize = 50000;
 	let grass_texture = unsafe { load_texture("textures/billboardgrass.png") };
-
-	//Calculate the model_matrices for the grass billboards
 	let (grass_vao, grass_indices_count) = unsafe {
 		let vertices = [
 			//Position				Normals						Tex coords
@@ -790,10 +788,11 @@ fn main() {
 
 			//Render meshes into shadow map
 			gl::UseProgram(shadow_map_shader);
+			gl::Uniform1i(uniform_location(shadow_map_shader, "using_texture"), 0);
 			for option_mesh in meshes.iter() {
 				if let Some(mesh) = option_mesh {
 					let mvp = shadow_viewprojection * mesh.model_matrix;
-					gl::UniformMatrix4fv(get_uniform_location(shadow_map_shader, "shadowMVP"), 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
+					gl::UniformMatrix4fv(uniform_location(shadow_map_shader, "shadowMVP"), 1, gl::FALSE, &flatten_glm(&mvp) as *const GLfloat);
 					gl::BindVertexArray(mesh.vao);
 					for i in 0..mesh.geo_boundaries.len()-1 {
 						gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * mesh.geo_boundaries[i]) as *const c_void);
@@ -803,17 +802,21 @@ fn main() {
 
 			//Rendering instanced meshes
 			gl::UseProgram(instanced_shadow_map_shader);
-			gl::UniformMatrix4fv(get_uniform_location(instanced_shadow_map_shader, "shadowVP"), 1, gl::FALSE, &flatten_glm(&shadow_viewprojection) as *const GLfloat);
+			gl::UniformMatrix4fv(uniform_location(instanced_shadow_map_shader, "shadowVP"), 1, gl::FALSE, &flatten_glm(&shadow_viewprojection) as *const GLfloat);
 
 			//Render instanced trees into shadow map
 			gl::BindVertexArray(trees_vao);
+			gl::Uniform1i(uniform_location(instanced_shadow_map_shader, "using_texture"), 0);
 			for i in 0..trees_geo_boundaries.len()-1 {
 				gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[i + 1] - trees_geo_boundaries[i], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * trees_geo_boundaries[i]) as *const c_void, TREE_COUNT as GLsizei);
 			}
 
 			//Render instanced grass into shadow map
-			//gl::BindVertexArray(grass_vao);
-			//gl::DrawElementsInstanced(gl::TRIANGLES, grass_indices_count, gl::UNSIGNED_SHORT, ptr::null(), GRASS_COUNT as GLsizei);
+			gl::BindVertexArray(grass_vao);
+			gl::Uniform1i(uniform_location(instanced_shadow_map_shader, "using_texture"), 1);
+			gl::ActiveTexture(gl::TEXTURE0);
+			gl::BindTexture(gl::TEXTURE_2D, grass_texture);
+			gl::DrawElementsInstanced(gl::TRIANGLES, grass_indices_count, gl::UNSIGNED_SHORT, ptr::null(), GRASS_COUNT as GLsizei);
 
 			//Turn the color buffer back on now that we're done rendering the shadow map
 			gl::DrawBuffer(gl::BACK);
@@ -855,7 +858,7 @@ fn main() {
 				//Render the grass billboards with instanced rendering
 				gl::ActiveTexture(gl::TEXTURE0);
 				gl::BindTexture(gl::TEXTURE_2D, grass_texture);
-				gl::Uniform1i(get_uniform_location(instanced_model_shader, "using_material"), 0);
+				gl::Uniform1i(uniform_location(instanced_model_shader, "using_material"), 0);
 				gl::BindVertexArray(grass_vao);
 
 				//Disable backface culling before the draw call because we want the grass to be double-sided
@@ -872,7 +875,7 @@ fn main() {
 
 					//Render the skybox
 					gl::UseProgram(skybox_shader);
-					gl::UniformMatrix4fv(get_uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&skybox_view_projection) as *const GLfloat);
+					gl::UniformMatrix4fv(uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&skybox_view_projection) as *const GLfloat);
 					gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_cubemap);
 					gl::BindVertexArray(skybox_vao);
 					gl::DrawElements(gl::TRIANGLES, skybox_indices_count, gl::UNSIGNED_SHORT, ptr::null());

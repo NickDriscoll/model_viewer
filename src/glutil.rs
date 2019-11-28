@@ -81,7 +81,7 @@ pub fn shader_compilation_error(infolog: &[u8]) {
 	panic!("\n--------SHADER COMPILATION ERROR--------\n{}", error_message);
 }
 
-pub unsafe fn get_uniform_location(program: GLuint, name: &str) -> GLint {
+pub unsafe fn uniform_location(program: GLuint, name: &str) -> GLint {
 	let cstring = CString::new(name.as_bytes()).unwrap();
 	gl::GetUniformLocation(program, cstring.as_ptr())
 }
@@ -238,17 +238,17 @@ pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint
 pub unsafe fn bind_uniforms(program: GLuint, mat_uniforms: &[&str], mats: &[&glm::TMat4<f32>], vec_uniforms: &[&str], vecs: &[&glm::TVec4<f32>], byte_uniforms: &[&str], bytes: &[GLint]) {
 	//Send matrix uniforms to GPU
 	for i in 0..mat_uniforms.len() {
-		gl::UniformMatrix4fv(get_uniform_location(program, mat_uniforms[i]), 1, gl::FALSE, &flatten_glm(mats[i]) as *const GLfloat);
+		gl::UniformMatrix4fv(uniform_location(program, mat_uniforms[i]), 1, gl::FALSE, &flatten_glm(mats[i]) as *const GLfloat);
 	}
 
 	//Send vector uniforms to GPU
 	for i in 0..vec_uniforms.len() {
-		gl::Uniform4fv(get_uniform_location(program, vec_uniforms[i]), 1, &[vecs[i].x, vecs[i].y, vecs[i].z, vecs[i].w] as *const GLfloat);
+		gl::Uniform4fv(uniform_location(program, vec_uniforms[i]), 1, &[vecs[i].x, vecs[i].y, vecs[i].z, vecs[i].w] as *const GLfloat);
 	}
 
 	//Send byte uniforms to the GPU
 	for i in 0..byte_uniforms.len() {
-		gl::Uniform1i(get_uniform_location(program, byte_uniforms[i]), bytes[i]);
+		gl::Uniform1i(uniform_location(program, byte_uniforms[i]), bytes[i]);
 	}
 }
 
@@ -267,15 +267,15 @@ pub unsafe fn bind_material(program: GLuint, material: &Option<mtl::Material>) {
 		}
 	};
 	for i in 0..NAMES.len() {
-		gl::Uniform3fv(get_uniform_location(program, NAMES[i]), 1, &colors[i] as *const GLfloat);
+		gl::Uniform3fv(uniform_location(program, NAMES[i]), 1, &colors[i] as *const GLfloat);
 	}
-	gl::Uniform1f(get_uniform_location(program, "specular_coefficient"), specular_coefficient);
+	gl::Uniform1f(uniform_location(program, "specular_coefficient"), specular_coefficient);
 }
 
 pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pass: usize, context: &RenderContext) {
 	gl::UseProgram(program);
-	gl::Uniform1i(get_uniform_location(program, "tex"), 0);
-	gl::Uniform1i(get_uniform_location(program, "shadow_map"), 1);
+	gl::Uniform1i(uniform_location(program, "tex"), 0);
+	gl::Uniform1i(uniform_location(program, "shadow_map"), 1);
 	for option_mesh in meshes.iter() {
 		if let Some(mesh) = option_mesh {
 			if mesh.render_pass_visibilities[render_pass] {
@@ -302,7 +302,7 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 				//Check if we're using a material or just a texture
 				match &mesh.materials {
 					Some(mats) => {
-						gl::Uniform1i(get_uniform_location(program, "using_material"), true as i32);
+						gl::Uniform1i(uniform_location(program, "using_material"), true as i32);
 
 						//Draw calls
 						for i in 0..mesh.geo_boundaries.len()-1 {
@@ -311,8 +311,8 @@ pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pa
 						}
 					}
 					None => {
-						gl::Uniform1i(get_uniform_location(program, "using_material"), false as i32);
-						gl::Uniform1f(get_uniform_location(program, "specular_coefficient"), mesh.specular_coefficient);
+						gl::Uniform1i(uniform_location(program, "using_material"), false as i32);
+						gl::Uniform1f(uniform_location(program, "specular_coefficient"), mesh.specular_coefficient);
 
 						//Draw call
 						for i in 0..mesh.geo_boundaries.len()-1 {
