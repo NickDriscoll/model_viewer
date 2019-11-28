@@ -205,14 +205,7 @@ fn main() {
 	};
 
 	//OptionVec of meshes
-	let mut meshes = OptionVec::with_capacity(10);
-
-	//Set up the simplex noise generator
-	let simplex_generator = {
-		let seed = (SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000) as u32;
-		println!("Seed used for terrain generation: {}", seed);
-		OpenSimplex::new().set_seed(seed)
-	};
+	let mut meshes = OptionVec::with_capacity(1);
 
 	//Create the terrain
 	let terrain = {
@@ -221,6 +214,13 @@ fn main() {
 		const AMPLITUDE: f32 = SCALE / 10.0;
 		const WIDTH: usize = 100; //Width (and height) in vertices
 		const SUBSQUARE_COUNT: usize = (WIDTH-1)*(WIDTH-1);
+
+		//Set up the simplex noise generator
+		let simplex_generator = {
+			let seed = (SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() * 1000) as u32;
+			println!("Seed used for terrain generation: {}", seed);
+			OpenSimplex::new().set_seed(seed)
+		};
 
 		let surface_normals;
 		unsafe {
@@ -343,20 +343,16 @@ fn main() {
 	const TREE_COUNT: usize = 500;
 	let (trees_vao, trees_geo_boundaries, trees_mats) = unsafe {
 		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
-
 		let attribute_offsets = [3, 3, 2];
 		let vao = create_vertex_array_object(&model_data.vertices, &model_data.indices, &attribute_offsets);
-
-		let model_matrices = model_matrices_from_terrain(TREE_COUNT, &mut halton_counter, &terrain);
-		
+		let model_matrices = model_matrices_from_terrain(TREE_COUNT, &mut halton_counter, &terrain);		
 		bind_instanced_matrices(vao, &attribute_offsets, &model_matrices, TREE_COUNT);
-
 		(vao, model_data.geo_boundaries, model_data.materials)
 	};
 
 	//Plant grass
 	const GRASS_COUNT: usize = 50000;
-	let grass_texture = unsafe { load_texture("textures/grass.jpg") };
+	let grass_texture = unsafe { load_texture("textures/billboardgrass.png") };
 
 	//Calculate the model_matrices for the grass billboards
 	let (grass_vao, grass_indices_count) = unsafe {
@@ -438,9 +434,6 @@ fn main() {
 
 	//Shadow map data
 	let shadow_map_resolution = 4096;
-	let projection_size = 25.0;
-	let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 5.0 * projection_size) *
-								glm::look_at(&glm::vec4_to_vec3(&(light_direction * 4.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 	let (shadow_buffer, shadow_map) = unsafe {
 		let mut framebuffer = 0;
 		gl::GenFramebuffers(1, &mut framebuffer);
@@ -777,6 +770,9 @@ fn main() {
 		let framebuffers = [vr_render_target, vr_render_target, 0];
 		let eyes = [Some(Eye::Left), Some(Eye::Right), None];
 		let sizes = [render_target_size, render_target_size, window_size];
+		let projection_size = 25.0;
+		let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 5.0 * projection_size) *
+									glm::look_at(&glm::vec4_to_vec3(&(light_direction * 4.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 		let render_context = RenderContext::new(&p_matrices, &v_matrices, &light_direction, shadow_map, &shadow_viewprojection, is_lighting);
 		unsafe {
 			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing

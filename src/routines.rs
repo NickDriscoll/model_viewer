@@ -1,5 +1,4 @@
 use openvr::{Eye, System, RenderModels, TrackedDevicePose};
-use noise::OpenSimplex;
 use crate::*;
 
 pub fn openvr_to_mat4(mat: [[f32; 4]; 3]) -> glm::TMat4<f32> {
