@@ -234,11 +234,12 @@ impl<'a> RenderContext<'a> {
 	}
 }
 
-pub struct Terrain<'a> {
-	surface_normals: &'a [glm::TVec3<f32>],
-	simplex_terrain: &'a OpenSimplex,
-	simplex_scale: f64,
-	terrain_scale: f32,
-	terrain_amplitude: f32,
-	terrain_width: usize
+pub struct Terrain {
+	pub surface_normals: Vec<glm::TVec3<f32>>,
+	pub simplex: OpenSimplex,
+	pub simplex_scale: f64,
+	pub scale: f32,
+	pub amplitude: f32,
+	pub width: usize,
+	pub subsquare_count: usize
 }

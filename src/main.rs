@@ -214,111 +214,126 @@ fn main() {
 		OpenSimplex::new().set_seed(seed)
 	};
 
-	//Create the large tessellated surface
-	const SIMPLEX_SCALE: f64 = 3.0;
-	const TERRAIN_SCALE: f32 = 200.0;
-	const TERRAIN_AMPLITUDE: f32 = TERRAIN_SCALE / 10.0;
-	const TERRAIN_WIDTH: usize = 100; //Width (and height) in vertices
-	const SUBSQUARE_COUNT: usize = (TERRAIN_WIDTH-1)*(TERRAIN_WIDTH-1);
-	let surface_normals;
-	unsafe {
-		const ELEMENT_STRIDE: usize = 8;
-		const TRIS: usize = (TERRAIN_WIDTH - 1) * (TERRAIN_WIDTH - 1) * 2;
+	//Create the terrain
+	let terrain = {
+		const SIMPLEX_SCALE: f64 = 3.0;
+		const SCALE: f32 = 200.0;
+		const AMPLITUDE: f32 = SCALE / 10.0;
+		const WIDTH: usize = 100; //Width (and height) in vertices
+		const SUBSQUARE_COUNT: usize = (WIDTH-1)*(WIDTH-1);
 
-		//Buffers to be filled
-		let mut vertices = vec![0.0; TERRAIN_WIDTH * TERRAIN_WIDTH * ELEMENT_STRIDE];
-		let mut indices: Vec<u16> = Vec::with_capacity(TRIS * 3);
-
-		//Calculate the positions and tex coords for each vertex
-		for i in (0..vertices.len()).step_by(ELEMENT_STRIDE) {
-			let xpos: usize = (i / ELEMENT_STRIDE) % TERRAIN_WIDTH;
-			let zpos: usize = (i / ELEMENT_STRIDE) / TERRAIN_WIDTH;
-
-			//Calculate vertex position
-			vertices[i] = (xpos as f32 / (TERRAIN_WIDTH - 1) as f32) as f32 - 0.5;
-			vertices[i + 2] = (zpos as f32 / (TERRAIN_WIDTH - 1) as f32) as f32 - 0.5;
-
-			//Retrieve the height from the simplex noise generator
-			vertices[i + 1] = simplex_generator.get([vertices[i] as f64 * SIMPLEX_SCALE, vertices[i + 2] as f64 * SIMPLEX_SCALE]) as f32;
-
-			//Calculate texture coordinates
-			vertices[i + 6] = TERRAIN_SCALE * (xpos as f32 / (TERRAIN_WIDTH - 1) as f32) as f32;
-			vertices[i + 7] = TERRAIN_SCALE * (zpos as f32 / (TERRAIN_WIDTH - 1) as f32) as f32;
-		}
-
-		//This loop executes once per subsquare on the plane, and pushes the indices of the two triangles that comprise said subsquare into the indices Vec
-		for i in 0..SUBSQUARE_COUNT {
-			let xpos = i % (TERRAIN_WIDTH-1);
-			let ypos = i / (TERRAIN_WIDTH-1);
-
-			//Push indices for bottom-left triangle
-			indices.push((xpos + ypos * TERRAIN_WIDTH) as u16);
-			indices.push((xpos + ypos * TERRAIN_WIDTH + TERRAIN_WIDTH) as u16);
-			indices.push((xpos + ypos * TERRAIN_WIDTH + 1) as u16);
-			
-			//Push indices for top-right triangle
-			indices.push((xpos + ypos * TERRAIN_WIDTH + 1) as u16);
-			indices.push((xpos + ypos * TERRAIN_WIDTH + TERRAIN_WIDTH) as u16);
-			indices.push((xpos + ypos * TERRAIN_WIDTH + TERRAIN_WIDTH + 1) as u16);
-		}
-
-		//The ith vertex will be shared by each surface in vertex_surface_map[i]
-		let mut vertex_surface_map = Vec::with_capacity(vertices.len() / ELEMENT_STRIDE);
-		for _ in 0..(vertices.len() / ELEMENT_STRIDE) {
-			vertex_surface_map.push(Vec::new());
-		}
-
-		//Calculate surface normals
-		surface_normals = {
-			const INDICES_PER_TRIANGLE: usize = 3;
-			let mut norms = Vec::with_capacity(indices.len() / INDICES_PER_TRIANGLE);
-
-			//This loop executes once per triangle in the mesh
-			for i in (0..indices.len()).step_by(INDICES_PER_TRIANGLE) {
-				let mut tri_verts = [glm::zero(); INDICES_PER_TRIANGLE];
-
-				for j in 0..INDICES_PER_TRIANGLE {
-					let index = indices[i + j];
-					tri_verts[j] = glm::vec4(vertices[index as usize * ELEMENT_STRIDE],
-											 vertices[index as usize * ELEMENT_STRIDE + 1],
-											 vertices[index as usize * ELEMENT_STRIDE + 2],
-											 1.0);
-
-					vertex_surface_map[index as usize].push(i / INDICES_PER_TRIANGLE);
+		let surface_normals;
+		unsafe {
+			const ELEMENT_STRIDE: usize = 8;
+			let tris: usize = SUBSQUARE_COUNT * 2;
+	
+			//Buffers to be filled
+			let mut vertices = vec![0.0; WIDTH * WIDTH * ELEMENT_STRIDE];
+			let mut indices: Vec<u16> = Vec::with_capacity(tris * 3);
+	
+			//Calculate the positions and tex coords for each vertex
+			for i in (0..vertices.len()).step_by(ELEMENT_STRIDE) {
+				let xpos: usize = (i / ELEMENT_STRIDE) % WIDTH;
+				let zpos: usize = (i / ELEMENT_STRIDE) / WIDTH;
+	
+				//Calculate vertex position
+				vertices[i] = (xpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
+				vertices[i + 2] = (zpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
+	
+				//Retrieve the height from the simplex noise generator
+				vertices[i + 1] = simplex_generator.get([vertices[i] as f64 * SIMPLEX_SCALE, vertices[i + 2] as f64 * SIMPLEX_SCALE]) as f32;
+	
+				//Calculate texture coordinates
+				vertices[i + 6] = SCALE * (xpos as f32 / (WIDTH - 1) as f32) as f32;
+				vertices[i + 7] = SCALE * (zpos as f32 / (WIDTH - 1) as f32) as f32;
+			}
+	
+			//This loop executes once per subsquare on the plane, and pushes the indices of the two triangles that comprise said subsquare into the indices Vec
+			for i in 0..SUBSQUARE_COUNT {
+				let xpos = i % (WIDTH-1);
+				let ypos = i / (WIDTH-1);
+	
+				//Push indices for bottom-left triangle
+				indices.push((xpos + ypos * WIDTH) as u16);
+				indices.push((xpos + ypos * WIDTH + WIDTH) as u16);
+				indices.push((xpos + ypos * WIDTH + 1) as u16);
+				
+				//Push indices for top-right triangle
+				indices.push((xpos + ypos * WIDTH + 1) as u16);
+				indices.push((xpos + ypos * WIDTH + WIDTH) as u16);
+				indices.push((xpos + ypos * WIDTH + WIDTH + 1) as u16);
+			}
+	
+			//The ith vertex will be shared by each surface in vertex_surface_map[i]
+			let mut vertex_surface_map = Vec::with_capacity(vertices.len() / ELEMENT_STRIDE);
+			for _ in 0..(vertices.len() / ELEMENT_STRIDE) {
+				vertex_surface_map.push(Vec::new());
+			}
+	
+			//Calculate surface normals
+			surface_normals = {
+				const INDICES_PER_TRIANGLE: usize = 3;
+				let mut norms = Vec::with_capacity(indices.len() / INDICES_PER_TRIANGLE);
+	
+				//This loop executes once per triangle in the mesh
+				for i in (0..indices.len()).step_by(INDICES_PER_TRIANGLE) {
+					let mut tri_verts = [glm::zero(); INDICES_PER_TRIANGLE];
+	
+					for j in 0..INDICES_PER_TRIANGLE {
+						let index = indices[i + j];
+						tri_verts[j] = glm::vec4(vertices[index as usize * ELEMENT_STRIDE],
+												 vertices[index as usize * ELEMENT_STRIDE + 1],
+												 vertices[index as usize * ELEMENT_STRIDE + 2],
+												 1.0);
+	
+						vertex_surface_map[index as usize].push(i / INDICES_PER_TRIANGLE);
+					}
+	
+					//Vectors representing two edges of the triangle
+					let u = glm::vec4_to_vec3(&(tri_verts[0] - tri_verts[1]));
+					let v = glm::vec4_to_vec3(&(tri_verts[1] - tri_verts[2]));
+	
+					//The cross product of two vectors on a plane must be normal to that plane
+					let norm = glm::normalize(&glm::cross::<f32, glm::U3>(&u, &v));
+					norms.push(norm);
 				}
-
-				//Vectors representing two edges of the triangle
-				let u = glm::vec4_to_vec3(&(tri_verts[0] - tri_verts[1]));
-				let v = glm::vec4_to_vec3(&(tri_verts[1] - tri_verts[2]));
-
-				//The cross product of two vectors on a plane must be normal to that plane
-				let norm = glm::normalize(&glm::cross::<f32, glm::U3>(&u, &v));
-				norms.push(norm);
+				norms
+			};
+	
+			//Calculate vertex normals
+			for i in (0..vertices.len()).step_by(ELEMENT_STRIDE) {
+				let vertex_number = i / ELEMENT_STRIDE;
+	
+				//Calculate the vertex normal itself by averaging the normal vector of each surface it's connected to, then normalizing the result
+				let mut averaged_vector: glm::TVec3<f32> = glm::zero();
+				for surface_id in vertex_surface_map[vertex_number].iter() {
+					averaged_vector += surface_normals[*surface_id];
+				}
+				averaged_vector = glm::normalize(&averaged_vector);
+	
+				//Write this vertex normal to the proper spot in the vertices array
+				for j in 0..3 {
+					vertices[i + 3 + j] = averaged_vector.data[j];
+				}
 			}
-			norms
+	
+			println!("The generated surface contains {} vertices", vertices.len() / ELEMENT_STRIDE);
+			let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
+			let model_matrix = glm::scaling(&glm::vec3(SCALE, AMPLITUDE, SCALE));
+			let mut mesh = Mesh::new(vao, model_matrix, load_texture("textures/grass.jpg"), vec![0, indices.len() as GLsizei], None);
+			mesh.specular_coefficient = 100.0;
+			meshes.insert(mesh)
 		};
-
-		//Calculate vertex normals
-		for i in (0..vertices.len()).step_by(ELEMENT_STRIDE) {
-			let vertex_number = i / ELEMENT_STRIDE;
-
-			//Calculate the vertex normal itself by averaging the normal vector of each surface it's connected to, then normalizing the result
-			let mut averaged_vector: glm::TVec3<f32> = glm::zero();
-			for surface_id in vertex_surface_map[vertex_number].iter() {
-				averaged_vector += surface_normals[*surface_id];
-			}
-			averaged_vector = glm::normalize(&averaged_vector);
-
-			//Write this vertex normal to the proper spot in the vertices array
-			for j in 0..3 {
-				vertices[i + 3 + j] = averaged_vector.data[j];
-			}
+	
+		Terrain {
+			surface_normals,
+			simplex: simplex_generator,
+			simplex_scale: SIMPLEX_SCALE,
+			scale: SCALE,
+			amplitude: AMPLITUDE,
+			width: WIDTH,
+			subsquare_count: SUBSQUARE_COUNT
 		}
-
-		println!("The generated surface contains {} vertices", vertices.len() / ELEMENT_STRIDE);
-		let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
-		let model_matrix = glm::scaling(&glm::vec3(TERRAIN_SCALE, TERRAIN_AMPLITUDE, TERRAIN_SCALE));
-		meshes.insert(Mesh::new(vao, model_matrix, load_texture("textures/grass.jpg"), vec![0, indices.len() as GLsizei], None))
 	};
 
 	//This counter is used for both trees and grass
@@ -332,7 +347,7 @@ fn main() {
 		let attribute_offsets = [3, 3, 2];
 		let vao = create_vertex_array_object(&model_data.vertices, &model_data.indices, &attribute_offsets);
 
-		let model_matrices = model_matrices_from_terrain(TREE_COUNT, &mut halton_counter, &surface_normals, &simplex_generator, SIMPLEX_SCALE, TERRAIN_SCALE, TERRAIN_AMPLITUDE, TERRAIN_WIDTH);
+		let model_matrices = model_matrices_from_terrain(TREE_COUNT, &mut halton_counter, &terrain);
 		
 		bind_instanced_matrices(vao, &attribute_offsets, &model_matrices, TREE_COUNT);
 
@@ -341,7 +356,7 @@ fn main() {
 
 	//Plant grass
 	const GRASS_COUNT: usize = 50000;
-	let grass_texture = unsafe { load_texture("textures/billboardgrass.png") };
+	let grass_texture = unsafe { load_texture("textures/grass.jpg") };
 
 	//Calculate the model_matrices for the grass billboards
 	let (grass_vao, grass_indices_count) = unsafe {
@@ -364,11 +379,8 @@ fn main() {
 		];
 		let attribute_offsets = [3, 3, 2];
 		let vao = create_vertex_array_object(&vertices, &indices, &attribute_offsets);
-
-		let model_matrices = model_matrices_from_terrain(GRASS_COUNT, &mut halton_counter, &surface_normals, &simplex_generator, SIMPLEX_SCALE, TERRAIN_SCALE, TERRAIN_AMPLITUDE, TERRAIN_WIDTH);
-
+		let model_matrices = model_matrices_from_terrain(GRASS_COUNT, &mut halton_counter, &terrain);
 		bind_instanced_matrices(vao, &attribute_offsets, &model_matrices, GRASS_COUNT);
-
 		(vao, indices.len() as i32)
 	};
 
@@ -401,7 +413,7 @@ fn main() {
 	//Play background music
 	let mut is_muted = false;
 	let bgm_path = "audio/dark_ruins.mp3";
-	let mut bgm_volume = 0.25;
+	let bgm_volume = 0.25;
 	let mut bgm_sink = match rodio::default_output_device() {
 		Some(device) => {
 			let sink = rodio::Sink::new(&device);
@@ -548,7 +560,7 @@ fn main() {
 						Key::I => { camera.fov = 90.0; }
 						Key::G => { is_lighting = !is_lighting; }
 						Key::LeftShift => { camera.velocity *= 15.0; }
-						Key::L => {		
+						Key::L => {
 							handle_result(order_tx.send(WorkOrder::Model));
 						}
 						Key::M => {
@@ -694,7 +706,7 @@ fn main() {
 				tracking_position += movement_vector;
 
 				if !is_flying {
-					tracking_position.y = get_terrain_height(tracking_position.x, tracking_position.z, &simplex_generator, TERRAIN_AMPLITUDE, TERRAIN_SCALE, SIMPLEX_SCALE);
+					tracking_position.y = get_terrain_height(tracking_position.x, tracking_position.z, &terrain);
 				}
 			}
 			tracking_to_world = glm::translation(&glm::vec4_to_vec3(&tracking_position));

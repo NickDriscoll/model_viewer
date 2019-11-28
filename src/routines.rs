@@ -244,8 +244,8 @@ pub fn update_openvr_mesh(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevicePo
 	}
 }
 
-pub fn get_terrain_height(xpos: f32, zpos: f32, simplex_generator: &OpenSimplex, amplitude: f32, terrain_scale: f32, simplex_scale: f64) -> f32 {
-	amplitude * simplex_generator.get([xpos as f64 * simplex_scale / terrain_scale as f64, zpos as f64 * simplex_scale / terrain_scale as f64]) as f32
+pub fn get_terrain_height(xpos: f32, zpos: f32, terrain: &Terrain) -> f32 {
+	terrain.amplitude * terrain.simplex.get([xpos as f64 * terrain.simplex_scale / terrain.scale as f64, zpos as f64 * terrain.simplex_scale / terrain.scale as f64]) as f32
 }
 
 pub fn halton_sequence(index: f32, base: f32) -> f32 {
@@ -268,34 +268,34 @@ pub fn handle_result<T, E: std::fmt::Display>(result: Result<T, E>) {
 	}
 }
 
-//Returns an array of count 4x4 matrices tightly packed in an array in column-major format
-pub fn model_matrices_from_terrain(count: usize, halton_counter: &mut usize, surface_normals: &[glm::TVec3<f32>], simplex_terrain: &OpenSimplex, simplex_scale: f64, terrain_scale: f32, terrain_amplitude: f32, terrain_width: usize) -> Vec<f32> {
-	let mut model_matrices = vec![0.0f32; count * 16];
+//Returns an array of n 4x4 matrices tightly packed in an array in column-major format
+pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain: &Terrain) -> Vec<f32> {
+	let mut model_matrices = vec![0.0; n * 16];
 
 	//Populate the buffer
-	for i in 0..count {
-		let xpos = terrain_scale * (halton_sequence(*halton_counter as f32, 2.0) - 0.5);
-		let zpos = terrain_scale * (halton_sequence(*halton_counter as f32, 3.0) - 0.5);
+	for i in 0..n {
+		let xpos = terrain.scale * (halton_sequence(*halton_counter as f32, 2.0) - 0.5);
+		let zpos = terrain.scale * (halton_sequence(*halton_counter as f32, 3.0) - 0.5);
 		*halton_counter += 1;
 			
 		//Get height from simplex noise generator
-		let ypos = get_terrain_height(xpos, zpos, simplex_terrain, terrain_amplitude, terrain_scale, simplex_scale);
+		let ypos = get_terrain_height(xpos, zpos, terrain);
 
 		//Determine which floor triangle this tree is on
-		let (moved_xpos, moved_zpos) = (xpos + (terrain_scale / 2.0), zpos + (terrain_scale / 2.0));			
-		let (subsquare_x, subsquare_z) = (f32::floor(moved_xpos * ((terrain_width - 1) as f32 / terrain_scale)) as usize,
-										  f32::floor(moved_zpos * ((terrain_width - 1) as f32 / terrain_scale)) as usize);
-		let subsquare_index = subsquare_x + subsquare_z * (terrain_width - 1);
-		let (norm_x, norm_z) = (moved_xpos / (terrain_width - 1) as f32 + subsquare_x as f32 * terrain_scale / (terrain_width - 1) as f32,
-					  			moved_zpos / (terrain_width - 1) as f32 + subsquare_z as f32 * terrain_scale / (terrain_width - 1) as f32);
+		let (moved_xpos, moved_zpos) = (xpos + (terrain.scale / 2.0), zpos + (terrain.scale / 2.0));
+		let (subsquare_x, subsquare_z) = (f32::floor(moved_xpos * ((terrain.width - 1) as f32 / terrain.scale)) as usize,
+										  f32::floor(moved_zpos * ((terrain.width - 1) as f32 / terrain.scale)) as usize);
+		let subsquare_index = subsquare_x + subsquare_z * (terrain.width - 1);
+		let (norm_x, norm_z) = (moved_xpos / (terrain.width - 1) as f32 + subsquare_x as f32 * terrain.scale / (terrain.width - 1) as f32,
+					  			moved_zpos / (terrain.width - 1) as f32 + subsquare_z as f32 * terrain.scale / (terrain.width - 1) as f32);
 		let normal_index = if norm_x + norm_z <= 1.0 {
 			subsquare_index * 2
 		} else {
 			subsquare_index * 2 + 1
 		};
 
-		let rotation_vector = glm::cross::<f32, glm::U3>(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]);
-		let rotation_magnitude = f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &surface_normals[normal_index]));
+		let rotation_vector = glm::cross::<f32, glm::U3>(&glm::vec3(0.0, 1.0, 0.0), &terrain.surface_normals[normal_index]);
+		let rotation_magnitude = f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &terrain.surface_normals[normal_index]));
 
 		//Note: Multiplying rotation angle by 0.2 because that looks good enough and I can't tell how my math is wrong
 		let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(rotation_magnitude*0.2, &rotation_vector);
