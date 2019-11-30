@@ -38,8 +38,8 @@ impl Mesh {
 }
 
 pub struct Camera {	
-	pub position: glm::TVec3<f32>,	//In world space
-	pub velocity: glm::TVec3<f32>,	//In view space
+	pub position: glm::TVec4<f32>,	//In world space
+	pub velocity: glm::TVec4<f32>,	//In view space
 	pub yaw: f32, 					//In radians
 	pub pitch: f32, 				//In radians
 	pub fov: f32,					//In degrees
@@ -49,10 +49,10 @@ pub struct Camera {
 }
 
 impl Camera {
-	pub fn new(position: glm::TVec3<f32>) -> Self {
+	pub fn new(pos: glm::TVec3<f32>) -> Self {
 		Camera {
-			position,
-			velocity: glm::vec3(0.0, 0.0, 0.0),
+			position: glm::vec4(pos.x, pos.y, pos.z, 1.0),
+			velocity: glm::vec4(0.0, 0.0, 0.0, 0.0),
 			yaw: 0.0,
 			pitch: 0.0,
 			fov: 90.0,
@@ -62,10 +62,10 @@ impl Camera {
 		}
 	}
 
-	pub fn freecam_matrix(&self) -> glm::TMat4<f32> {
+	pub fn view_matrix(&self) -> glm::TMat4<f32> {
 		glm::rotation(self.pitch, &glm::vec3(1.0, 0.0, 0.0)) *
 		glm::rotation(self.yaw, &glm::vec3(0.0, 1.0, 0.0)) *
-		glm::translation(&self.position)
+		glm::translation(&(-glm::vec4_to_vec3(&self.position)))		//We negate the position here so that the idea of the camera's position is intuitive
 	}
 }
 
@@ -185,7 +185,7 @@ impl<T> OptionVec<T> {
 		self.optionvec.iter()
 	}
 
-	pub fn iter_mut(&mut self) -> IterMut<Option<T>> {
+	pub fn _iter_mut(&mut self) -> IterMut<Option<T>> {
 		self.optionvec.iter_mut()
 	}
 }

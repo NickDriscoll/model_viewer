@@ -53,7 +53,13 @@ pub fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Op
 			
 			let mesh = unsafe {
 				let vao = create_vertex_array_object(&vertices, model.indices(), &[3, 3, 2]);
-				Mesh::new(vao, glm::identity(), load_texture_from_data((vec![25, 140, 15], 1, 1, gl::RGB)), vec![0, model.indices().len() as GLsizei], None)
+				let tex_params = [
+					(gl::TEXTURE_WRAP_S, gl::REPEAT),
+					(gl::TEXTURE_WRAP_T, gl::REPEAT),
+					(gl::TEXTURE_MIN_FILTER, gl::LINEAR),
+					(gl::TEXTURE_MAG_FILTER, gl::LINEAR)
+				];
+				Mesh::new(vao, glm::identity(), load_texture_from_data((vec![25, 140, 15], 1, 1, gl::RGB), &tex_params), vec![0, model.indices().len() as GLsizei], None)
 			};
 			result = Some(mesh);
 		}
@@ -308,4 +314,16 @@ pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain
 	}
 
 	model_matrices
+}
+
+pub fn min_and_max(array: &[f32]) -> (f32, f32) {
+	let mut min = array[0];
+	let mut max = array[0];
+
+	for i in 1..array.len() {
+		min = f32::min(min, array[i]);
+		max = f32::max(max, array[i]);
+	}
+
+	(min, max)
 }

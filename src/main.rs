@@ -320,7 +320,16 @@ fn main() {
 			println!("The generated surface contains {} vertices", vertices.len() / ELEMENT_STRIDE);
 			let vao = create_vertex_array_object(&vertices, &indices, &[3, 3, 2]);
 			let model_matrix = glm::scaling(&glm::vec3(SCALE, AMPLITUDE, SCALE));
-			let mut mesh = Mesh::new(vao, model_matrix, load_texture("textures/grass.jpg"), vec![0, indices.len() as GLsizei], None);
+			let tex = {
+				let tex_params = [
+					(gl::TEXTURE_WRAP_S, gl::REPEAT),
+					(gl::TEXTURE_WRAP_T, gl::REPEAT),
+					(gl::TEXTURE_MIN_FILTER, gl::LINEAR),
+					(gl::TEXTURE_MAG_FILTER, gl::LINEAR)
+				];
+				load_texture("textures/grass.jpg", &tex_params)
+			};
+			let mut mesh = Mesh::new(vao, model_matrix, tex, vec![0, indices.len() as GLsizei], None);
 			mesh.specular_coefficient = 100.0;
 			meshes.insert(mesh)
 		};
@@ -340,7 +349,8 @@ fn main() {
 	let mut halton_counter = 1;
 
 	//Plant trees
-	const TREE_COUNT: usize = 500;
+	//const TREE_COUNT: usize = 500;
+	const TREE_COUNT: usize = 50;
 	let (trees_vao, trees_geo_boundaries, trees_mats) = unsafe {
 		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
 		let attribute_offsets = [3, 3, 2];
@@ -352,7 +362,17 @@ fn main() {
 
 	//Plant grass
 	const GRASS_COUNT: usize = 50000;
-	let grass_texture = unsafe { load_texture("textures/billboardgrass.png") };
+
+	let grass_texture = {
+		let tex_params = [
+			(gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE),
+			(gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE),
+			(gl::TEXTURE_MIN_FILTER, gl::LINEAR),
+			(gl::TEXTURE_MAG_FILTER, gl::LINEAR)
+		];
+		unsafe { load_texture("textures/billboardgrass.png", &tex_params) }
+	};
+
 	let (grass_vao, grass_indices_count) = unsafe {
 		let vertices = [
 			//Position				Normals						Tex coords
@@ -379,7 +399,15 @@ fn main() {
 	};
 
 	//Variables to keep track of the loaded models
-	let model_texture = unsafe { load_texture("textures/checkerboard.jpg") };
+	let model_texture = {		
+		let tex_params = [
+			(gl::TEXTURE_WRAP_S, gl::REPEAT),
+			(gl::TEXTURE_WRAP_T, gl::REPEAT),
+			(gl::TEXTURE_MIN_FILTER, gl::LINEAR),
+			(gl::TEXTURE_MAG_FILTER, gl::LINEAR)
+		];
+		unsafe { load_texture("textures/checkerboard.jpg", &tex_params) }
+	};
 	let model_bounding_sphere_radius = 0.20;
 	let mut bound_controller_indices = Vec::new();
 	let mut model_indices = Vec::new();
@@ -392,7 +420,7 @@ fn main() {
 	let mut hmd_mesh_index = None;
 
 	//Camera state
-	let mut camera = Camera::new(glm::vec3(0.0, -1.0, -1.0));
+	let mut camera = Camera::new(glm::vec3(0.0, 1.0, 0.0));
 
 	let mut last_rbutton_state = window.get_mouse_button(MouseButton::Button2);
 
@@ -431,7 +459,7 @@ fn main() {
 	let light_direction = glm::normalize(&glm::vec4(0.8, 1.0, 1.0, 0.0));
 
 	//Shadow map data
-	let shadow_map_resolution = 4096;
+	let shadow_map_resolution = 8192;
 	let (shadow_buffer, shadow_map) = unsafe {
 		let mut framebuffer = 0;
 		gl::GenFramebuffers(1, &mut framebuffer);
@@ -456,10 +484,12 @@ fn main() {
 		(framebuffer, depth_texture)
 	};
 
+	let mut elapsed_time = 0.0;
+
 	//Main loop
 	while !window.should_close() {
 		//Calculate time since the last frame started
-		let seconds_elapsed = {
+		let time_delta = {
 			let frame_instant = Instant::now();
 			let dur = frame_instant.duration_since(last_frame_instant);
 			last_frame_instant = frame_instant;
@@ -467,6 +497,7 @@ fn main() {
 			//There's an underlying assumption here that frames will always take less than one second to complete
 			(dur.subsec_millis() as f32 / 1000.0) + (dur.subsec_micros() as f32 / 1_000_000.0)
 		};
+		elapsed_time += time_delta;
 
 		//Loop music
 		if let Some(sink) = &bgm_sink {
@@ -544,10 +575,10 @@ fn main() {
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
 						Key::Escape => { window.set_should_close(true); }
-						Key::W => { camera.velocity = glm::vec3(0.0, 0.0, camera.speed); }
-						Key::S => { camera.velocity = glm::vec3(0.0, 0.0, -camera.speed); }
-						Key::A => { camera.velocity = glm::vec3(camera.speed, 0.0, 0.0); }
-						Key::D => { camera.velocity = glm::vec3(-camera.speed, 0.0, 0.0); }
+						Key::W => { camera.velocity = glm::vec4(0.0, 0.0, -camera.speed, 0.0); }
+						Key::S => { camera.velocity = glm::vec4(0.0, 0.0, camera.speed, 0.0); }
+						Key::A => { camera.velocity = glm::vec4(-camera.speed, 0.0, 0.0, 0.0); }
+						Key::D => { camera.velocity = glm::vec4(camera.speed, 0.0, 0.0, 0.0); }
 						Key::I => { camera.fov = 90.0; }
 						Key::G => { is_lighting = !is_lighting; }
 						Key::LeftShift => { camera.velocity *= 15.0; }
@@ -720,7 +751,7 @@ fn main() {
 					let companion_v_mat = if camera.attached_to_hmd { 
 						glm::affine_inverse(tracking_to_world * hmd_to_tracking)
 					} else {
-						camera.freecam_matrix()
+						camera.view_matrix()
 					};
 
 					//Need to return inverse(tracking_to_world * hmd_to_tracking * eye_to_hmd)
@@ -728,7 +759,7 @@ fn main() {
 					 glm::affine_inverse(tracking_to_world * hmd_to_tracking * right_eye_to_hmd),
 					 companion_v_mat]
 			}
-			_ => { [glm::identity(), glm::identity(), camera.freecam_matrix()] }
+			_ => { [glm::identity(), glm::identity(), camera.view_matrix()] }
 		};
 
 		//Get projection matrices
@@ -739,9 +770,9 @@ fn main() {
 		};
 
 		//Update the camera
-		//The process here is, for the camera's velocity vector: View Space -> World Space -> scale by seconds_elapsed -> Make into vec4
-		camera.position += glm::vec4_to_vec3(&(seconds_elapsed * (glm::affine_inverse(v_matrices[2]) * glm::vec3_to_vec4(&camera.velocity))));
-		camera.fov += camera.fov_delta * seconds_elapsed;
+		//The process here is, for the camera's velocity vector: View Space -> World Space -> scale by seconds_elapsed
+		camera.position += time_delta * glm::affine_inverse(v_matrices[2]) * camera.velocity;
+		camera.fov += camera.fov_delta * time_delta;
 		
 		//Update the OpenVR meshes
 		if let Some(poses) = render_poses {
@@ -765,12 +796,58 @@ fn main() {
 		}
 
 		//Rendering code
+
+		//Set up data for each render pass
 		let framebuffers = [vr_render_target, vr_render_target, 0];
 		let eyes = [Some(Eye::Left), Some(Eye::Right), None];
 		let sizes = [render_target_size, render_target_size, window_size];
+		
+		//Calculate the eight corners of the shadow projection volume
+		let shadow_view = glm::look_at(&glm::vec4_to_vec3(&light_direction), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
+		let shadow_viewprojection = {
+			let fovy = f32::to_radians(camera.fov);
+			let fovx = fovy * aspect_ratio;
+			let mut points_view = [glm::zero(); 8];
+	
+			let near_distance = NEAR_Z;
+			let far_distance = NEAR_Z + 1.0;
+
+			let x1 = near_distance * f32::tan(fovx / 2.0);
+			let y1 = near_distance * f32::tan(fovy / 2.0);
+			let x2 = far_distance * f32::tan(fovx / 2.0);
+			let y2 = far_distance * f32::tan(fovy / 2.0);
+			points_view[0] = glm::vec4(-x1, -y1, near_distance, 1.0);
+			points_view[1] = glm::vec4(x1, -y1, near_distance, 1.0);
+			points_view[2] = glm::vec4(-x1, y1, near_distance, 1.0);
+			points_view[3] = glm::vec4(x1, y1, near_distance, 1.0);
+			points_view[4] = glm::vec4(-x2, -y2, far_distance, 1.0);
+			points_view[5] = glm::vec4(x2, -y2, far_distance, 1.0);
+			points_view[6] = glm::vec4(-x2, y2, far_distance, 1.0);
+			points_view[7] = glm::vec4(x2, y2, far_distance, 1.0);
+	
+			let mut x_arr = [0.0; 8];
+			let mut y_arr = [0.0; 8];
+			let mut z_arr = [0.0; 8];
+			for i in 0..points_view.len() {
+				let transformed_point = shadow_view * points_view[i];
+				x_arr[i] = transformed_point.x;
+				y_arr[i] = transformed_point.y;
+				z_arr[i] = transformed_point.z;
+			}
+	
+			let (left, right) = min_and_max(&x_arr);
+			let (bottom, top) = min_and_max(&y_arr);
+			let (near, far) = min_and_max(&z_arr);
+	
+			glm::ortho(left, right, bottom, top, near, far) * shadow_view
+		};
+
+		/*
 		let projection_size = 25.0;
 		let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 5.0 * projection_size) *
-									glm::look_at(&glm::vec4_to_vec3(&(light_direction * 4.0)), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
+									shadow_view;
+		*/
+
 		let render_context = RenderContext::new(&p_matrices, &v_matrices, &light_direction, shadow_map, &shadow_viewprojection, is_lighting);
 		unsafe {
 			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
@@ -787,6 +864,7 @@ fn main() {
 			gl::Clear(gl::DEPTH_BUFFER_BIT);
 
 			//Render meshes into shadow map
+			gl::Enable(gl::CULL_FACE);
 			gl::UseProgram(shadow_map_shader);
 			gl::Uniform1i(uniform_location(shadow_map_shader, "using_texture"), 0);
 			for option_mesh in meshes.iter() {
@@ -812,6 +890,7 @@ fn main() {
 			}
 
 			//Render instanced grass into shadow map
+			gl::Disable(gl::CULL_FACE);
 			gl::BindVertexArray(grass_vao);
 			gl::Uniform1i(uniform_location(instanced_shadow_map_shader, "using_texture"), 1);
 			gl::ActiveTexture(gl::TEXTURE0);
@@ -892,7 +971,6 @@ fn main() {
 
 	//Shut down the worker thread
 	handle_result(order_tx.send(WorkOrder::Quit));
-
 	worker_handle.join().unwrap();
 
 	//Shut down OpenVR

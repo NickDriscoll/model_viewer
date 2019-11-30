@@ -80,6 +80,6 @@ void main() {
 	} else {
 		result = BRIGHTNESS * attenuation * tex_color.rgb * (ambient_light + diffuse_light + specular_light);
 	}
-	
+
 	frag_color = vec4(result, 1.0);
 }

@@ -145,8 +145,8 @@ pub unsafe fn create_vertex_array_object(vertices: &[f32], indices: &[u16], attr
 	vao
 }
 
-pub unsafe fn load_texture(path: &str) -> GLuint {
-	load_texture_from_data(image_data_from_path(path))
+pub unsafe fn load_texture(path: &str, parameters: &[(GLenum, GLenum)]) -> GLuint {
+	load_texture_from_data(image_data_from_path(path), parameters)
 }
 
 pub fn image_data_from_path(path: &str) -> ImageData {
@@ -172,14 +172,22 @@ pub fn image_data_from_path(path: &str) -> ImageData {
 	}
 }
 
-pub unsafe fn load_texture_from_data(image_data: ImageData) -> GLuint {
+pub unsafe fn load_texture_from_data(image_data: ImageData, parameters: &[(GLenum, GLenum)]) -> GLuint {
 	let mut tex = 0;
 	gl::GenTextures(1, &mut tex);
 	gl::BindTexture(gl::TEXTURE_2D, tex);
-	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
-	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
+
+	
+	for param in parameters {
+		gl::TexParameteri(gl::TEXTURE_2D, param.0, param.1 as GLint);
+	}
+
+	/*
+	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
+	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
 	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
 	gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+	*/
 
 	gl::TexImage2D(gl::TEXTURE_2D,
 				   0,
