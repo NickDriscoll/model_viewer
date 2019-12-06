@@ -181,16 +181,17 @@ fn main() {
 		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
 		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
 		
-		const PATHS: [&str; 6] = ["textures/skybox/totality_rt.tga",
-								  "textures/skybox/totality_lf.tga",
-								  "textures/skybox/totality_up.tga",
-								  "textures/skybox/totality_dn.tga",
-								  "textures/skybox/totality_bk.tga",
-								  "textures/skybox/totality_ft.tga"];
+		let name = "siege";
+		let paths = [&format!("textures/skybox/{}_rt.tga", name),
+					 &format!("textures/skybox/{}_lf.tga", name),
+					 &format!("textures/skybox/{}_up.tga", name),
+					 &format!("textures/skybox/{}_dn.tga", name),
+					 &format!("textures/skybox/{}_bk.tga", name),
+					 &format!("textures/skybox/{}_ft.tga", name)];
 
 		//Place each piece of the skybox on the correct face
 		for i in 0..6 {
-			let image_data = image_data_from_path(PATHS[i]);
+			let image_data = image_data_from_path(paths[i]);
 			gl::TexImage2D(gl::TEXTURE_CUBE_MAP_POSITIVE_X + i as u32,
 						   0,
 						   image_data.3 as i32,
@@ -459,7 +460,7 @@ fn main() {
 	let light_direction = glm::normalize(&glm::vec4(0.8, 1.0, 1.0, 0.0));
 
 	//Shadow map data
-	let shadow_map_resolution = 8192;
+	let shadow_map_resolution = 4096;
 	let (shadow_buffer, shadow_map) = unsafe {
 		let mut framebuffer = 0;
 		gl::GenFramebuffers(1, &mut framebuffer);
@@ -829,7 +830,7 @@ fn main() {
 			let mut y_arr = [0.0; 8];
 			let mut z_arr = [0.0; 8];
 			for i in 0..points_view.len() {
-				let transformed_point = shadow_view * points_view[i];
+				let transformed_point = shadow_view * glm::affine_inverse(v_matrices[2]) * points_view[i];
 				x_arr[i] = transformed_point.x;
 				y_arr[i] = transformed_point.y;
 				z_arr[i] = transformed_point.z;
@@ -842,11 +843,11 @@ fn main() {
 			glm::ortho(left, right, bottom, top, near, far) * shadow_view
 		};
 
-		/*
+		
 		let projection_size = 25.0;
 		let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 5.0 * projection_size) *
 									shadow_view;
-		*/
+		
 
 		let render_context = RenderContext::new(&p_matrices, &v_matrices, &light_direction, shadow_map, &shadow_viewprojection, is_lighting);
 		unsafe {
