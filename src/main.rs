@@ -350,8 +350,7 @@ fn main() {
 	let mut halton_counter = 1;
 
 	//Plant trees
-	//const TREE_COUNT: usize = 500;
-	const TREE_COUNT: usize = 50;
+	const TREE_COUNT: usize = 500;
 	let (trees_vao, trees_geo_boundaries, trees_mats) = unsafe {
 		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
 		let attribute_offsets = [3, 3, 2];
@@ -694,11 +693,10 @@ fn main() {
 					}
 				}
 
-				let scale = 0.05;		
 				let yvel = if i == 0 {
-					scale * glm::vec4(0.0, -glm::clamp_scalar(state.axis[1].x * 4.0, 0.0, 1.0), 0.0, 0.0)
+					glm::vec4(0.0, -glm::clamp_scalar(state.axis[1].x * 4.0, 0.0, 1.0), 0.0, 0.0)
 				} else {
-					scale * glm::vec4(0.0, glm::clamp_scalar(state.axis[1].x * 4.0, 0.0, 1.0), 0.0, 0.0)
+					glm::vec4(0.0, glm::clamp_scalar(state.axis[1].x * 4.0, 0.0, 1.0), 0.0, 0.0)
 				};
 				
 				let mut movement_vector = yvel;
@@ -713,7 +711,7 @@ fn main() {
 						let len = glm::length(&temp);
 						temp.y = 0.0;
 						temp *= len / glm::length(&temp);
-						movement_vector += scale * temp;
+						movement_vector += temp;
 					}
 
 					if controllers.holding_button(i, button_id::STEAM_VR_TOUCHPAD) {
@@ -726,7 +724,7 @@ fn main() {
 					is_flying = !is_flying;
 				}
 				
-				tracking_position += movement_vector;
+				tracking_position += movement_vector * time_delta;
 
 				if !is_flying {
 					tracking_position.y = get_terrain_height(tracking_position.x, tracking_position.z, &terrain);
