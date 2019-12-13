@@ -194,13 +194,13 @@ fn main() {
 			let image_data = image_data_from_path(paths[i]);
 			gl::TexImage2D(gl::TEXTURE_CUBE_MAP_POSITIVE_X + i as u32,
 						   0,
-						   image_data.3 as i32,
-						   image_data.1 as i32,
-						   image_data.2 as i32,
+						   image_data.format as i32,
+						   image_data.width as i32,
+						   image_data.height as i32,
 						   0,
-						   image_data.3,
+						   image_data.format,
 						   gl::UNSIGNED_BYTE,
-				  		   &image_data.0[0] as *const u8 as *const c_void);
+				  		   &image_data.data[0] as *const u8 as *const c_void);
 		}
 		cubemap
 	};

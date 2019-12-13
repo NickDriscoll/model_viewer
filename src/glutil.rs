@@ -10,7 +10,6 @@ use image::DynamicImage;
 use openvr::{Compositor, Eye};
 use crate::*;
 
-pub type ImageData = (Vec<u8>, i32, i32, GLenum); //(data, width, height, format)
 const INFO_LOG_SIZE: usize = 2048;
 
 pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
@@ -155,13 +154,23 @@ pub fn image_data_from_path(path: &str) -> ImageData {
 			let width = im.width();
 			let height = im.height();
 			let raw = im.into_raw();
-			(raw, width as GLint, height as GLint, gl::RGB)
+			ImageData {
+				data: raw,
+				width: width as GLint,
+				height: height as GLint,
+				format: gl::RGB
+			}
 		}
 		Ok(DynamicImage::ImageRgba8(im)) => {
 			let width = im.width();
 			let height = im.height();
 			let raw = im.into_raw();
-			(raw, width as GLint, height as GLint, gl::RGBA)
+			ImageData {
+				data: raw,
+				width: width as GLint,
+				height: height as GLint,
+				format: gl::RGBA
+			}
 		}
 		Ok(_) => {
 			panic!("{} is of unsupported image type", path);
@@ -182,13 +191,13 @@ pub unsafe fn load_texture_from_data(image_data: ImageData, parameters: &[(GLenu
 
 	gl::TexImage2D(gl::TEXTURE_2D,
 				   0,
-				   image_data.3 as i32,
-				   image_data.1,
-				   image_data.2,
+				   image_data.format as i32,
+				   image_data.width,
+				   image_data.height,
 				   0,
-				   image_data.3,
+				   image_data.format,
 				   gl::UNSIGNED_BYTE,
-				   &image_data.0[0] as *const u8 as *const c_void);
+				   &image_data.data[0] as *const u8 as *const c_void);
 	gl::GenerateMipmap(gl::TEXTURE_2D);
 	tex
 }

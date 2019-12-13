@@ -59,7 +59,13 @@ pub fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Op
 					(gl::TEXTURE_MIN_FILTER, gl::LINEAR),
 					(gl::TEXTURE_MAG_FILTER, gl::LINEAR)
 				];
-				Mesh::new(vao, glm::identity(), load_texture_from_data((vec![128, 128, 128], 1, 1, gl::RGB), &tex_params), vec![0, model.indices().len() as GLsizei], None)
+				let image_data = ImageData {
+					data: vec![128, 128, 128],
+					width: 1,
+					height: 1,
+					format: gl::RGB
+				};
+				Mesh::new(vao, glm::identity(), load_texture_from_data(image_data, &tex_params), vec![0, model.indices().len() as GLsizei], None)
 			};
 			result = Some(mesh);
 		}
