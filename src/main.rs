@@ -86,11 +86,11 @@ fn main() {
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
 	//Compile shaders
-	let model_shader = unsafe { compile_program_from_files("shaders/model_vertex.glsl", "shaders/model_fragment.glsl") };
-	let instanced_model_shader = unsafe { compile_program_from_files("shaders/instanced_vertex.glsl", "shaders/model_fragment.glsl") };
-	let skybox_shader = unsafe { compile_program_from_files("shaders/skybox_vertex.glsl", "shaders/skybox_fragment.glsl") };
-	let shadow_map_shader = unsafe { compile_program_from_files("shaders/shadow_vertex.glsl", "shaders/shadow_fragment.glsl") };
-	let instanced_shadow_map_shader = unsafe { compile_program_from_files("shaders/instanced_shadow_vertex.glsl", "shaders/shadow_fragment.glsl") };
+	let model_shader = unsafe { compile_program_from_files("model_vertex.glsl", "model_fragment.glsl") };
+	let instanced_model_shader = unsafe { compile_program_from_files("instanced_vertex.glsl", "model_fragment.glsl") };
+	let skybox_shader = unsafe { compile_program_from_files("skybox_vertex.glsl", "skybox_fragment.glsl") };
+	let shadow_map_shader = unsafe { compile_program_from_files("shadow_vertex.glsl", "shadow_fragment.glsl") };
+	let instanced_shadow_map_shader = unsafe { compile_program_from_files("instanced_shadow_vertex.glsl", "shadow_fragment.glsl") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -947,7 +947,7 @@ fn main() {
 				//Don't draw the skybox in wireframe mode
 				if !is_wireframe {
 					//Compute the view-projection matrix for the skybox (the conversion functions are just there to nullify the translation component of the view matrix)
-					//The skybox vertices should obviously be rotated along with the camera, but shouldn't be translated in order to maintain the illusion
+					//The skybox vertices should obviously be rotated along with the camera, but they shouldn't be translated in order to maintain the illusion
 					//that the sky is infinitely far away
 					let skybox_view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
 

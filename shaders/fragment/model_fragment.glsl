@@ -22,7 +22,7 @@ uniform bool using_material;
 uniform bool lighting;
 
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
-const float AMBIENT_STRENGTH = 0.05;
+const float AMBIENT_STRENGTH = 0.065;
 const float ATTENUATION_CONSTANT = 1.0;
 const float BRIGHTNESS = 0.75;
 

@@ -45,9 +45,10 @@ pub unsafe fn compile_shader_from_file(shadertype: GLenum, path: &str) -> GLuint
 	compile_shader(shadertype, &source)
 }
 
-pub unsafe fn compile_program_from_files(vertex_path: &str, fragment_path: &str) -> GLuint {
-	let vertexshader = compile_shader_from_file(gl::VERTEX_SHADER, vertex_path);
-	let fragmentshader = compile_shader_from_file(gl::FRAGMENT_SHADER, fragment_path);
+const SHADER_PATH: &str = "shaders";
+pub unsafe fn compile_program_from_files(vertex_name: &str, fragment_name: &str) -> GLuint {
+	let vertexshader = compile_shader_from_file(gl::VERTEX_SHADER, &format!("{}/vertex/{}", SHADER_PATH, vertex_name));
+	let fragmentshader = compile_shader_from_file(gl::FRAGMENT_SHADER, &format!("{}/fragment/{}", SHADER_PATH, fragment_name));
 
 	//Link shaders
 	let shader_progam = gl::CreateProgram();

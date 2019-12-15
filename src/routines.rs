@@ -249,9 +249,8 @@ pub fn uniform_scale(scale: f32) -> glm::TMat4<f32> {
 }
 
 pub fn update_openvr_mesh(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevicePose], tracking_to_world: &glm::TMat4<f32>, device_index: usize, mesh_index: Option<usize>) {
-	let device_to_absolute = openvr_to_mat4(*poses[device_index].device_to_absolute_tracking());
 	if let Some(mesh) = meshes.get_element(mesh_index) {
-		mesh.model_matrix = tracking_to_world * device_to_absolute;
+		mesh.model_matrix = tracking_to_world * openvr_to_mat4(*poses[device_index].device_to_absolute_tracking());
 	}
 }
 
