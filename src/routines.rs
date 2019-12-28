@@ -63,7 +63,8 @@ pub fn load_openvr_mesh(openvr_system: &Option<System>, openvr_rendermodels: &Op
 					data: vec![128, 128, 128],
 					width: 1,
 					height: 1,
-					format: gl::RGB
+					format: gl::RGB,
+					internal_format: gl::RGB
 				};
 				Mesh::new(vao, glm::identity(), load_texture_from_data(image_data, &tex_params), vec![0, model.indices().len() as GLsizei], None)
 			};
@@ -278,7 +279,7 @@ pub fn handle_result<T, E: std::fmt::Display>(result: Result<T, E>) {
 	}
 }
 
-//Returns an array of n 4x4 matrices tightly packed in an array in column-major format
+//Returns an array of n 4x4 matrices tightly packed in a Vec in column-major format
 pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain: &Terrain) -> Vec<f32> {
 	let mut model_matrices = vec![0.0; n * 16];
 
@@ -319,16 +320,4 @@ pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain
 	}
 
 	model_matrices
-}
-
-pub fn min_and_max(array: &[f32]) -> (f32, f32) {
-	let mut min = array[0];
-	let mut max = array[0];
-
-	for i in 1..array.len() {
-		min = f32::min(min, array[i]);
-		max = f32::max(max, array[i]);
-	}
-
-	(min, max)
 }

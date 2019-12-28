@@ -248,5 +248,6 @@ pub struct ImageData {
 	pub data: Vec<u8>,
 	pub width: i32,
 	pub height: i32,
-	pub format: GLenum
+	pub format: GLenum,
+	pub internal_format: GLenum
 }

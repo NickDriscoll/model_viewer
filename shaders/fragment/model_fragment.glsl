@@ -22,9 +22,9 @@ uniform bool using_material;
 uniform bool lighting;
 
 const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
-const float AMBIENT_STRENGTH = 0.065;
+const float AMBIENT_STRENGTH = 0.01;
 const float ATTENUATION_CONSTANT = 1.0;
-const float BRIGHTNESS = 0.75;
+const float BRIGHTNESS = 0.5;
 
 void main() {
 	//Normalize any vectors
@@ -33,13 +33,13 @@ void main() {
 	//Get raw texel
 	vec4 tex_color = texture(tex, v_tex_coords);
 
-	//Discard the fragment if alpha == 0.o
+	//Discard the fragment if alpha == 0.0
 	if (tex_color.a == 0.0)
 		discard;
 
 	//Check if we're in shadow
 	float shadow = 1.0;
-	float threshold = 0.001;
+	float threshold = 0.001 * (1.0 - dot(f_normal, light_direction));
 	vec4 normalized_shadow_coord = shadow_coord * 0.5 + 0.5;
 	if (!(normalized_shadow_coord.x < 0.0 || normalized_shadow_coord.x > 1.0 || 
 	    normalized_shadow_coord.y < 0.0 || normalized_shadow_coord.y > 1.0)) {

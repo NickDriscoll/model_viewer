@@ -4,7 +4,6 @@ use std::str;
 use std::io::Read;
 use std::fs::File;
 use std::{mem, process, ptr};
-use std::path::Path;
 use std::os::raw::c_void;
 use image::DynamicImage;
 use openvr::{Compositor, Eye};
@@ -150,7 +149,7 @@ pub unsafe fn load_texture(path: &str, parameters: &[(GLenum, GLenum)]) -> GLuin
 }
 
 pub fn image_data_from_path(path: &str) -> ImageData {
-	match image::open(&Path::new(path)) {
+	match image::open(path) {
 		Ok(DynamicImage::ImageRgb8(im)) => {
 			let width = im.width();
 			let height = im.height();
@@ -159,7 +158,8 @@ pub fn image_data_from_path(path: &str) -> ImageData {
 				data: raw,
 				width: width as GLint,
 				height: height as GLint,
-				format: gl::RGB
+				format: gl::RGB,
+				internal_format: gl::SRGB
 			}
 		}
 		Ok(DynamicImage::ImageRgba8(im)) => {
@@ -170,14 +170,15 @@ pub fn image_data_from_path(path: &str) -> ImageData {
 				data: raw,
 				width: width as GLint,
 				height: height as GLint,
-				format: gl::RGBA
+				format: gl::RGBA,
+				internal_format: gl::SRGB8_ALPHA8
 			}
 		}
 		Ok(_) => {
-			panic!("{} is of unsupported image type", path);
+			panic!("{:?} is of unsupported image type", path);
 		}
 		Err(e) => {
-			panic!("Unable to open {}: {}", path, e);
+			panic!("Unable to open {:?}: {}", path, e);
 		}
 	}
 }
@@ -192,7 +193,7 @@ pub unsafe fn load_texture_from_data(image_data: ImageData, parameters: &[(GLenu
 
 	gl::TexImage2D(gl::TEXTURE_2D,
 				   0,
-				   image_data.format as i32,
+				   image_data.internal_format as i32,
 				   image_data.width,
 				   image_data.height,
 				   0,
@@ -214,7 +215,7 @@ pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint
 	gl::BindTexture(gl::TEXTURE_2D, vr_render_texture);
 	gl::TexImage2D(gl::TEXTURE_2D,
 					   0,
-					   gl::RGBA as i32,
+					   gl::SRGB8_ALPHA8 as i32,
 					   render_target_size.0 as GLsizei,
 					   render_target_size.1 as GLsizei,
 					   0,

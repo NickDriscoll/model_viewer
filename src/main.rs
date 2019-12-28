@@ -169,7 +169,15 @@ fn main() {
 	};
 
 	//Create the skybox cubemap
-	let skybox_cubemap = unsafe {
+	let skybox_cubemap = unsafe {		
+		let name = "siege";
+		let paths = [&format!("textures/skybox/{}_rt.tga", name),
+					 &format!("textures/skybox/{}_lf.tga", name),
+					 &format!("textures/skybox/{}_up.tga", name),
+					 &format!("textures/skybox/{}_dn.tga", name),
+					 &format!("textures/skybox/{}_bk.tga", name),
+					 &format!("textures/skybox/{}_ft.tga", name)];
+
 		let mut cubemap = 0;
 		gl::GenTextures(1, &mut cubemap);
 		gl::BindTexture(gl::TEXTURE_CUBE_MAP, cubemap);
@@ -180,21 +188,13 @@ fn main() {
 		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as i32);
 		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
 		gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-		
-		let name = "siege";
-		let paths = [&format!("textures/skybox/{}_rt.tga", name),
-					 &format!("textures/skybox/{}_lf.tga", name),
-					 &format!("textures/skybox/{}_up.tga", name),
-					 &format!("textures/skybox/{}_dn.tga", name),
-					 &format!("textures/skybox/{}_bk.tga", name),
-					 &format!("textures/skybox/{}_ft.tga", name)];
 
 		//Place each piece of the skybox on the correct face
 		for i in 0..6 {
 			let image_data = image_data_from_path(paths[i]);
 			gl::TexImage2D(gl::TEXTURE_CUBE_MAP_POSITIVE_X + i as u32,
 						   0,
-						   image_data.format as i32,
+						   image_data.internal_format as i32,
 						   image_data.width as i32,
 						   image_data.height as i32,
 						   0,
@@ -446,7 +446,7 @@ fn main() {
 			Some(sink)
 		}
 		None => {
-			println!("Unable to find audio device.");
+			println!("Unable to find audio device. Music and sound effects will not play.");
 			None
 		}
 	};
@@ -486,9 +486,13 @@ fn main() {
 
 	let mut elapsed_time = 0.0;
 
+	unsafe {
+		gl::Enable(gl::FRAMEBUFFER_SRGB);
+	}
+
 	//Main loop
 	while !window.should_close() {
-		//Calculate time since the last frame started
+		//Calculate time since the last frame started in seconds
 		let time_delta = {
 			let frame_instant = Instant::now();
 			let dur = frame_instant.duration_since(last_frame_instant);
@@ -565,6 +569,7 @@ fn main() {
 		}
 
 		//Handle window and keyboard events
+		let sprint_speed = 15.0;
 		for (_, event) in glfw::flush_messages(&events) {
 			match event {
 				WindowEvent::Close => {	window.set_should_close(true); }
@@ -574,14 +579,14 @@ fn main() {
 				}
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
-						Key::Escape => { window.set_should_close(true); }
+						Key::Escape => { println!("It'd be cool if when you press escape a debug menu shows up"); }
 						Key::W => { camera.velocity = glm::vec4(0.0, 0.0, -camera.speed, 0.0); }
 						Key::S => { camera.velocity = glm::vec4(0.0, 0.0, camera.speed, 0.0); }
 						Key::A => { camera.velocity = glm::vec4(-camera.speed, 0.0, 0.0, 0.0); }
 						Key::D => { camera.velocity = glm::vec4(camera.speed, 0.0, 0.0, 0.0); }
 						Key::I => { camera.fov = 90.0; }
 						Key::G => { is_lighting = !is_lighting; }
-						Key::LeftShift => { camera.velocity *= 15.0; }
+						Key::LeftShift => { camera.velocity *= sprint_speed; }
 						Key::L => {
 							handle_result(order_tx.send(WorkOrder::Model));
 						}
@@ -612,7 +617,7 @@ fn main() {
 					match key {
 						Key::A | Key::D => { camera.velocity.x = 0.0; }
 						Key::W | Key::S => { camera.velocity.z = 0.0; }
-						Key::LeftShift => { camera.velocity /= 5.0; }
+						Key::LeftShift => { camera.velocity /= sprint_speed; }
 						_ => {}
 					}
 				}
@@ -801,51 +806,18 @@ fn main() {
 		let eyes = [Some(Eye::Left), Some(Eye::Right), None];
 		let sizes = [render_target_size, render_target_size, window_size];
 		
-		//Calculate the eight corners of the shadow projection volume
+		//Calculate the shadow projection volume
 		let shadow_view = glm::look_at(&glm::vec4_to_vec3(&light_direction), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 		let shadow_viewprojection = {
-			let fovy = f32::to_radians(camera.fov);
-			let fovx = fovy * aspect_ratio;
-			let mut points_view = [glm::zero(); 8];
-	
-			let near_distance = NEAR_Z;
-			let far_distance = NEAR_Z + 1.0;
-
-			let x1 = near_distance * f32::tan(fovx / 2.0);
-			let y1 = near_distance * f32::tan(fovy / 2.0);
-			let x2 = far_distance * f32::tan(fovx / 2.0);
-			let y2 = far_distance * f32::tan(fovy / 2.0);
-			points_view[0] = glm::vec4(-x1, -y1, near_distance, 1.0);
-			points_view[1] = glm::vec4(x1, -y1, near_distance, 1.0);
-			points_view[2] = glm::vec4(-x1, y1, near_distance, 1.0);
-			points_view[3] = glm::vec4(x1, y1, near_distance, 1.0);
-			points_view[4] = glm::vec4(-x2, -y2, far_distance, 1.0);
-			points_view[5] = glm::vec4(x2, -y2, far_distance, 1.0);
-			points_view[6] = glm::vec4(-x2, y2, far_distance, 1.0);
-			points_view[7] = glm::vec4(x2, y2, far_distance, 1.0);
-	
-			let mut x_arr = [0.0; 8];
-			let mut y_arr = [0.0; 8];
-			let mut z_arr = [0.0; 8];
-			for i in 0..points_view.len() {
-				let transformed_point = shadow_view * glm::affine_inverse(v_matrices[2]) * points_view[i];
-				x_arr[i] = transformed_point.x;
-				y_arr[i] = transformed_point.y;
-				z_arr[i] = transformed_point.z;
-			}
-	
-			let (left, right) = min_and_max(&x_arr);
-			let (bottom, top) = min_and_max(&y_arr);
-			let (near, far) = min_and_max(&z_arr);
-	
-			glm::ortho(left, right, bottom, top, near, far) * shadow_view
+			let size = 50.0;
+			glm::ortho(-size, size, -size, size, -size*10.0, size*20.0) * shadow_view
 		};
 
-		
+		/*
 		let projection_size = 25.0;
 		let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 5.0 * projection_size) *
 									shadow_view;
-		
+		*/
 
 		let render_context = RenderContext::new(&p_matrices, &v_matrices, &light_direction, shadow_map, &shadow_viewprojection, is_lighting);
 		unsafe {
