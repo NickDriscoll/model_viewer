@@ -1,4 +1,5 @@
 use openvr::{Eye, System, RenderModels, TrackedDevicePose};
+use rodio::Sink;
 use crate::*;
 
 pub fn openvr_to_mat4(mat: [[f32; 4]; 3]) -> glm::TMat4<f32> {
@@ -320,4 +321,9 @@ pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain
 	}
 
 	model_matrices
+}
+
+pub fn play_sound(sink: &Sink, bgm_path: &str) {
+	let source = rodio::Decoder::new(BufReader::new(File::open(bgm_path).unwrap())).unwrap();
+	sink.append(source);
 }

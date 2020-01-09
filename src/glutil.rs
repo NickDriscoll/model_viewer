@@ -240,7 +240,7 @@ pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint
 	let drawbuffers = [gl::COLOR_ATTACHMENT0];
 	gl::DrawBuffers(1, &drawbuffers as *const u32);
 	if gl::CheckFramebufferStatus(gl::FRAMEBUFFER) != gl::FRAMEBUFFER_COMPLETE {
-		println!("Framebuffer wasn't complete");
+		println!("Framebuffer wasn't complete: VR render target");
 	}
 	render_target
 }

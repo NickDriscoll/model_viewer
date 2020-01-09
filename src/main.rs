@@ -13,6 +13,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::sync::mpsc;
 use wavefront_obj::{mtl, obj};
 use noise::{NoiseFn, OpenSimplex, Seedable};
+use glyph_brush::{BrushAction, BrushError, GlyphBrushBuilder, Section};
 use crate::structs::*;
 use crate::glutil::*;
 use crate::routines::*;
@@ -61,7 +62,7 @@ fn main() {
 	//Calculate VR render target size
 	let render_target_size = match &openvr_system {
 		Some(sys) => { sys.recommended_render_target_size() }
-		None => { (1280, 720) }
+		None => { (0, 0) }
 	};
 
 	//Init glfw
@@ -91,6 +92,7 @@ fn main() {
 	let skybox_shader = unsafe { compile_program_from_files("skybox_vertex.glsl", "skybox_fragment.glsl") };
 	let shadow_map_shader = unsafe { compile_program_from_files("shadow_vertex.glsl", "shadow_fragment.glsl") };
 	let instanced_shadow_map_shader = unsafe { compile_program_from_files("instanced_shadow_vertex.glsl", "shadow_fragment.glsl") };
+	let text_shader = unsafe { compile_program_from_files("text_vertex.glsl", "text_fragment.glsl") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -362,7 +364,6 @@ fn main() {
 
 	//Plant grass
 	const GRASS_COUNT: usize = 50000;
-
 	let grass_texture = {
 		let tex_params = [
 			(gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE),
@@ -430,7 +431,6 @@ fn main() {
 	//Tracking space position information
 	let mut tracking_to_world: glm::TMat4<f32> = glm::identity();
 	let mut tracking_position: glm::TVec4<f32> = glm::zero();
-	let mut is_flying = false;
 
 	//Play background music
 	let mut is_muted = false;
@@ -439,8 +439,7 @@ fn main() {
 	let mut bgm_sink = match rodio::default_output_device() {
 		Some(device) => {
 			let sink = rodio::Sink::new(&device);
-			let source = rodio::Decoder::new(BufReader::new(File::open(bgm_path).unwrap())).unwrap();
-			sink.append(source);
+			play_sound(&sink, bgm_path);
 			sink.set_volume(bgm_volume);
 			sink.play();
 			Some(sink)
@@ -454,6 +453,7 @@ fn main() {
 	//Flags
 	let mut is_wireframe = false;
 	let mut is_lighting = true;
+	let mut is_flying = false;
 
 	//Unit vector pointing towards the sun
 	let light_direction = glm::normalize(&glm::vec4(0.8, 1.0, 1.0, 0.0));
@@ -490,6 +490,31 @@ fn main() {
 		gl::Enable(gl::FRAMEBUFFER_SRGB);
 	}
 
+	//Set up text rendering 
+	let constantia: &[u8] = include_bytes!("../fonts/Constantia.ttf");
+	let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(constantia).build();
+	glyph_brush.queue(Section {
+		text: "Hell",
+		..Section::default()
+	});
+
+	//Create the glyph texture
+	let glyph_texture = unsafe {
+		let (width, height) = glyph_brush.texture_dimensions();
+		let mut tex = 0;
+		gl::GenTextures(1, &mut tex);
+		gl::BindTexture(gl::TEXTURE_2D, tex);
+		gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RED as GLint, width as GLint, height as GLint, 0, gl::RED, gl::UNSIGNED_BYTE, ptr::null());
+		tex
+	};
+
+	//This vao stores the current glyph vertex data
+	let glyph_vao = unsafe {		
+		let mut vao = 0;
+		gl::GenVertexArrays(1, &mut vao);
+		vao
+	};
+
 	//Main loop
 	while !window.should_close() {
 		//Calculate time since the last frame started in seconds
@@ -506,8 +531,7 @@ fn main() {
 		//Loop music
 		if let Some(sink) = &bgm_sink {
 			if sink.empty() {
-				let source = rodio::Decoder::new(BufReader::new(File::open(bgm_path).unwrap())).unwrap();
-				sink.append(source);
+				play_sound(&sink, bgm_path);
 			}
 		}
 
@@ -707,6 +731,7 @@ fn main() {
 				let mut movement_vector = yvel;
 
 				//Handle left-hand controls
+				let mut sprint_multiplier = 1.0;
 				if i == 0 {
 					let controller_to_tracking = openvr_to_mat4(*poses[device_index as usize].device_to_absolute_tracking());
 
@@ -719,8 +744,8 @@ fn main() {
 						movement_vector += temp;
 					}
 
-					if controllers.holding_button(i, button_id::STEAM_VR_TOUCHPAD) {
-						movement_vector *= 5.0;
+					if controllers.pressed_this_frame(i, button_id::STEAM_VR_TOUCHPAD) {
+						sprint_multiplier = 5.0;
 					}
 				}
 
@@ -729,7 +754,7 @@ fn main() {
 					is_flying = !is_flying;
 				}
 				
-				tracking_position += movement_vector * time_delta;
+				tracking_position += movement_vector * sprint_multiplier * time_delta;
 
 				if !is_flying {
 					tracking_position.y = get_terrain_height(tracking_position.x, tracking_position.z, &terrain);
@@ -810,14 +835,8 @@ fn main() {
 		let shadow_view = glm::look_at(&glm::vec4_to_vec3(&light_direction), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 		let shadow_viewprojection = {
 			let size = 50.0;
-			glm::ortho(-size, size, -size, size, -size*10.0, size*20.0) * shadow_view
+			glm::ortho(-size, size, -size, size, -size*10.0, size*10.0) * shadow_view
 		};
-
-		/*
-		let projection_size = 25.0;
-		let shadow_viewprojection = glm::ortho(-projection_size, projection_size, -projection_size, projection_size, -projection_size, 5.0 * projection_size) *
-									shadow_view;
-		*/
 
 		let render_context = RenderContext::new(&p_matrices, &v_matrices, &light_direction, shadow_map, &shadow_viewprojection, is_lighting);
 		unsafe {
@@ -871,7 +890,7 @@ fn main() {
 			//Turn the color buffer back on now that we're done rendering the shadow map
 			gl::DrawBuffer(gl::BACK);
 
-			//Render once per framebuffer (Left eye, Right eye, Companion window)
+			//Render the output framebuffers (left eye, right eye, companion window)
 			for i in 0..framebuffers.len() {
 				//Set up render target
 				gl::BindFramebuffer(gl::FRAMEBUFFER, framebuffers[i]);
@@ -910,10 +929,61 @@ fn main() {
 				gl::BindTexture(gl::TEXTURE_2D, grass_texture);
 				gl::Uniform1i(uniform_location(instanced_model_shader, "using_material"), 0);
 				gl::BindVertexArray(grass_vao);
-
-				//Disable backface culling before the draw call because we want the grass to be double-sided
-				gl::Disable(gl::CULL_FACE);
+				gl::Disable(gl::CULL_FACE); //Disable backface culling before the draw call because we want the grass to be double-sided
 				gl::DrawElementsInstanced(gl::TRIANGLES, grass_indices_count, gl::UNSIGNED_SHORT, ptr::null(), GRASS_COUNT as GLsizei);
+
+				//Draw text
+				match glyph_brush.process_queued(|rect, data| {
+					gl::TextureSubImage2D(glyph_texture,
+										  0,
+										  rect.min.x as GLint,
+										  rect.min.y as GLint,
+										  (rect.max.x - rect.min.x) as GLint,
+										  (rect.max.y - rect.min.y) as GLint,
+										  gl::RED,
+										  gl::UNSIGNED_BYTE,
+										  &data[0] as *const u8 as *const c_void);
+				}, |vertex| {
+					let left = vertex.pixel_coords.min.x as f32;
+					let right = vertex.pixel_coords.max.x as f32;
+					let top = vertex.pixel_coords.min.y as f32;
+					let bottom = vertex.pixel_coords.max.y as f32;
+					let texleft = vertex.tex_coords.min.x;
+					let texright = vertex.tex_coords.max.x;
+					let textop = vertex.tex_coords.min.y;
+					let texbottom = vertex.tex_coords.max.y;
+					let z = vertex.z;
+
+					//We need to return four vertices
+					[
+						left, bottom, z, texleft, texbottom,
+						right, bottom, z, texright, texbottom,
+						left, top, z, texleft, textop,
+						right, top, z, texright, textop
+					]
+				}) {
+					Ok(BrushAction::Draw(verts)) => {
+						let indices = [
+							0u16, 1, 2,
+							3, 2, 1
+						];
+
+						let mut buffer = Vec::with_capacity(verts.len() * 16);
+						for vert in verts {
+							for v in &vert {
+								buffer.push(*v);
+							}
+						}
+
+						println!("{:?}\n{}", buffer, buffer.len());
+					}
+					Ok(BrushAction::ReDraw) => {
+						
+					}
+					Err(BrushError::TextureTooSmall {..}) => {
+						println!("Need to resize the glyph texture");
+					}
+				}
 
 				//Draw the skybox last to take advantage of early depth testing
 				//Don't draw the skybox in wireframe mode
