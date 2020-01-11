@@ -352,13 +352,16 @@ fn main() {
 	let mut halton_counter = 1;
 
 	//Plant trees
-	const TREE_COUNT: usize = 500;
+	const TREE_COUNT: usize = 250;
 	let (trees_vao, trees_geo_boundaries, trees_mats) = unsafe {
 		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
-		let attribute_offsets = [3, 3, 2];
-		let vao = create_vertex_array_object(&model_data.vertices, &model_data.indices, &attribute_offsets);
-		let model_matrices = model_matrices_from_terrain(TREE_COUNT, &mut halton_counter, &terrain);		
-		bind_instanced_matrices(vao, &attribute_offsets, &model_matrices, TREE_COUNT);
+
+		let v = VertexArray {
+			vertices: model_data.vertices,
+			indices: model_data.indices,
+			attribute_offsets: vec![3, 3, 2]
+		};
+		let vao = instanced_prop_vao(&v, &terrain, TREE_COUNT, &mut halton_counter);		
 		(vao, model_data.geo_boundaries, model_data.materials)
 	};
 
@@ -375,7 +378,7 @@ fn main() {
 	};
 
 	let (grass_vao, grass_indices_count) = unsafe {
-		let vertices = [
+		let vertices = vec![
 			//Position				Normals						Tex coords
 			-0.5, 0.0, 0.0,			0.0, 0.0, 1.0,				0.0, 1.0,
 			0.5, 0.0, 0.0,			0.0, 0.0, 1.0,				1.0, 1.0,
@@ -386,17 +389,20 @@ fn main() {
 			0.0, 1.0, -0.5,			0.0, 0.0, 1.0,				0.0, 0.0,
 			0.0, 1.0, 0.5,			0.0, 0.0, 1.0,				1.0, 0.0
 		];
-		let indices = [
+		let indices = vec![
 			0u16, 1, 2,
 			3, 2, 1,
 			4, 5, 6,
 			7, 6, 5
 		];
-		let attribute_offsets = [3, 3, 2];
-		let vao = create_vertex_array_object(&vertices, &indices, &attribute_offsets);
-		let model_matrices = model_matrices_from_terrain(GRASS_COUNT, &mut halton_counter, &terrain);
-		bind_instanced_matrices(vao, &attribute_offsets, &model_matrices, GRASS_COUNT);
-		(vao, indices.len() as i32)
+		let indices_len = indices.len();
+		let v = VertexArray {
+			vertices,
+			indices,
+			attribute_offsets: vec![3, 3, 2]
+		};
+		let vao = instanced_prop_vao(&v, &terrain, GRASS_COUNT, &mut halton_counter);
+		(vao, indices_len as i32)
 	};
 
 	//Variables to keep track of the loaded models

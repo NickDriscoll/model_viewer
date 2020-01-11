@@ -327,3 +327,10 @@ pub fn play_sound(sink: &Sink, bgm_path: &str) {
 	let source = rodio::Decoder::new(BufReader::new(File::open(bgm_path).unwrap())).unwrap();
 	sink.append(source);
 }
+
+pub unsafe fn instanced_prop_vao(vertex_array: &VertexArray, terrain: &Terrain, instances: usize, halton_counter: &mut usize) -> GLuint {
+	let vao = create_vertex_array_object(&vertex_array.vertices, &vertex_array.indices, &vertex_array.attribute_offsets);
+	let model_matrices = model_matrices_from_terrain(instances, halton_counter, &terrain);
+	bind_instanced_matrices(vao, &vertex_array.attribute_offsets, &model_matrices, instances);
+	vao
+}

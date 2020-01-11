@@ -251,3 +251,9 @@ pub struct ImageData {
 	pub format: GLenum,
 	pub internal_format: GLenum
 }
+
+pub struct VertexArray {
+	pub vertices: Vec<f32>,
+	pub indices: Vec<u16>,
+	pub attribute_offsets: Vec<i32>
+}
