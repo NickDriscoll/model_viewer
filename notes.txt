@@ -1,0 +1,7 @@
+To-do list
+
+Create a function like this:
+pub unsafe fn bind_texture2D(name: GLuint, active_texture: GLenum) {
+    gl::ActiveTexture(active_texture);
+    gl::BindTexture(gl::TEXTURE_2D, name);
+}
