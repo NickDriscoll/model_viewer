@@ -92,7 +92,7 @@ fn main() {
 	let skybox_shader = unsafe { compile_program_from_files("skybox_vertex.glsl", "skybox_fragment.glsl") };
 	let shadow_map_shader = unsafe { compile_program_from_files("shadow_vertex.glsl", "shadow_fragment.glsl") };
 	let instanced_shadow_map_shader = unsafe { compile_program_from_files("instanced_shadow_vertex.glsl", "shadow_fragment.glsl") };
-	let text_shader = unsafe { compile_program_from_files("text_vertex.glsl", "text_fragment.glsl") };
+	let glyph_shader = unsafe { compile_program_from_files("glyph_vertex.glsl", "glyph_fragment.glsl") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -499,27 +499,25 @@ fn main() {
 	//Set up text rendering 
 	let constantia: &[u8] = include_bytes!("../fonts/Constantia.ttf");
 	let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(constantia).build();
-	glyph_brush.queue(Section {
-		text: "Hell",
-		..Section::default()
-	});
 
 	//Create the glyph texture
 	let glyph_texture = unsafe {
 		let (width, height) = glyph_brush.texture_dimensions();
 		let mut tex = 0;
+		gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
 		gl::GenTextures(1, &mut tex);
 		gl::BindTexture(gl::TEXTURE_2D, tex);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as _);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as _);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
 		gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RED as GLint, width as GLint, height as GLint, 0, gl::RED, gl::UNSIGNED_BYTE, ptr::null());
 		tex
 	};
 
 	//This vao stores the current glyph vertex data
-	let glyph_vao = unsafe {		
-		let mut vao = 0;
-		gl::GenVertexArrays(1, &mut vao);
-		vao
-	};
+	let mut glyph_vao = 0;
+	let mut glyph_count = 0;
 
 	//Main loop
 	while !window.should_close() {
@@ -925,7 +923,7 @@ fn main() {
 				gl::BindVertexArray(trees_vao);
 
 				//Draw calls
-				for j in 0..trees_geo_boundaries.len()-1 {
+				for j in 0..trees_geo_boundaries.len() - 1 {
 					bind_material(instanced_model_shader, &trees_mats[j]);
 					gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[j + 1] - trees_geo_boundaries[j], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * trees_geo_boundaries[j]) as *const c_void, TREE_COUNT as GLsizei);
 				}
@@ -939,16 +937,27 @@ fn main() {
 				gl::DrawElementsInstanced(gl::TRIANGLES, grass_indices_count, gl::UNSIGNED_SHORT, ptr::null(), GRASS_COUNT as GLsizei);
 
 				//Draw text
+				let glyph_projection = glm::mat4(
+					2.0 / window_size.0 as f32, 0.0, 0.0, -1.0,
+					0.0, 2.0 / window_size.1 as f32, 0.0, -1.0,
+					0.0, 0.0, 1.0, 0.0,
+					0.0, 0.0, 0.0, 1.0
+				);
+				glyph_brush.queue(Section {
+					text: "Toggle wireframe rendering",
+					..Section::default()
+				});
 				match glyph_brush.process_queued(|rect, data| {
+					//gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
 					gl::TextureSubImage2D(glyph_texture,
-										  0,
-										  rect.min.x as GLint,
-										  rect.min.y as GLint,
-										  (rect.max.x - rect.min.x) as GLint,
-										  (rect.max.y - rect.min.y) as GLint,
-										  gl::RED,
-										  gl::UNSIGNED_BYTE,
-										  &data[0] as *const u8 as *const c_void);
+									  	  0,
+									      rect.min.x as _,
+									      rect.min.y as _,
+									      rect.width() as _,
+									      rect.height() as _,
+									      gl::RED,
+									      gl::UNSIGNED_BYTE,
+									      data.as_ptr() as _);
 				}, |vertex| {
 					let left = vertex.pixel_coords.min.x as f32;
 					let right = vertex.pixel_coords.max.x as f32;
@@ -961,30 +970,52 @@ fn main() {
 					let z = vertex.z;
 
 					//We need to return four vertices
+					//We flip the y coordinate of the uvs because for some reason the glyph_texture is rendered upside-down
 					[
-						left, bottom, z, texleft, texbottom,
-						right, bottom, z, texright, texbottom,
-						left, top, z, texleft, textop,
-						right, top, z, texright, textop
+						left, bottom, z, texleft, textop,
+						right, bottom, z, texright, textop,
+						left, top, z, texleft, texbottom,
+						right, top, z, texright, texbottom
 					]
 				}) {
 					Ok(BrushAction::Draw(verts)) => {
-						let indices = [
-							0u16, 1, 2,
-							3, 2, 1
-						];
+						
+						println!("{:?}", verts);
 
-						let mut buffer = Vec::with_capacity(verts.len() * 16);
-						for vert in verts {
-							for v in &vert {
-								buffer.push(*v);
+						if verts.len() > 0 {						
+							let indices = [
+								0u16, 1, 2,
+								3, 2, 1
+							];
+
+							let mut buffer = Vec::with_capacity(verts.len() * 20);
+							for vert in &verts {
+								for v in vert {
+									buffer.push(*v);
+								}
 							}
-						}
 
-						println!("{:?}\n{}", buffer, buffer.len());
+							glyph_count = verts.len();
+							
+							gl::DeleteVertexArrays(1, &glyph_vao);
+							glyph_vao = create_vertex_array_object(&buffer, &indices, &[3, 2]);
+							gl::BindVertexArray(glyph_vao);
+							gl::VertexAttribDivisor(0, 1);
+							gl::VertexAttribDivisor(1, 1);
+
+							gl::UseProgram(glyph_shader);
+							bind_matrix4(glyph_shader, "projection", &glyph_projection);
+							gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
+							gl::DrawElementsInstanced(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null(), glyph_count as GLsizei);
+						}
 					}
 					Ok(BrushAction::ReDraw) => {
+						gl::BindVertexArray(glyph_vao);
 						
+						gl::UseProgram(glyph_shader);
+						bind_matrix4(glyph_shader, "projection", &glyph_projection);
+						gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
+						gl::DrawElementsInstanced(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null(), glyph_count as GLsizei);
 					}
 					Err(BrushError::TextureTooSmall {..}) => {
 						println!("Need to resize the glyph texture");

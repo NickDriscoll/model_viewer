@@ -245,10 +245,14 @@ pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint
 	render_target
 }
 
+pub unsafe fn bind_matrix4(program: GLuint, name: &str, matrix: &glm::TMat4<f32>) {
+	gl::UniformMatrix4fv(uniform_location(program, name), 1, gl::FALSE, &flatten_glm(matrix) as *const GLfloat);
+}
+
 pub unsafe fn bind_uniforms(program: GLuint, mat_uniforms: &[&str], mats: &[&glm::TMat4<f32>], vec_uniforms: &[&str], vecs: &[&glm::TVec4<f32>], byte_uniforms: &[&str], bytes: &[GLint]) {
 	//Send matrix uniforms to GPU
 	for i in 0..mat_uniforms.len() {
-		gl::UniformMatrix4fv(uniform_location(program, mat_uniforms[i]), 1, gl::FALSE, &flatten_glm(mats[i]) as *const GLfloat);
+		bind_matrix4(program, mat_uniforms[i], mats[i]);
 	}
 
 	//Send vector uniforms to GPU
