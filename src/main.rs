@@ -14,6 +14,7 @@ use std::sync::mpsc;
 use wavefront_obj::{mtl, obj};
 use noise::{NoiseFn, OpenSimplex, Seedable};
 use glyph_brush::{BrushAction, BrushError, GlyphBrushBuilder, Section};
+use glyph_brush::rusttype::Scale;
 use crate::structs::*;
 use crate::glutil::*;
 use crate::routines::*;
@@ -490,6 +491,7 @@ fn main() {
 		(framebuffer, depth_texture)
 	};
 
+	//Time in seconds since the start of the process
 	let mut elapsed_time = 0.0;
 
 	unsafe {
@@ -518,6 +520,7 @@ fn main() {
 	//This vao stores the current glyph vertex data
 	let mut glyph_vao = 0;
 	let mut glyph_count = 0;
+	let mut glyph_indices_len = 0;
 
 	//Main loop
 	while !window.should_close() {
@@ -748,7 +751,7 @@ fn main() {
 						movement_vector += temp;
 					}
 
-					if controllers.pressed_this_frame(i, button_id::STEAM_VR_TOUCHPAD) {
+					if controllers.holding_button(i, button_id::STEAM_VR_TOUCHPAD) {
 						sprint_multiplier = 5.0;
 					}
 				}
@@ -944,11 +947,13 @@ fn main() {
 					0.0, 0.0, 0.0, 1.0
 				);
 				glyph_brush.queue(Section {
-					text: "Toggle wireframe rendering",
+					text: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+					screen_position: (window_size.0 as f32 / 6.0, window_size.1 as f32 / 2.0),
+					scale: Scale::uniform(36.0),
+					z: 0.0,
 					..Section::default()
 				});
 				match glyph_brush.process_queued(|rect, data| {
-					//gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
 					gl::TextureSubImage2D(glyph_texture,
 									  	  0,
 									      rect.min.x as _,
@@ -979,43 +984,44 @@ fn main() {
 					]
 				}) {
 					Ok(BrushAction::Draw(verts)) => {
-						
-						println!("{:?}", verts);
-
-						if verts.len() > 0 {						
-							let indices = [
-								0u16, 1, 2,
-								3, 2, 1
-							];
-
+						if verts.len() > 0 {
 							let mut buffer = Vec::with_capacity(verts.len() * 20);
 							for vert in &verts {
 								for v in vert {
 									buffer.push(*v);
 								}
 							}
-
 							glyph_count = verts.len();
+							
+							let mut indices = vec![0; glyph_count * 6];
+							for i in 0..glyph_count {
+								indices[i * 6] = 4 * i as u16;
+								indices[i * 6 + 1] = indices[i * 6] + 1;
+								indices[i * 6 + 2] = indices[i * 6] + 2;
+								indices[i * 6 + 3] = indices[i * 6] + 3;
+								indices[i * 6 + 4] = indices[i * 6] + 2;
+								indices[i * 6 + 5] = indices[i * 6] + 1;
+							}
+							glyph_indices_len = indices.len();
+							println!("{:?}", indices);
 							
 							gl::DeleteVertexArrays(1, &glyph_vao);
 							glyph_vao = create_vertex_array_object(&buffer, &indices, &[3, 2]);
-							gl::BindVertexArray(glyph_vao);
-							gl::VertexAttribDivisor(0, 1);
-							gl::VertexAttribDivisor(1, 1);
 
+							gl::BindVertexArray(glyph_vao);
 							gl::UseProgram(glyph_shader);
 							bind_matrix4(glyph_shader, "projection", &glyph_projection);
 							gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
-							gl::DrawElementsInstanced(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null(), glyph_count as GLsizei);
+							gl::DrawElements(gl::TRIANGLES, glyph_indices_len as GLint, gl::UNSIGNED_SHORT, ptr::null());
 						}
 					}
 					Ok(BrushAction::ReDraw) => {
-						gl::BindVertexArray(glyph_vao);
-						
+
+						gl::BindVertexArray(glyph_vao);												
 						gl::UseProgram(glyph_shader);
 						bind_matrix4(glyph_shader, "projection", &glyph_projection);
 						gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
-						gl::DrawElementsInstanced(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null(), glyph_count as GLsizei);
+						gl::DrawElements(gl::TRIANGLES, glyph_indices_len as GLint, gl::UNSIGNED_SHORT, ptr::null());
 					}
 					Err(BrushError::TextureTooSmall {..}) => {
 						println!("Need to resize the glyph texture");
