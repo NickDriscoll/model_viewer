@@ -18,12 +18,14 @@ use glyph_brush::rusttype::Scale;
 use crate::structs::*;
 use crate::glutil::*;
 use crate::routines::*;
+use crate::prims::*;
 use self::gl::types::*;
 
 //Including the other source files
 mod structs;
 mod glutil;
 mod routines;
+mod prims;
 
 //The distances of the near and far clipping planes from the origin
 const NEAR_Z: f32 = 0.1;
@@ -132,42 +134,7 @@ fn main() {
 
 	//Create the cube that will be user to render the skybox
 	let (skybox_vao, skybox_indices_count) = unsafe {
-		let vertices = [
-			-1.0, -1.0, -1.0,
-			1.0, -1.0, -1.0,
-			-1.0, 1.0, -1.0,
-			1.0, 1.0, -1.0,
-			-1.0, -1.0, 1.0,
-			-1.0, 1.0, 1.0,
-			1.0, -1.0, 1.0,
-			1.0, 1.0, 1.0
-		];
-		let indices = [
-			//Front
-			0u16, 1, 2,
-			3, 2, 1,
-
-			//Left
-			0, 2, 4,
-			2, 5, 4,
-
-			//Right
-			3, 1, 6,
-			7, 3, 6,
-
-			//Back
-			5, 7, 4,
-			7, 6, 4,
-
-			//Bottom
-			4, 1, 0,
-			4, 6, 1,
-
-			//Top
-			7, 5, 2,
-			7, 2, 3
-		];
-
+		let (vertices, indices) = cube();
 		(create_vertex_array_object(&vertices, &indices, &[3]), indices.len() as i32)
 	};
 
