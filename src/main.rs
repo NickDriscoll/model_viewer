@@ -947,7 +947,7 @@ fn main() {
 					0.0, 0.0, 0.0, 1.0
 				);
 				glyph_brush.queue(Section {
-					text: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+					text: "Ozymandias",
 					screen_position: (window_size.0 as f32 / 6.0, window_size.1 as f32 / 2.0),
 					scale: Scale::uniform(36.0),
 					z: 0.0,

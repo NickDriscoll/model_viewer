@@ -259,11 +259,10 @@ pub struct VertexArray {
 }
 
 pub struct UniformLayout<'a> {
-	pub mat4_locations: Vec<&'a str>,
-	pub vec3_locations: Vec<&'a str>,
-	pub bool_locations: Vec<&'a str>,
+	pub mat4_locations: Vec<&'static str>,
+	pub vec3_locations: Vec<&'static str>,
+	pub bool_locations: Vec<&'static str>,
 	pub mat4_data: Vec<&'a glm::TMat4<f32>>,
 	pub vec3_data: Vec<&'a glm::TVec3<f32>>,
-	pub bool_data: Vec<GLuint>
-	
+	pub bool_data: Vec<GLuint>	
 }
