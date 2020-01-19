@@ -258,11 +258,40 @@ pub struct VertexArray {
 	pub attribute_offsets: Vec<i32>
 }
 
-pub struct UniformLayout<'a> {
-	pub mat4_locations: Vec<&'static str>,
-	pub vec3_locations: Vec<&'static str>,
-	pub bool_locations: Vec<&'static str>,
-	pub mat4_data: Vec<&'a glm::TMat4<f32>>,
-	pub vec3_data: Vec<&'a glm::TVec3<f32>>,
-	pub bool_data: Vec<GLuint>	
+pub struct GlyphContext {
+	pub vao: GLuint,
+	pub shader: GLuint,
+	pub texture: GLuint,
+	pub count: usize,
+	pub indices_len: usize
+}
+
+impl GlyphContext {
+	pub unsafe fn new(shader: GLuint, glyph_tex_size: (u32, u32)) -> Self {		
+		let (width, height) = glyph_tex_size;
+		let mut texture = 0;
+		gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
+		gl::GenTextures(1, &mut texture);
+		gl::BindTexture(gl::TEXTURE_2D, texture);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as _);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as _);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
+		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
+		gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RED as GLint, width as GLint, height as GLint, 0, gl::RED, gl::UNSIGNED_BYTE, ptr::null());
+		GlyphContext {
+			vao: 0,
+			shader,
+			texture,
+			count: 0,
+			indices_len: 0
+		}
+	}
+
+	pub unsafe fn render_glyphs(&self, window_size: (u32, u32)) {
+		gl::BindVertexArray(self.vao);
+		gl::UseProgram(self.shader);
+		bind_matrix4(self.shader, "projection", &glyph_projection(window_size));
+		gl::BindTexture(gl::TEXTURE_2D, self.texture);
+		gl::DrawElements(gl::TRIANGLES, self.indices_len as GLint, gl::UNSIGNED_SHORT, ptr::null());
+	}
 }
