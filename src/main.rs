@@ -428,6 +428,7 @@ fn main() {
 	let mut is_wireframe = false;
 	let mut is_lighting = true;
 	let mut is_flying = false;
+	let mut debug_menu = false;
 
 	//Unit vector pointing towards the sun
 	let light_direction = glm::normalize(&glm::vec4(0.8, 1.0, 1.0, 0.0));
@@ -468,26 +469,7 @@ fn main() {
 	//Set up text rendering 
 	let constantia: &[u8] = include_bytes!("../fonts/Constantia.ttf");
 	let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(constantia).build();
-
-	//Create the glyph texture
-	let glyph_texture = unsafe {
-		let (width, height) = glyph_brush.texture_dimensions();
-		let mut tex = 0;
-		gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
-		gl::GenTextures(1, &mut tex);
-		gl::BindTexture(gl::TEXTURE_2D, tex);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as _);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as _);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
-		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
-		gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RED as GLint, width as GLint, height as GLint, 0, gl::RED, gl::UNSIGNED_BYTE, ptr::null());
-		tex
-	};
-
-	//This vao stores the current glyph vertex data
-	let mut glyph_vao = 0;
-	let mut glyph_count = 0;
-	let mut glyph_indices_len = 0;
+	let mut glyph_context = unsafe { GlyphContext::new(glyph_shader, glyph_brush.texture_dimensions()) };
 
 	//Main loop
 	while !window.should_close() {
@@ -502,7 +484,7 @@ fn main() {
 		};
 		elapsed_time += time_delta;
 
-		//Loop music
+		//Restart music if it stopped
 		if let Some(sink) = &bgm_sink {
 			if sink.empty() {
 				play_sound(&sink, bgm_path);
@@ -574,11 +556,11 @@ fn main() {
 				WindowEvent::FramebufferSize(width, height) => {
 					window_size = (width as u32, height as u32);
 					aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
-					println!("Window size updated to {}x{}", window_size.0, window_size.1);
+					println!("Window resolution updated to {}x{}", window_size.0, window_size.1);
 				}
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
-						Key::Escape => { println!("It'd be cool if when you press escape a debug menu shows up"); }
+						Key::Escape => { debug_menu = !debug_menu; }
 						Key::W => { camera.velocity = glm::vec4(0.0, 0.0, -camera.speed, 0.0); }
 						Key::S => { camera.velocity = glm::vec4(0.0, 0.0, camera.speed, 0.0); }
 						Key::A => { camera.velocity = glm::vec4(-camera.speed, 0.0, 0.0, 0.0); }
@@ -907,24 +889,47 @@ fn main() {
 				gl::Disable(gl::CULL_FACE); //Disable backface culling before the draw call because we want the grass to be double-sided
 				gl::DrawElementsInstanced(gl::TRIANGLES, grass_indices_count, gl::UNSIGNED_SHORT, ptr::null(), GRASS_COUNT as GLsizei);
 
+				//Draw the skybox last to take advantage of early depth testing
+				//Don't draw the skybox in wireframe mode
+				if !is_wireframe {
+					//Compute the view-projection matrix for the skybox (the conversion functions are just there to nullify the translation component of the view matrix)
+					//The skybox vertices should obviously be rotated along with the camera, but they shouldn't be translated in order to maintain the illusion
+					//that the sky is infinitely far away
+					let skybox_view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
+
+					//Render the skybox
+					gl::UseProgram(skybox_shader);
+					gl::UniformMatrix4fv(uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&skybox_view_projection) as *const GLfloat);
+					gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_cubemap);
+					gl::BindVertexArray(skybox_vao);
+					gl::DrawElements(gl::TRIANGLES, skybox_indices_count, gl::UNSIGNED_SHORT, ptr::null());
+				}
+
+				//Clearing the depth buffer here so that none of the text can end up behind anything
+				gl::Clear(gl::DEPTH_BUFFER_BIT);
+
 				//Draw text
-				let mut glyph_vertex_len = 0;
-				let glyph_projection = glm::mat4(
-					2.0 / window_size.0 as f32, 0.0, 0.0, -1.0,
-					0.0, 2.0 / window_size.1 as f32, 0.0, -1.0,
-					0.0, 0.0, 1.0, 0.0,
-					0.0, 0.0, 0.0, 1.0
-				);
-				glyph_brush.queue(Section {
-					text: "Ozymandias",
-					screen_position: (0.0, window_size.1 as f32 - 36.0),
-					scale: Scale::uniform(36.0),
-					z: 0.0,
-					color: [1.0, 0.0, 1.0, 1.0],
-					..Section::default()
-				});
+				let menu_items = ["Toggle wireframe", "Toggle lighting", "Toggle music", "Toggle freecam", "Spawn model"];
+				let y_buffer = 32.0;
+				let x_buffer = 32.0;
+				let mut y_offset = 18.0;
+				
+
+				let scale = 36.0;
+				for i in 0..menu_items.len() {
+					glyph_brush.queue(Section {
+							text: menu_items[i],
+							screen_position: (x_buffer, window_size.1 as f32 - scale - y_offset),
+							scale: Scale::uniform(scale),
+							color: [1.0, 1.0, 1.0, 1.0],
+							..Section::default()
+						}
+					);
+					y_offset += y_buffer + scale;
+				}
+
 				match glyph_brush.process_queued(|rect, data| {
-					gl::TextureSubImage2D(glyph_texture,
+					gl::TextureSubImage2D(glyph_context.texture,
 									  	  0,
 									      rect.min.x as _,
 									      rect.min.y as _,
@@ -962,10 +967,11 @@ fn main() {
 									buffer.push(*v);
 								}
 							}
-							glyph_count = verts.len();
+							glyph_context.count = verts.len();
+							glyph_context.indices_len = glyph_context.count * 6;
 							
-							let mut indices = vec![0; glyph_count * 6];
-							for i in 0..glyph_count {
+							let mut indices = vec![0; glyph_context.indices_len];
+							for i in 0..glyph_context.count {
 								indices[i * 6] = 4 * i as u16;
 								indices[i * 6 + 1] = indices[i * 6] + 1;
 								indices[i * 6 + 2] = indices[i * 6] + 2;
@@ -973,44 +979,19 @@ fn main() {
 								indices[i * 6 + 4] = indices[i * 6] + 2;
 								indices[i * 6 + 5] = indices[i * 6] + 1;
 							}
-							glyph_indices_len = indices.len();
 							
-							gl::DeleteVertexArrays(1, &glyph_vao);
-							glyph_vao = create_vertex_array_object(&buffer, &indices, &[3, 3, 2]);
+							gl::DeleteVertexArrays(1, &glyph_context.vao);
+							glyph_context.vao = create_vertex_array_object(&buffer, &indices, &[3, 3, 2]);
 
-							gl::BindVertexArray(glyph_vao);
-							gl::UseProgram(glyph_shader);
-							bind_matrix4(glyph_shader, "projection", &glyph_projection);
-							gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
-							gl::DrawElements(gl::TRIANGLES, glyph_indices_len as GLint, gl::UNSIGNED_SHORT, ptr::null());
+							glyph_context.render_glyphs(window_size);
 						}
 					}
 					Ok(BrushAction::ReDraw) => {
-						gl::BindVertexArray(glyph_vao);												
-						gl::UseProgram(glyph_shader);
-						bind_matrix4(glyph_shader, "projection", &glyph_projection);
-						gl::BindTexture(gl::TEXTURE_2D, glyph_texture);
-						gl::DrawElements(gl::TRIANGLES, glyph_indices_len as GLint, gl::UNSIGNED_SHORT, ptr::null());
+						glyph_context.render_glyphs(window_size);
 					}
 					Err(BrushError::TextureTooSmall {..}) => {
 						println!("Need to resize the glyph texture");
 					}
-				}
-
-				//Draw the skybox last to take advantage of early depth testing
-				//Don't draw the skybox in wireframe mode
-				if !is_wireframe {
-					//Compute the view-projection matrix for the skybox (the conversion functions are just there to nullify the translation component of the view matrix)
-					//The skybox vertices should obviously be rotated along with the camera, but they shouldn't be translated in order to maintain the illusion
-					//that the sky is infinitely far away
-					let skybox_view_projection = p_matrices[i] * glm::mat3_to_mat4(&glm::mat4_to_mat3(&v_matrices[i]));
-
-					//Render the skybox
-					gl::UseProgram(skybox_shader);
-					gl::UniformMatrix4fv(uniform_location(skybox_shader, "view_projection"), 1, gl::FALSE, &flatten_glm(&skybox_view_projection) as *const GLfloat);
-					gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_cubemap);
-					gl::BindVertexArray(skybox_vao);
-					gl::DrawElements(gl::TRIANGLES, skybox_indices_count, gl::UNSIGNED_SHORT, ptr::null());
 				}
 
 				//Submit render to HMD
