@@ -1,7 +1,8 @@
 To-do list
 
-Create a function like this:
-pub unsafe fn bind_texture2D(name: GLuint, active_texture: GLenum) {
-    gl::ActiveTexture(active_texture);
-    gl::BindTexture(gl::TEXTURE_2D, name);
-}
+Online VR Co-op level editing feature ideas
+    Ability to select an entity in an in-game menu, and to place that entity by pointing at the terrain
+    Ability to scale the world relative to the playspace
+    Client-server or serverless?
+    Maybe terrain editing
+    

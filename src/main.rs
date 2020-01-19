@@ -76,7 +76,7 @@ fn main() {
 	glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
 
 	//Create window
-	let mut window_size = (1280, 720);
+	let mut window_size = (1920, 1080);
 	let (mut window, events) = glfw.create_window(window_size.0, window_size.1, "Model viewer", WindowMode::Windowed).unwrap();
 
 	//Calculate window's aspect ratio
@@ -574,6 +574,7 @@ fn main() {
 				WindowEvent::FramebufferSize(width, height) => {
 					window_size = (width as u32, height as u32);
 					aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
+					println!("Window size updated to {}x{}", window_size.0, window_size.1);
 				}
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
@@ -907,6 +908,7 @@ fn main() {
 				gl::DrawElementsInstanced(gl::TRIANGLES, grass_indices_count, gl::UNSIGNED_SHORT, ptr::null(), GRASS_COUNT as GLsizei);
 
 				//Draw text
+				let mut glyph_vertex_len = 0;
 				let glyph_projection = glm::mat4(
 					2.0 / window_size.0 as f32, 0.0, 0.0, -1.0,
 					0.0, 2.0 / window_size.1 as f32, 0.0, -1.0,
@@ -915,9 +917,10 @@ fn main() {
 				);
 				glyph_brush.queue(Section {
 					text: "Ozymandias",
-					screen_position: (window_size.0 as f32 / 6.0, window_size.1 as f32 / 2.0),
+					screen_position: (0.0, window_size.1 as f32 - 36.0),
 					scale: Scale::uniform(36.0),
 					z: 0.0,
+					color: [1.0, 0.0, 1.0, 1.0],
 					..Section::default()
 				});
 				match glyph_brush.process_queued(|rect, data| {
@@ -940,19 +943,20 @@ fn main() {
 					let textop = vertex.tex_coords.min.y;
 					let texbottom = vertex.tex_coords.max.y;
 					let z = vertex.z;
+					let color = vertex.color;
 
 					//We need to return four vertices
 					//We flip the y coordinate of the uvs because for some reason the glyph_texture is rendered upside-down
 					[
-						left, bottom, z, texleft, textop,
-						right, bottom, z, texright, textop,
-						left, top, z, texleft, texbottom,
-						right, top, z, texright, texbottom
+						left, bottom, z, color[0], color[1], color[2], texleft, textop,
+						right, bottom, z, color[0], color[1], color[2], texright, textop,
+						left, top, z, color[0], color[1], color[2], texleft, texbottom,
+						right, top, z, color[0], color[1], color[2], texright, texbottom
 					]
 				}) {
 					Ok(BrushAction::Draw(verts)) => {
 						if verts.len() > 0 {
-							let mut buffer = Vec::with_capacity(verts.len() * 20);
+							let mut buffer = Vec::with_capacity(verts.len() * 32);
 							for vert in &verts {
 								for v in vert {
 									buffer.push(*v);
@@ -970,10 +974,9 @@ fn main() {
 								indices[i * 6 + 5] = indices[i * 6] + 1;
 							}
 							glyph_indices_len = indices.len();
-							println!("{:?}", indices);
 							
 							gl::DeleteVertexArrays(1, &glyph_vao);
-							glyph_vao = create_vertex_array_object(&buffer, &indices, &[3, 2]);
+							glyph_vao = create_vertex_array_object(&buffer, &indices, &[3, 3, 2]);
 
 							gl::BindVertexArray(glyph_vao);
 							gl::UseProgram(glyph_shader);
@@ -983,7 +986,6 @@ fn main() {
 						}
 					}
 					Ok(BrushAction::ReDraw) => {
-
 						gl::BindVertexArray(glyph_vao);												
 						gl::UseProgram(glyph_shader);
 						bind_matrix4(glyph_shader, "projection", &glyph_projection);

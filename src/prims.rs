@@ -1,5 +1,5 @@
 pub const fn cube() -> ([f32; 24], [u16; 36]) {
-    const vertices: [f32; 24] = [
+    const VERTICES: [f32; 24] = [
 		-1.0, -1.0, -1.0,
 		1.0, -1.0, -1.0,
 		-1.0, 1.0, -1.0,
@@ -9,7 +9,7 @@ pub const fn cube() -> ([f32; 24], [u16; 36]) {
 		1.0, -1.0, 1.0,
 		1.0, 1.0, 1.0
 	];
-	const indices: [u16; 36] = [
+	const INDICES: [u16; 36] = [
 		//Front
 		0u16, 1, 2,
 		3, 2, 1,
@@ -34,5 +34,5 @@ pub const fn cube() -> ([f32; 24], [u16; 36]) {
 		7, 5, 2,
 		7, 2, 3
     ];
-    (vertices, indices)    
+    (VERTICES, INDICES)    
 }
