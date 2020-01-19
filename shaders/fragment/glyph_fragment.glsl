@@ -9,5 +9,5 @@ void main() {
     float intensity = texture(glyph_texture, glyph_uvs).r;
     if (intensity == 0.0)
         discard;
-    frag_color =  intensity * vec4(f_color, 1.0);
+    frag_color =  vec4(intensity * f_color, 1.0);
 }
