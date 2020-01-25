@@ -36,19 +36,3 @@ pub const fn cube() -> ([f32; 24], [u16; 36]) {
     ];
     (VERTICES, INDICES)    
 }
-
-pub const fn square() -> ([f32; 8], [u16; 6]) {
-	const VERTICES: [f32; 8] = [
-		0.0, 0.0,
-		0.0, 1.0,
-		1.0, 0.0,
-		1.0, 1.0
-	];
-
-	const INDICES: [u16; 6] = [
-		0, 1, 2,
-		3, 2, 1
-	];
-
-	(VERTICES, INDICES)
-}

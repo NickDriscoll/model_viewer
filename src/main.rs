@@ -96,6 +96,7 @@ fn main() {
 	let shadow_map_shader = unsafe { compile_program_from_files("shadow_vertex.glsl", "shadow_fragment.glsl") };
 	let instanced_shadow_map_shader = unsafe { compile_program_from_files("instanced_shadow_vertex.glsl", "shadow_fragment.glsl") };
 	let glyph_shader = unsafe { compile_program_from_files("glyph_vertex.glsl", "glyph_fragment.glsl") };
+	let ui_shader = unsafe { compile_program_from_files("ui_vertex.glsl", "ui_fragment.glsl") };
 
 	//Setup the VR rendering target
 	let vr_render_target = unsafe { create_vr_render_target(&render_target_size) };
@@ -464,12 +465,21 @@ fn main() {
 
 	unsafe {
 		gl::Enable(gl::FRAMEBUFFER_SRGB);
+		gl::Enable(gl::BLEND);
+		gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
 	}
 
-	//Set up text rendering 
+	//Set up menu rendering
+	let pixel_projection = glm::mat4(
+		2.0 / window_size.0 as f32, 0.0, 0.0, -1.0,
+		0.0, 2.0 / window_size.1 as f32, 0.0, -1.0,
+		0.0, 0.0, 1.0, 0.0,
+		0.0, 0.0, 0.0, 1.0
+	);
 	let constantia: &[u8] = include_bytes!("../fonts/Constantia.ttf");
 	let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(constantia).build();
 	let mut glyph_context = unsafe { GlyphContext::new(glyph_shader, glyph_brush.texture_dimensions()) };
+	let mut menu_vaos = OptionVec::new();
 
 	//Main loop
 	while !window.should_close() {
@@ -549,7 +559,6 @@ fn main() {
 		}
 
 		//Handle window and keyboard events
-		let sprint_speed = 15.0;
 		for (_, event) in glfw::flush_messages(&events) {
 			match event {
 				WindowEvent::Close => {	window.set_should_close(true); }
@@ -561,13 +570,13 @@ fn main() {
 				WindowEvent::Key(key, _, Action::Press, ..) => {
 					match key {
 						Key::Escape => { debug_menu = !debug_menu; }
-						Key::W => { camera.velocity = glm::vec4(0.0, 0.0, -camera.speed, 0.0); }
-						Key::S => { camera.velocity = glm::vec4(0.0, 0.0, camera.speed, 0.0); }
-						Key::A => { camera.velocity = glm::vec4(-camera.speed, 0.0, 0.0, 0.0); }
-						Key::D => { camera.velocity = glm::vec4(camera.speed, 0.0, 0.0, 0.0); }
+						Key::W => { camera.velocity += glm::vec4(0.0, 0.0, -camera.speed, 0.0); }
+						Key::S => { camera.velocity += glm::vec4(0.0, 0.0, camera.speed, 0.0); }
+						Key::A => { camera.velocity += glm::vec4(-camera.speed, 0.0, 0.0, 0.0); }
+						Key::D => { camera.velocity += glm::vec4(camera.speed, 0.0, 0.0, 0.0); }
 						Key::I => { camera.fov = 90.0; }
 						Key::G => { is_lighting = !is_lighting; }
-						Key::LeftShift => { camera.velocity *= sprint_speed; }
+						Key::LeftShift => { camera.sprinting = true; }
 						Key::L => {
 							handle_result(order_tx.send(WorkOrder::Model));
 						}
@@ -596,9 +605,11 @@ fn main() {
 				}
 				WindowEvent::Key(key, _, Action::Release, ..) => {
 					match key {
-						Key::A | Key::D => { camera.velocity.x = 0.0; }
-						Key::W | Key::S => { camera.velocity.z = 0.0; }
-						Key::LeftShift => { camera.velocity /= sprint_speed; }
+						Key::W => {	camera.velocity.z -= -camera.speed; }
+						Key::S => { camera.velocity.z -= camera.speed;	}
+						Key::A => { camera.velocity.x -= -camera.speed; }
+						Key::D => { camera.velocity.x -= camera.speed; }
+						Key::LeftShift => { camera.sprinting = false; }
 						_ => {}
 					}
 				}
@@ -757,7 +768,12 @@ fn main() {
 
 		//Update the camera
 		//The process here is, for the camera's velocity vector: View Space -> World Space -> scale by seconds_elapsed
-		camera.position += time_delta * glm::affine_inverse(v_matrices[2]) * camera.velocity;
+		let modifier = if camera.sprinting {
+			15.0
+		} else {
+			1.0
+		};
+		camera.position += time_delta * glm::affine_inverse(v_matrices[2]) * modifier * camera.velocity;
 		camera.fov += camera.fov_delta * time_delta;
 		
 		//Update the OpenVR meshes
@@ -908,25 +924,56 @@ fn main() {
 				//Clearing the depth buffer here so that none of the text can end up behind anything
 				gl::Clear(gl::DEPTH_BUFFER_BIT);
 
-				//Draw text
+				//Draw debug menu items
 				let menu_items = ["Toggle wireframe", "Toggle lighting", "Toggle music", "Toggle freecam", "Spawn model"];
 				let y_buffer = 32.0;
 				let x_buffer = 32.0;
 				let mut y_offset = 18.0;
-				
 
-				let scale = 36.0;
+				let scale = 18.0;
 				for i in 0..menu_items.len() {
-					glyph_brush.queue(Section {
-							text: menu_items[i],
-							screen_position: (x_buffer, window_size.1 as f32 - scale - y_offset),
-							scale: Scale::uniform(scale),
-							color: [1.0, 1.0, 1.0, 1.0],
-							..Section::default()
-						}
-					);
+					let section = Section {
+						text: menu_items[i],
+						screen_position: (x_buffer, window_size.1 as f32 - scale - y_offset),
+						scale: Scale::uniform(scale),
+						color: [1.0, 1.0, 1.0, 1.0],
+						..Section::default()
+					};
+					glyph_brush.queue(section);
 					y_offset += y_buffer + scale;
+
+					//Prepare the ui button
+					let color = [0.0, 0.0, 0.0];
+					let border = 10.0;
+
+					let left = section.screen_position.0 - border;
+					let right = section.text.len() as f32 * scale + left + border;
+					let top = scale + section.screen_position.1 + border;
+					let bottom = section.screen_position.1 - border;
+					let vertices = [
+						left, bottom, color[0], color[1], color[2],
+						right, bottom, color[0], color[1], color[2],
+						left, top, color[0], color[1], color[2],
+						right, top, color[0], color[1], color[2],
+					];
+					let indices = [
+						0u16, 1, 2,
+						3, 2, 1
+					];
+					menu_vaos.insert(create_vertex_array_object(&vertices, &indices, &[2, 3]));
 				}
+
+				//Draw the buttons
+				gl::UseProgram(ui_shader);
+				bind_matrix4(ui_shader, "projection", &pixel_projection);
+				for option_vao in menu_vaos.iter() {
+					if let Some(vao) = option_vao {
+						gl::BindVertexArray(*vao);
+						gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
+						gl::DeleteVertexArrays(1, vao);
+					}
+				}
+				menu_vaos.clear();
 
 				match glyph_brush.process_queued(|rect, data| {
 					gl::TextureSubImage2D(glyph_context.texture,
@@ -960,6 +1007,7 @@ fn main() {
 					]
 				}) {
 					Ok(BrushAction::Draw(verts)) => {
+						println!("Re-drawing glyphs");
 						if verts.len() > 0 {
 							let mut buffer = Vec::with_capacity(verts.len() * 32);
 							for vert in &verts {
@@ -968,9 +1016,8 @@ fn main() {
 								}
 							}
 							glyph_context.count = verts.len();
-							glyph_context.indices_len = glyph_context.count * 6;
 							
-							let mut indices = vec![0; glyph_context.indices_len];
+							let mut indices = vec![0; glyph_context.count * 6];
 							for i in 0..glyph_context.count {
 								indices[i * 6] = 4 * i as u16;
 								indices[i * 6 + 1] = indices[i * 6] + 1;
@@ -982,16 +1029,11 @@ fn main() {
 							
 							gl::DeleteVertexArrays(1, &glyph_context.vao);
 							glyph_context.vao = create_vertex_array_object(&buffer, &indices, &[3, 3, 2]);
-
-							glyph_context.render_glyphs(window_size);
+							glyph_context.render_glyphs(&pixel_projection);
 						}
 					}
-					Ok(BrushAction::ReDraw) => {
-						glyph_context.render_glyphs(window_size);
-					}
-					Err(BrushError::TextureTooSmall {..}) => {
-						println!("Need to resize the glyph texture");
-					}
+					Ok(BrushAction::ReDraw) => { glyph_context.render_glyphs(&pixel_projection); }
+					Err(BrushError::TextureTooSmall {..}) => { println!("Need to resize the glyph texture"); }
 				}
 
 				//Submit render to HMD

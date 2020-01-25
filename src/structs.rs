@@ -45,6 +45,7 @@ pub struct Camera {
 	pub fov: f32,					//In degrees
 	pub fov_delta: f32,
 	pub speed: f32,
+	pub sprinting: bool,
 	pub attached_to_hmd: bool
 }
 
@@ -58,6 +59,7 @@ impl Camera {
 			fov: 90.0,
 			fov_delta: 0.0,
 			speed: 2.0,
+			sprinting: false,
 			attached_to_hmd: true
 		}
 	}
@@ -127,6 +129,12 @@ pub struct OptionVec<T> {
 }
 
 impl<T> OptionVec<T> {
+	pub fn new() -> Self {
+		OptionVec {
+			optionvec: Vec::new()
+		}
+	}
+
 	pub fn with_capacity(size: usize) -> Self {
 		OptionVec {
 			optionvec: Vec::with_capacity(size)
@@ -154,6 +162,12 @@ impl<T> OptionVec<T> {
 				self.optionvec.push(Some(element));
 				self.optionvec.len() - 1
 			}
+		}
+	}
+
+	pub fn clear(&mut self) {
+		for i in 0..self.optionvec.len() {
+			self.optionvec[i] = None;
 		}
 	}
 
@@ -262,12 +276,11 @@ pub struct GlyphContext {
 	pub vao: GLuint,
 	pub shader: GLuint,
 	pub texture: GLuint,
-	pub count: usize,
-	pub indices_len: usize
+	pub count: usize
 }
 
 impl GlyphContext {
-	pub unsafe fn new(shader: GLuint, glyph_tex_size: (u32, u32)) -> Self {		
+	pub unsafe fn new(shader: GLuint, glyph_tex_size: (u32, u32)) -> Self {
 		let (width, height) = glyph_tex_size;
 		let mut texture = 0;
 		gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
@@ -282,16 +295,15 @@ impl GlyphContext {
 			vao: 0,
 			shader,
 			texture,
-			count: 0,
-			indices_len: 0
+			count: 0
 		}
 	}
 
-	pub unsafe fn render_glyphs(&self, window_size: (u32, u32)) {
+	pub unsafe fn render_glyphs(&self, p_mat: &glm::TMat4<f32>) {
 		gl::BindVertexArray(self.vao);
 		gl::UseProgram(self.shader);
-		bind_matrix4(self.shader, "projection", &glyph_projection(window_size));
+		bind_matrix4(self.shader, "projection", p_mat);
 		gl::BindTexture(gl::TEXTURE_2D, self.texture);
-		gl::DrawElements(gl::TRIANGLES, self.indices_len as GLint, gl::UNSIGNED_SHORT, ptr::null());
+		gl::DrawElements(gl::TRIANGLES, (self.count * 6) as GLint, gl::UNSIGNED_SHORT, ptr::null());
 	}
 }
