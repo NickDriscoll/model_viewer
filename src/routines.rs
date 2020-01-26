@@ -334,3 +334,12 @@ pub unsafe fn instanced_prop_vao(vertex_array: &VertexArray, terrain: &Terrain, 
 	bind_instanced_matrices(vao, &vertex_array.attribute_offsets, &model_matrices, instances);
 	vao
 }
+
+pub fn pixel_matrix(window_size: (u32, u32)) -> glm::TMat4<f32> {
+	glm::mat4(
+		2.0 / window_size.0 as f32, 0.0, 0.0, -1.0,
+		0.0, 2.0 / window_size.1 as f32, 0.0, -1.0,
+		0.0, 0.0, 1.0, 0.0,
+		0.0, 0.0, 0.0, 1.0
+	)
+}
