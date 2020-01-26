@@ -14,7 +14,7 @@ use std::sync::mpsc;
 use wavefront_obj::{mtl, obj};
 use noise::{NoiseFn, OpenSimplex, Seedable};
 use glyph_brush::{BrushAction, BrushError, GlyphBrushBuilder, Section};
-use glyph_brush::rusttype::Scale;
+use glyph_brush::{rusttype::Scale, GlyphCruncher};
 use crate::structs::*;
 use crate::glutil::*;
 use crate::routines::*;
@@ -375,7 +375,7 @@ fn main() {
 	};
 
 	//Variables to keep track of the loaded models
-	let model_texture = {		
+	let model_texture = {
 		let tex_params = [
 			(gl::TEXTURE_WRAP_S, gl::REPEAT),
 			(gl::TEXTURE_WRAP_T, gl::REPEAT),
@@ -398,6 +398,7 @@ fn main() {
 	//Camera state
 	let mut camera = Camera::new(glm::vec3(0.0, 1.0, 0.0));
 
+	//Mouse state
 	let mut last_rbutton_state = window.get_mouse_button(MouseButton::Button2);
 
 	//The instant recorded at the beginning of last frame
@@ -464,18 +465,13 @@ fn main() {
 	let mut elapsed_time = 0.0;
 
 	unsafe {
-		gl::Enable(gl::FRAMEBUFFER_SRGB);
-		gl::Enable(gl::BLEND);
-		gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+		gl::Enable(gl::FRAMEBUFFER_SRGB); //Enable automatic linear->SRGB space conversion
+		gl::Enable(gl::BLEND);	//Enable alpha blending
+		gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);	//Set blend func to (Cs * alpha + Cd * (1.0 - alpha))
 	}
 
 	//Set up menu rendering
-	let pixel_projection = glm::mat4(
-		2.0 / window_size.0 as f32, 0.0, 0.0, -1.0,
-		0.0, 2.0 / window_size.1 as f32, 0.0, -1.0,
-		0.0, 0.0, 1.0, 0.0,
-		0.0, 0.0, 0.0, 1.0
-	);
+	let mut pixel_projection = pixel_matrix(window_size);
 	let constantia: &[u8] = include_bytes!("../fonts/Constantia.ttf");
 	let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(constantia).build();
 	let mut glyph_context = unsafe { GlyphContext::new(glyph_shader, glyph_brush.texture_dimensions()) };
@@ -565,6 +561,7 @@ fn main() {
 				WindowEvent::FramebufferSize(width, height) => {
 					window_size = (width as u32, height as u32);
 					aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
+					pixel_projection = pixel_matrix(window_size);
 					println!("Window resolution updated to {}x{}", window_size.0, window_size.1);
 				}
 				WindowEvent::Key(key, _, Action::Press, ..) => {
@@ -766,15 +763,13 @@ fn main() {
 			None => { [glm::identity(), glm::identity(), p_mat] }
 		};
 
-		//Update the camera
-		//The process here is, for the camera's velocity vector: View Space -> World Space -> scale by seconds_elapsed
+		//Update the camera's position		
 		let modifier = if camera.sprinting {
 			15.0
 		} else {
 			1.0
 		};
-		camera.position += time_delta * glm::affine_inverse(v_matrices[2]) * modifier * camera.velocity;
-		camera.fov += camera.fov_delta * time_delta;
+		camera.position += time_delta * glm::affine_inverse(v_matrices[2]) * modifier * camera.velocity; //The process here is, for the camera's velocity vector: View Space -> World Space -> scale by seconds_elapsed
 		
 		//Update the OpenVR meshes
 		if let Some(poses) = render_poses {
@@ -930,11 +925,12 @@ fn main() {
 				let x_buffer = 32.0;
 				let mut y_offset = 18.0;
 
-				let scale = 18.0;
+				let scale = 36.0;
+				let border = 10.0;
 				for i in 0..menu_items.len() {
 					let section = Section {
 						text: menu_items[i],
-						screen_position: (x_buffer, window_size.1 as f32 - scale - y_offset),
+						screen_position: (x_buffer, window_size.1 as f32 - scale - border - y_offset),
 						scale: Scale::uniform(scale),
 						color: [1.0, 1.0, 1.0, 1.0],
 						..Section::default()
@@ -942,14 +938,26 @@ fn main() {
 					glyph_brush.queue(section);
 					y_offset += y_buffer + scale;
 
-					//Prepare the ui button
-					let color = [0.0, 0.0, 0.0];
-					let border = 10.0;
+					let bounding_box = match glyph_brush.glyph_bounds(section) {
+						Some(rect) => { rect }
+						None => { continue; }
+					};
 
-					let left = section.screen_position.0 - border;
-					let right = section.text.len() as f32 * scale + left + border;
-					let top = scale + section.screen_position.1 + border;
-					let bottom = section.screen_position.1 - border;
+					let left = bounding_box.min.x - border;
+					let right = bounding_box.max.x + border;
+					let top = bounding_box.min.y - border;
+					let bottom = bounding_box.max.y + border;
+
+					let color = if (cursor_pos.0 as f32) > left && (cursor_pos.0 as f32) < right && (window_size.1 as f32 - cursor_pos.1 as f32) < bottom && (window_size.1 as f32 - cursor_pos.1 as f32) > top {
+						if window.get_mouse_button(MouseButton::Button1) == Action::Press {
+							[0.0, 0.5, 0.0]
+						} else {
+							[0.0, 0.1, 0.0]
+						}
+					} else {
+						[0.0, 0.0, 0.0]
+					};
+
 					let vertices = [
 						left, bottom, color[0], color[1], color[2],
 						right, bottom, color[0], color[1], color[2],
