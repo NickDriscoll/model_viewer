@@ -399,6 +399,7 @@ fn main() {
 	let mut camera = Camera::new(glm::vec3(0.0, 1.0, 0.0));
 
 	//Mouse state
+	let mut last_lbutton_state = window.get_mouse_button(MouseButton::Button1);
 	let mut last_rbutton_state = window.get_mouse_button(MouseButton::Button2);
 
 	//The instant recorded at the beginning of last frame
@@ -572,31 +573,7 @@ fn main() {
 						Key::A => { camera.velocity += glm::vec4(-camera.speed, 0.0, 0.0, 0.0); }
 						Key::D => { camera.velocity += glm::vec4(camera.speed, 0.0, 0.0, 0.0); }
 						Key::I => { camera.fov = 90.0; }
-						Key::G => { is_lighting = !is_lighting; }
 						Key::LeftShift => { camera.sprinting = true; }
-						Key::L => {
-							handle_result(order_tx.send(WorkOrder::Model));
-						}
-						Key::M => {
-							if let Some(sink) = &mut bgm_sink {
-								sink.set_volume(bgm_volume * is_muted as u32 as f32);
-								is_muted = !is_muted;
-							}
-						}
-						Key::Q => {
-							if is_wireframe {
-								unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL); }
-							} else {
-								unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE); }
-							}
-							is_wireframe = !is_wireframe;
-						}
-						Key::Space => {
-							camera.attached_to_hmd = !camera.attached_to_hmd;
-							if let Some(mesh) = meshes.get_element(hmd_mesh_index) {
-								mesh.render_pass_visibilities[2] = !camera.attached_to_hmd;
-							}
-						}
 						_ => { println!("You pressed the unbound key: {:?}", key); }
 					}
 				}
@@ -615,6 +592,7 @@ fn main() {
 		}
 
 		//Handle mouse input
+		let lbutton_state = window.get_mouse_button(MouseButton::Button1);
 		let rbutton_state = window.get_mouse_button(MouseButton::Button2);
 		let cursor_pos = window.get_cursor_pos();
 		let cursor_delta = [cursor_pos.0 - window_size.0 as f64 / 2.0, cursor_pos.1 - window_size.1 as f64 / 2.0];
@@ -644,7 +622,6 @@ fn main() {
 			//Reset cursor to center of screen
 			window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
 		}
-		last_rbutton_state = rbutton_state;
 
 		//Handle controller input
 		for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
@@ -792,6 +769,156 @@ fn main() {
 			}
 		}
 
+		//Debug menu data
+		let menu_items = ["Toggle wireframe", "Toggle lighting", "Toggle music", "Toggle freecam", "Spawn model"];
+		let menu_commands = [Command::ToggleWireframe, Command::ToggleLighting, Command::ToggleMusic, Command::ToggleFreecam, Command::SpawnModel];
+		let y_buffer = 32.0;
+		let x_buffer = 32.0;
+		let mut y_offset = 18.0;
+		let scale = 36.0;
+		let border = 10.0;
+
+		//Debug menu simulation
+		if debug_menu {
+			for i in 0..menu_items.len() {
+				let section = Section {
+					text: menu_items[i],
+					screen_position: (x_buffer, window_size.1 as f32 - scale - border - y_offset),
+					scale: Scale::uniform(scale),
+					color: [1.0, 1.0, 1.0, 1.0],
+					..Section::default()
+				};
+				glyph_brush.queue(section);
+				y_offset += y_buffer + scale;
+
+				let bounding_box = match glyph_brush.glyph_bounds(section) {
+					Some(rect) => { rect }
+					None => { continue; }
+				};
+
+				let left = bounding_box.min.x - border;
+				let right = bounding_box.max.x + border;
+				let top = bounding_box.min.y - border;
+				let bottom = bounding_box.max.y + border;
+
+				let color = if (cursor_pos.0 as f32) > left && (cursor_pos.0 as f32) < right && (window_size.1 as f32 - cursor_pos.1 as f32) < bottom && (window_size.1 as f32 - cursor_pos.1 as f32) > top {
+					if lbutton_state == Action::Press {
+						[0.0, 0.5, 0.0]
+					} else {
+						if last_lbutton_state == Action::Press {
+							match menu_commands[i] {
+								Command::ToggleWireframe => {
+									if is_wireframe {
+										unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL); }
+									} else {
+										unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE); }
+									}
+									is_wireframe = !is_wireframe;
+								}
+								Command::ToggleLighting => { is_lighting = !is_lighting; }
+								Command::ToggleMusic => {								
+									if let Some(sink) = &mut bgm_sink {
+										sink.set_volume(bgm_volume * is_muted as u32 as f32);
+										is_muted = !is_muted;
+									}
+								}
+								Command::ToggleFreecam => {								
+									camera.attached_to_hmd = !camera.attached_to_hmd;
+									if let Some(mesh) = meshes.get_element(hmd_mesh_index) {
+										mesh.render_pass_visibilities[2] = !camera.attached_to_hmd;
+									}
+								}
+								Command::SpawnModel => {
+									handle_result(order_tx.send(WorkOrder::Model));
+								}
+							}
+						}
+						[0.0, 0.1, 0.0]
+					}
+				} else {
+					[0.0, 0.0, 0.0]
+				};
+
+				let vertices = [
+					left, bottom, color[0], color[1], color[2],
+					right, bottom, color[0], color[1], color[2],
+					left, top, color[0], color[1], color[2],
+					right, top, color[0], color[1], color[2],
+				];
+				let indices = [
+					0u16, 1, 2,
+					3, 2, 1
+				];
+				menu_vaos.insert(unsafe { create_vertex_array_object(&vertices, &indices, &[2, 3])} );
+			}
+		}
+		
+		//Process the glyphs to be rendered this frame
+		unsafe {
+			match glyph_brush.process_queued(|rect, data| {
+				gl::TextureSubImage2D(glyph_context.texture,
+										0,
+									rect.min.x as _,
+									rect.min.y as _,
+									rect.width() as _,
+									rect.height() as _,
+									gl::RED,
+									gl::UNSIGNED_BYTE,
+									data.as_ptr() as _);
+			}, |vertex| {
+				let left = vertex.pixel_coords.min.x as f32;
+				let right = vertex.pixel_coords.max.x as f32;
+				let top = vertex.pixel_coords.min.y as f32;
+				let bottom = vertex.pixel_coords.max.y as f32;
+				let texleft = vertex.tex_coords.min.x;
+				let texright = vertex.tex_coords.max.x;
+				let textop = vertex.tex_coords.min.y;
+				let texbottom = vertex.tex_coords.max.y;
+				let z = vertex.z;
+				let color = vertex.color;
+
+				//We need to return four vertices
+				//We flip the y coordinate of the uvs because for some reason the glyph_texture is rendered upside-down
+				[
+					left, bottom, z, color[0], color[1], color[2], texleft, textop,
+					right, bottom, z, color[0], color[1], color[2], texright, textop,
+					left, top, z, color[0], color[1], color[2], texleft, texbottom,
+					right, top, z, color[0], color[1], color[2], texright, texbottom
+				]
+			}) {
+				Ok(BrushAction::Draw(verts)) => {
+					println!("Glyph cache update");
+					if verts.len() > 0 {
+						let mut buffer = Vec::with_capacity(verts.len() * 32);
+						for vert in &verts {
+							for v in vert {
+								buffer.push(*v);
+							}
+						}
+						glyph_context.count = verts.len();
+						
+						let mut indices = vec![0; glyph_context.count * 6];
+						for i in 0..glyph_context.count {
+							indices[i * 6] = 4 * i as u16;
+							indices[i * 6 + 1] = indices[i * 6] + 1;
+							indices[i * 6 + 2] = indices[i * 6] + 2;
+							indices[i * 6 + 3] = indices[i * 6] + 3;
+							indices[i * 6 + 4] = indices[i * 6] + 2;
+							indices[i * 6 + 5] = indices[i * 6] + 1;
+						}
+						
+						gl::DeleteVertexArrays(1, &glyph_context.vao);
+						glyph_context.vao = create_vertex_array_object(&buffer, &indices, &[3, 3, 2]);
+					} else {
+						gl::DeleteVertexArrays(1, &glyph_context.vao);
+						glyph_context.vao = create_vertex_array_object(&[0.0], &[0], &[]);
+					}
+				}
+				Ok(BrushAction::ReDraw) => {  }
+				Err(BrushError::TextureTooSmall {..}) => { println!("Need to resize the glyph texture"); }
+			}
+		}
+
 		//Rendering code
 
 		//Set up data for each render pass
@@ -919,135 +1046,30 @@ fn main() {
 				//Clearing the depth buffer here so that none of the text can end up behind anything
 				gl::Clear(gl::DEPTH_BUFFER_BIT);
 
-				//Draw debug menu items
-				let menu_items = ["Toggle wireframe", "Toggle lighting", "Toggle music", "Toggle freecam", "Spawn model"];
-				let y_buffer = 32.0;
-				let x_buffer = 32.0;
-				let mut y_offset = 18.0;
-
-				let scale = 36.0;
-				let border = 10.0;
-				for i in 0..menu_items.len() {
-					let section = Section {
-						text: menu_items[i],
-						screen_position: (x_buffer, window_size.1 as f32 - scale - border - y_offset),
-						scale: Scale::uniform(scale),
-						color: [1.0, 1.0, 1.0, 1.0],
-						..Section::default()
-					};
-					glyph_brush.queue(section);
-					y_offset += y_buffer + scale;
-
-					let bounding_box = match glyph_brush.glyph_bounds(section) {
-						Some(rect) => { rect }
-						None => { continue; }
-					};
-
-					let left = bounding_box.min.x - border;
-					let right = bounding_box.max.x + border;
-					let top = bounding_box.min.y - border;
-					let bottom = bounding_box.max.y + border;
-
-					let color = if (cursor_pos.0 as f32) > left && (cursor_pos.0 as f32) < right && (window_size.1 as f32 - cursor_pos.1 as f32) < bottom && (window_size.1 as f32 - cursor_pos.1 as f32) > top {
-						if window.get_mouse_button(MouseButton::Button1) == Action::Press {
-							[0.0, 0.5, 0.0]
-						} else {
-							[0.0, 0.1, 0.0]
-						}
-					} else {
-						[0.0, 0.0, 0.0]
-					};
-
-					let vertices = [
-						left, bottom, color[0], color[1], color[2],
-						right, bottom, color[0], color[1], color[2],
-						left, top, color[0], color[1], color[2],
-						right, top, color[0], color[1], color[2],
-					];
-					let indices = [
-						0u16, 1, 2,
-						3, 2, 1
-					];
-					menu_vaos.insert(create_vertex_array_object(&vertices, &indices, &[2, 3]));
-				}
-
-				//Draw the buttons
-				gl::UseProgram(ui_shader);
-				bind_matrix4(ui_shader, "projection", &pixel_projection);
-				for option_vao in menu_vaos.iter() {
-					if let Some(vao) = option_vao {
-						gl::BindVertexArray(*vao);
-						gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
-						gl::DeleteVertexArrays(1, vao);
-					}
-				}
-				menu_vaos.clear();
-
-				match glyph_brush.process_queued(|rect, data| {
-					gl::TextureSubImage2D(glyph_context.texture,
-									  	  0,
-									      rect.min.x as _,
-									      rect.min.y as _,
-									      rect.width() as _,
-									      rect.height() as _,
-									      gl::RED,
-									      gl::UNSIGNED_BYTE,
-									      data.as_ptr() as _);
-				}, |vertex| {
-					let left = vertex.pixel_coords.min.x as f32;
-					let right = vertex.pixel_coords.max.x as f32;
-					let top = vertex.pixel_coords.min.y as f32;
-					let bottom = vertex.pixel_coords.max.y as f32;
-					let texleft = vertex.tex_coords.min.x;
-					let texright = vertex.tex_coords.max.x;
-					let textop = vertex.tex_coords.min.y;
-					let texbottom = vertex.tex_coords.max.y;
-					let z = vertex.z;
-					let color = vertex.color;
-
-					//We need to return four vertices
-					//We flip the y coordinate of the uvs because for some reason the glyph_texture is rendered upside-down
-					[
-						left, bottom, z, color[0], color[1], color[2], texleft, textop,
-						right, bottom, z, color[0], color[1], color[2], texright, textop,
-						left, top, z, color[0], color[1], color[2], texleft, texbottom,
-						right, top, z, color[0], color[1], color[2], texright, texbottom
-					]
-				}) {
-					Ok(BrushAction::Draw(verts)) => {
-						println!("Re-drawing glyphs");
-						if verts.len() > 0 {
-							let mut buffer = Vec::with_capacity(verts.len() * 32);
-							for vert in &verts {
-								for v in vert {
-									buffer.push(*v);
-								}
-							}
-							glyph_context.count = verts.len();
-							
-							let mut indices = vec![0; glyph_context.count * 6];
-							for i in 0..glyph_context.count {
-								indices[i * 6] = 4 * i as u16;
-								indices[i * 6 + 1] = indices[i * 6] + 1;
-								indices[i * 6 + 2] = indices[i * 6] + 2;
-								indices[i * 6 + 3] = indices[i * 6] + 3;
-								indices[i * 6 + 4] = indices[i * 6] + 2;
-								indices[i * 6 + 5] = indices[i * 6] + 1;
-							}
-							
-							gl::DeleteVertexArrays(1, &glyph_context.vao);
-							glyph_context.vao = create_vertex_array_object(&buffer, &indices, &[3, 3, 2]);
-							glyph_context.render_glyphs(&pixel_projection);
+				if i == 2 {
+					//Draw the buttons
+					gl::UseProgram(ui_shader);
+					bind_matrix4(ui_shader, "projection", &pixel_projection);
+					for option_vao in menu_vaos.iter() {
+						if let Some(vao) = option_vao {
+							gl::BindVertexArray(*vao);
+							gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
+							gl::DeleteVertexArrays(1, vao);
 						}
 					}
-					Ok(BrushAction::ReDraw) => { glyph_context.render_glyphs(&pixel_projection); }
-					Err(BrushError::TextureTooSmall {..}) => { println!("Need to resize the glyph texture"); }
+					menu_vaos.clear();
+
+					//Draw the glyphs
+					glyph_context.render_glyphs(&pixel_projection);
 				}
 
 				//Submit render to HMD
 				submit_to_hmd(eyes[i], &openvr_compositor, &openvr_texture_handle);
 			}
 		}
+		
+		last_lbutton_state = lbutton_state;
+		last_rbutton_state = rbutton_state;
 
 		window.render_context().swap_buffers();
 		glfw.poll_events();
