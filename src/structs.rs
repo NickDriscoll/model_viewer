@@ -307,3 +307,11 @@ impl GlyphContext {
 		gl::DrawElements(gl::TRIANGLES, (self.count * 6) as GLint, gl::UNSIGNED_SHORT, ptr::null());
 	}
 }
+
+pub enum Command {
+	ToggleWireframe,
+	ToggleLighting,
+	ToggleMusic,
+	ToggleFreecam,
+	SpawnModel
+}
