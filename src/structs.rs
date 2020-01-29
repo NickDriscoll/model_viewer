@@ -312,6 +312,7 @@ pub enum Command {
 	ToggleWireframe,
 	ToggleLighting,
 	ToggleMusic,
+	SwitchMusic,
 	ToggleFreecam,
 	SpawnModel
 }

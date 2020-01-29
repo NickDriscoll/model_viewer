@@ -323,7 +323,7 @@ pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain
 	model_matrices
 }
 
-pub fn play_sound(sink: &Sink, bgm_path: &str) {
+pub fn add_source_from_file(sink: &Sink, bgm_path: &str) {
 	let source = rodio::Decoder::new(BufReader::new(File::open(bgm_path).unwrap())).unwrap();
 	sink.append(source);
 }
@@ -342,4 +342,12 @@ pub fn pixel_matrix(window_size: (u32, u32)) -> glm::TMat4<f32> {
 		0.0, 0.0, 1.0, 0.0,
 		0.0, 0.0, 0.0, 1.0
 	)
+}
+
+pub fn file_select() -> Option<String> {
+	//Invoke file selection dialogue
+	match nfd::open_file_dialog(None, None).unwrap() {
+		Response::Okay(filename) => { Some(filename) }
+		_ => { None }
+	}
 }

@@ -114,16 +114,12 @@ fn main() {
 		loop {
 			match order_rx.recv() {
 				Ok(WorkOrder::Model) => {
-					//Invoke file selection dialogue
-					let path = match nfd::open_file_dialog(None, None).unwrap() {
-						Response::Okay(filename) => { Some(filename) }
-						_ => { None }
-					};
+					let path = file_select();
 
 					//Send model data back to the main thread
 					if let Some(p) = path {
 						handle_result(result_tx.send(WorkResult::Model(load_wavefront_obj(&p))));
-					}					
+					}
 				}
 				Ok(WorkOrder::Quit) => { return; }
 				Err(e) => {
@@ -416,7 +412,7 @@ fn main() {
 	let mut bgm_sink = match rodio::default_output_device() {
 		Some(device) => {
 			let sink = rodio::Sink::new(&device);
-			play_sound(&sink, bgm_path);
+			add_source_from_file(&sink, bgm_path);
 			sink.set_volume(bgm_volume);
 			sink.play();
 			Some(sink)
@@ -494,7 +490,7 @@ fn main() {
 		//Restart music if it stopped
 		if let Some(sink) = &bgm_sink {
 			if sink.empty() {
-				play_sound(&sink, bgm_path);
+				add_source_from_file(&sink, bgm_path);
 			}
 		}
 
@@ -770,8 +766,8 @@ fn main() {
 		}
 
 		//Debug menu data
-		let menu_items = ["Toggle wireframe", "Toggle lighting", "Toggle music", "Toggle freecam", "Spawn model"];
-		let menu_commands = [Command::ToggleWireframe, Command::ToggleLighting, Command::ToggleMusic, Command::ToggleFreecam, Command::SpawnModel];
+		let menu_items = ["WIREFRAME", "LIGHTING", "MUTE", "SWAP BGM", "CAMERA MODE", "SPAWN MODEL"];
+		let menu_commands = [Command::ToggleWireframe, Command::ToggleLighting, Command::ToggleMusic, Command::SwitchMusic, Command::ToggleFreecam, Command::SpawnModel];
 		let y_buffer = 32.0;
 		let x_buffer = 32.0;
 		let mut y_offset = 18.0;
@@ -830,6 +826,26 @@ fn main() {
 								}
 								Command::SpawnModel => {
 									handle_result(order_tx.send(WorkOrder::Model));
+								}
+								Command::SwitchMusic => {
+									if let Some(sink) = &mut bgm_sink {
+										match nfd::open_file_dialog(None, None) {
+											Ok(response) => {
+												match response {
+													Response::Okay(filename) => {
+														println!("Playing {}", filename);
+														sink.stop();
+														add_source_from_file(sink, &filename);
+														sink.play();
+													}
+													_ => { }
+												}
+											}
+											Err(e) => {
+												println!("{}", e);
+											}
+										}
+									}
 								}
 							}
 						}
