@@ -314,5 +314,6 @@ pub enum Command {
 	ToggleMusic,
 	SwitchMusic,
 	ToggleFreecam,
-	SpawnModel
+	SpawnModel,
+	ScreenShot
 }

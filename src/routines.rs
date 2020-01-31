@@ -344,10 +344,19 @@ pub fn pixel_matrix(window_size: (u32, u32)) -> glm::TMat4<f32> {
 	)
 }
 
+//Invoke file selection dialogue, and return the resulting filepath as a String
 pub fn file_select() -> Option<String> {
-	//Invoke file selection dialogue
-	match nfd::open_file_dialog(None, None).unwrap() {
-		Response::Okay(filename) => { Some(filename) }
-		_ => { None }
+	let mut res = None;
+
+	let mut dialog = nfd::open_file_dialog(None, None);
+	while let Err(_) = dialog {
+		dialog = nfd::open_file_dialog(None, None);
 	}
+	if let Ok(response) = dialog {
+		match response {
+			Response::Okay(filename) => { res = Some(filename) }
+			_ => { res = None }
+		}
+	}
+	res
 }

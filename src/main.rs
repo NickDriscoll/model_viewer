@@ -15,6 +15,8 @@ use wavefront_obj::{mtl, obj};
 use noise::{NoiseFn, OpenSimplex, Seedable};
 use glyph_brush::{BrushAction, BrushError, GlyphBrushBuilder, Section};
 use glyph_brush::{rusttype::Scale, GlyphCruncher};
+use image::ColorType;
+use chrono::offset::Local;
 use crate::structs::*;
 use crate::glutil::*;
 use crate::routines::*;
@@ -397,6 +399,7 @@ fn main() {
 	//Mouse state
 	let mut last_lbutton_state = window.get_mouse_button(MouseButton::Button1);
 	let mut last_rbutton_state = window.get_mouse_button(MouseButton::Button2);
+	let mut stored_position = (0.0, 0.0);
 
 	//The instant recorded at the beginning of last frame
 	let mut last_frame_instant = Instant::now();
@@ -428,6 +431,7 @@ fn main() {
 	let mut is_lighting = true;
 	let mut is_flying = false;
 	let mut debug_menu = false;
+	let mut taking_screenshot = false;
 
 	//Unit vector pointing towards the sun
 	let light_direction = glm::normalize(&glm::vec4(0.8, 1.0, 1.0, 0.0));
@@ -611,12 +615,12 @@ fn main() {
 		if last_rbutton_state == Action::Press && rbutton_state == Action::Release {
 			if window.get_cursor_mode() == CursorMode::Normal {
 				window.set_cursor_mode(CursorMode::Disabled);
+				stored_position = cursor_pos;
+				window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
 			} else {
 				window.set_cursor_mode(CursorMode::Normal);
+				window.set_cursor_pos(stored_position.0, stored_position.1);
 			}
-
-			//Reset cursor to center of screen
-			window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
 		}
 
 		//Handle controller input
@@ -766,8 +770,8 @@ fn main() {
 		}
 
 		//Debug menu data
-		let menu_items = ["WIREFRAME", "LIGHTING", "MUTE", "SWAP BGM", "CAMERA MODE", "SPAWN MODEL"];
-		let menu_commands = [Command::ToggleWireframe, Command::ToggleLighting, Command::ToggleMusic, Command::SwitchMusic, Command::ToggleFreecam, Command::SpawnModel];
+		let menu_items = ["WIREFRAME", "LIGHTING", "MUTE", "SWAP BGM", "CAMERA MODE", "SPAWN MODEL", "SCREENSHOT"];
+		let menu_commands = [Command::ToggleWireframe, Command::ToggleLighting, Command::ToggleMusic, Command::SwitchMusic, Command::ToggleFreecam, Command::SpawnModel, Command::ScreenShot];
 		let y_buffer = 32.0;
 		let x_buffer = 32.0;
 		let mut y_offset = 18.0;
@@ -803,14 +807,7 @@ fn main() {
 					} else {
 						if last_lbutton_state == Action::Press {
 							match menu_commands[i] {
-								Command::ToggleWireframe => {
-									if is_wireframe {
-										unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL); }
-									} else {
-										unsafe { gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE); }
-									}
-									is_wireframe = !is_wireframe;
-								}
+								Command::ToggleWireframe => { is_wireframe = !is_wireframe; }
 								Command::ToggleLighting => { is_lighting = !is_lighting; }
 								Command::ToggleMusic => {								
 									if let Some(sink) = &mut bgm_sink {
@@ -829,24 +826,17 @@ fn main() {
 								}
 								Command::SwitchMusic => {
 									if let Some(sink) = &mut bgm_sink {
-										match nfd::open_file_dialog(None, None) {
-											Ok(response) => {
-												match response {
-													Response::Okay(filename) => {
-														println!("Playing {}", filename);
-														sink.stop();
-														add_source_from_file(sink, &filename);
-														sink.play();
-													}
-													_ => { }
-												}
-											}
-											Err(e) => {
-												println!("{}", e);
-											}
+										if let Some(filename) = file_select() {
+											println!("Playing {}", filename);
+											//sink.stop();
+											sink.pause();
+											add_source_from_file(sink, &filename);
+											sink.play();
+											println!("{}, {}", sink.empty(), sink.is_paused());
 										}
 									}
 								}
+								Command::ScreenShot => { taking_screenshot = true; }
 							}
 						}
 						[0.0, 0.1, 0.0]
@@ -953,6 +943,13 @@ fn main() {
 		unsafe {
 			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
 			gl::DepthFunc(gl::LEQUAL);	//Pass the fragment with the smallest z-value
+
+			//Set polygon mode
+			if is_wireframe {
+				gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
+			} else {
+				gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
+			}
 
 			//Set clear color
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
@@ -1062,8 +1059,21 @@ fn main() {
 				//Clearing the depth buffer here so that none of the text can end up behind anything
 				gl::Clear(gl::DEPTH_BUFFER_BIT);
 
+				//If we're rendering to the companion window
 				if i == 2 {
+					//Check if we need to take a screenshot
+					if taking_screenshot {
+						let mut buffer = vec![0u8; (window_size.0 * window_size.1) as usize * mem::size_of::<GLuint>()];
+						gl::ReadPixels(0, 0, window_size.0 as GLint, window_size.1 as GLint, gl::RGBA, gl::UNSIGNED_BYTE, buffer.as_mut_slice() as *mut [u8] as *mut c_void);
+						let date_format = Local::now().format("%F_%H%M%S");
+						if let Err(e) = image::save_buffer(format!("screenshots/{}.png", date_format), &buffer, window_size.0, window_size.1, ColorType::RGBA(8)) {
+							println!("Error taking screenshot: {}", e);
+						}
+						taking_screenshot = false;
+					}
+
 					//Draw the buttons
+					gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
 					gl::UseProgram(ui_shader);
 					bind_matrix4(ui_shader, "projection", &pixel_projection);
 					for option_vao in menu_vaos.iter() {
