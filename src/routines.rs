@@ -99,7 +99,7 @@ pub fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 	}
 
 	//Load .obj file's contents as a string
-	let obj_contents = match read_to_string(path) {
+	let obj_contents = match fs::read_to_string(path) {
 		Ok(s) => { s }
 		Err(e) => {
 			println!("{}", e);
@@ -108,7 +108,7 @@ pub fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 	};
 
 	//Load .mtl file's contents as a string
-	let mtl_contents = match read_to_string(format!("{}.mtl", path.split_at(path.len() - 4).0)) {
+	let mtl_contents = match fs::read_to_string(format!("{}.mtl", path.split_at(path.len() - 4).0)) {
 		Ok(s) => { Some(s) }
 		Err(e) => {
 			println!("{}", e);

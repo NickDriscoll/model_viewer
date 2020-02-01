@@ -1,22 +1,21 @@
 extern crate gl;
 extern crate nalgebra_glm as glm;
 use glfw::{Action, Context, CursorMode, Key, MouseButton, WindowMode, WindowEvent};
-use openvr::{ApplicationType, button_id, Eye, TrackedControllerRole};
-use openvr::compositor::texture::{ColorSpace, Handle, Texture};
+use openvr::{ApplicationType, button_id, Eye, TrackedControllerRole, compositor::texture::{ColorSpace, Handle, Texture}};
 use nfd::Response;
 use std::collections::HashMap;
-use std::fs::{File, read_to_string};
-use std::io::BufReader;
+use std::fs;
+use std::fs::File;
+use std::io::{BufReader, Cursor};
 use std::os::raw::c_void;
-use std::{mem, ptr, thread};
+use std::{path::Path, mem, ptr, thread};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::sync::mpsc;
 use wavefront_obj::{mtl, obj};
 use noise::{NoiseFn, OpenSimplex, Seedable};
-use glyph_brush::{BrushAction, BrushError, GlyphBrushBuilder, Section};
-use glyph_brush::{rusttype::Scale, GlyphCruncher};
-use image::ColorType;
+use glyph_brush::{BrushAction, BrushError, GlyphBrushBuilder, GlyphCruncher, Section, rusttype::Scale};
 use chrono::offset::Local;
+use image::{DynamicImage, ImageBuffer};
 use crate::structs::*;
 use crate::glutil::*;
 use crate::routines::*;
@@ -574,7 +573,7 @@ fn main() {
 						Key::D => { camera.velocity += glm::vec4(camera.speed, 0.0, 0.0, 0.0); }
 						Key::I => { camera.fov = 90.0; }
 						Key::LeftShift => { camera.sprinting = true; }
-						_ => { println!("You pressed the unbound key: {:?}", key); }
+						_ => {  }
 					}
 				}
 				WindowEvent::Key(key, _, Action::Release, ..) => {
@@ -584,6 +583,7 @@ fn main() {
 						Key::A => { camera.velocity.x -= -camera.speed; }
 						Key::D => { camera.velocity.x -= camera.speed; }
 						Key::LeftShift => { camera.sprinting = false; }
+						Key::F1 => { taking_screenshot = true; }
 						_ => {}
 					}
 				}
@@ -770,8 +770,8 @@ fn main() {
 		}
 
 		//Debug menu data
-		let menu_items = ["WIREFRAME", "LIGHTING", "MUTE", "SWAP BGM", "CAMERA MODE", "SPAWN MODEL", "SCREENSHOT"];
-		let menu_commands = [Command::ToggleWireframe, Command::ToggleLighting, Command::ToggleMusic, Command::SwitchMusic, Command::ToggleFreecam, Command::SpawnModel, Command::ScreenShot];
+		let menu_items = ["WIREFRAME", "LIGHTING", "MUTE", "SWAP BGM", "CAMERA MODE", "SPAWN MODEL"];
+		let menu_commands = [Command::ToggleWireframe, Command::ToggleLighting, Command::ToggleMusic, Command::SwitchMusic, Command::ToggleFreecam, Command::SpawnModel];
 		let y_buffer = 32.0;
 		let x_buffer = 32.0;
 		let mut y_offset = 18.0;
@@ -1061,17 +1061,6 @@ fn main() {
 
 				//If we're rendering to the companion window
 				if i == 2 {
-					//Check if we need to take a screenshot
-					if taking_screenshot {
-						let mut buffer = vec![0u8; (window_size.0 * window_size.1) as usize * mem::size_of::<GLuint>()];
-						gl::ReadPixels(0, 0, window_size.0 as GLint, window_size.1 as GLint, gl::RGBA, gl::UNSIGNED_BYTE, buffer.as_mut_slice() as *mut [u8] as *mut c_void);
-						let date_format = Local::now().format("%F_%H%M%S");
-						if let Err(e) = image::save_buffer(format!("screenshots/{}.png", date_format), &buffer, window_size.0, window_size.1, ColorType::RGBA(8)) {
-							println!("Error taking screenshot: {}", e);
-						}
-						taking_screenshot = false;
-					}
-
 					//Draw the buttons
 					gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
 					gl::UseProgram(ui_shader);
@@ -1087,7 +1076,33 @@ fn main() {
 
 					//Draw the glyphs
 					glyph_context.render_glyphs(&pixel_projection);
-				}
+
+					if taking_screenshot {
+						let mut buffer = vec![0u8; (window_size.0 * window_size.1) as usize * 4];
+						gl::ReadPixels(0, 0, window_size.0 as GLint, window_size.1 as GLint, gl::RGBA, gl::UNSIGNED_BYTE, buffer.as_mut_slice() as *mut [u8] as *mut c_void);
+
+						let dynamic_image = match ImageBuffer::from_raw(window_size.0, window_size.1, buffer) {
+							Some(im) => { Some(DynamicImage::ImageRgba8(im).flipv()) }
+							None => { None }
+						};
+
+						if let Some(dyn_image) = dynamic_image {
+							//Create the screenshot directory if there isn't one
+							let screenshot_dir = "screenshots";
+							if !Path::new(screenshot_dir).is_dir() {
+								if let Err(e) = fs::create_dir(screenshot_dir) {
+									println!("Unable to create screenshot directory: {}", e);
+								}
+							}
+							
+							if let Err(e) = dyn_image.save(format!("screenshots/{}.png", Local::now().format("%F_%H%M%S"))) {
+								println!("Error taking screenshot: {}", e);
+							}
+						}
+
+						taking_screenshot = false;
+					}
+				}					
 
 				//Submit render to HMD
 				submit_to_hmd(eyes[i], &openvr_compositor, &openvr_texture_handle);
