@@ -272,6 +272,33 @@ pub struct VertexArray {
 	pub attribute_offsets: Vec<i32>
 }
 
+pub struct InstancedProp {
+	pub instances: usize,
+	pub vao: GLuint,
+	pub geo_boundaries: Vec<GLsizei>,
+	pub materials: Vec<Option<mtl::Material>>
+}
+
+impl InstancedProp {
+	pub fn new(path: &str, terrain: &Terrain, instances: usize, halton_counter: &mut usize) -> Self {		
+		let model_data = load_wavefront_obj(path).unwrap();
+
+		let v = VertexArray {
+			vertices: model_data.vertices,
+			indices: model_data.indices,
+			attribute_offsets: vec![3, 3, 2]
+		};
+		let vao = unsafe { instanced_prop_vao(&v, terrain, instances, halton_counter) };
+		
+		InstancedProp {
+			instances,
+			vao,
+			geo_boundaries: model_data.geo_boundaries,
+			materials: model_data.materials
+		}
+	}
+}
+
 pub struct GlyphContext {
 	pub vao: GLuint,
 	pub shader: GLuint,
