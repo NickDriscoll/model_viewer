@@ -307,10 +307,10 @@ pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain
 		};
 
 		let rotation_vector = glm::cross::<f32, glm::U3>(&glm::vec3(0.0, 1.0, 0.0), &terrain.surface_normals[normal_index]);
-		let rotation_magnitude = f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &terrain.surface_normals[normal_index]));
+		let rotation_magnitude = 0.2 * f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &terrain.surface_normals[normal_index]));
 
 		//Note: Multiplying rotation angle by 0.2 because that looks good enough and I can't tell how my math is wrong
-		let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(rotation_magnitude*0.2, &rotation_vector);
+		let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(rotation_magnitude, &rotation_vector) * glm::rotation(rand::random::<f32>() * glm::half_pi::<f32>(), &glm::vec3(0.0, 1.0, 0.0));
 
 		//Write this matrix to the buffer
 		let mut count = 0;

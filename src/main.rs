@@ -319,9 +319,9 @@ fn main() {
 
 	//Plant trees	
 	let mut instanced_props = Vec::with_capacity(3);
-	instanced_props.push(InstancedProp::new("models/tree1.obj", &terrain, 100, &mut halton_counter));
-	instanced_props.push(InstancedProp::new("models/tree2.obj", &terrain, 100, &mut halton_counter));
-	instanced_props.push(InstancedProp::new("models/tree3.obj", &terrain, 100, &mut halton_counter));
+	instanced_props.push(InstancedProp::new("models/tree1.obj", &terrain, 200, &mut halton_counter));
+	instanced_props.push(InstancedProp::new("models/tree2.obj", &terrain, 200, &mut halton_counter));
+	instanced_props.push(InstancedProp::new("models/tree3.obj", &terrain, 200, &mut halton_counter));
 
 	//Plant grass
 	const GRASS_COUNT: usize = 50000;
