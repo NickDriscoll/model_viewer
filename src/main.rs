@@ -6,7 +6,7 @@ use nfd::Response;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
-use std::io::{BufReader, Cursor};
+use std::io::BufReader;
 use std::os::raw::c_void;
 use std::{path::Path, mem, ptr, thread};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -317,19 +317,11 @@ fn main() {
 	//This counter is used for both trees and grass
 	let mut halton_counter = 1;
 
-	//Plant trees
-	const TREE_COUNT: usize = 250;
-	let (trees_vao, trees_geo_boundaries, trees_mats) = unsafe {
-		let model_data = load_wavefront_obj("models/tree1.obj").unwrap();
-
-		let v = VertexArray {
-			vertices: model_data.vertices,
-			indices: model_data.indices,
-			attribute_offsets: vec![3, 3, 2]
-		};
-		let vao = instanced_prop_vao(&v, &terrain, TREE_COUNT, &mut halton_counter);		
-		(vao, model_data.geo_boundaries, model_data.materials)
-	};
+	//Plant trees	
+	let mut instanced_props = Vec::with_capacity(3);
+	instanced_props.push(InstancedProp::new("models/tree1.obj", &terrain, 100, &mut halton_counter));
+	instanced_props.push(InstancedProp::new("models/tree2.obj", &terrain, 100, &mut halton_counter));
+	instanced_props.push(InstancedProp::new("models/tree3.obj", &terrain, 100, &mut halton_counter));
 
 	//Plant grass
 	const GRASS_COUNT: usize = 50000;
@@ -579,7 +571,7 @@ fn main() {
 				WindowEvent::Key(key, _, Action::Release, ..) => {
 					match key {
 						Key::W => {	camera.velocity.z -= -camera.speed; }
-						Key::S => { camera.velocity.z -= camera.speed;	}
+						Key::S => { camera.velocity.z -= camera.speed; }
 						Key::A => { camera.velocity.x -= -camera.speed; }
 						Key::D => { camera.velocity.x -= camera.speed; }
 						Key::LeftShift => { camera.sprinting = false; }
@@ -980,11 +972,13 @@ fn main() {
 			gl::UseProgram(instanced_shadow_map_shader);
 			gl::UniformMatrix4fv(uniform_location(instanced_shadow_map_shader, "shadowVP"), 1, gl::FALSE, &flatten_glm(&shadow_viewprojection) as *const GLfloat);
 
-			//Render instanced trees into shadow map
-			gl::BindVertexArray(trees_vao);
-			gl::Uniform1i(uniform_location(instanced_shadow_map_shader, "using_texture"), 0);
-			for i in 0..trees_geo_boundaries.len()-1 {
-				gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[i + 1] - trees_geo_boundaries[i], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * trees_geo_boundaries[i]) as *const c_void, TREE_COUNT as GLsizei);
+			//Render instanced propss into shadow map
+			for prop in instanced_props.iter() {			
+				gl::BindVertexArray(prop.vao);
+				gl::Uniform1i(uniform_location(instanced_shadow_map_shader, "using_texture"), 0);
+				for i in 0..prop.geo_boundaries.len()-1 {
+					gl::DrawElementsInstanced(gl::TRIANGLES, prop.geo_boundaries[i + 1] - prop.geo_boundaries[i], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * prop.geo_boundaries[i]) as *const c_void, prop.instances as GLsizei);
+				}
 			}
 
 			//Render instanced grass into shadow map
@@ -1024,12 +1018,14 @@ fn main() {
 
 				gl::ActiveTexture(gl::TEXTURE1);
 				gl::BindTexture(gl::TEXTURE_2D, shadow_map);
-				gl::BindVertexArray(trees_vao);
 
 				//Draw calls
-				for j in 0..trees_geo_boundaries.len() - 1 {
-					bind_material(instanced_model_shader, &trees_mats[j]);
-					gl::DrawElementsInstanced(gl::TRIANGLES, trees_geo_boundaries[j + 1] - trees_geo_boundaries[j], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * trees_geo_boundaries[j]) as *const c_void, TREE_COUNT as GLsizei);
+				for prop in instanced_props.iter() {
+					gl::BindVertexArray(prop.vao);
+					for j in 0..prop.geo_boundaries.len() - 1 {
+						bind_material(instanced_model_shader, &prop.materials[j]);
+						gl::DrawElementsInstanced(gl::TRIANGLES, prop.geo_boundaries[j + 1] - prop.geo_boundaries[j], gl::UNSIGNED_SHORT, (mem::size_of::<GLshort>() as i32 * prop.geo_boundaries[j]) as *const c_void, prop.instances as GLsizei);
+					}
 				}
 
 				//Render the grass billboards with instanced rendering
@@ -1094,7 +1090,7 @@ fn main() {
 									println!("Unable to create screenshot directory: {}", e);
 								}
 							}
-							
+
 							if let Err(e) = dyn_image.save(format!("screenshots/{}.png", Local::now().format("%F_%H%M%S"))) {
 								println!("Error taking screenshot: {}", e);
 							}
