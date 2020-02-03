@@ -45,7 +45,7 @@ pub struct Camera {
 	pub fov: f32,					//In degrees
 	pub fov_delta: f32,
 	pub speed: f32,
-	pub sprinting: bool,
+	pub speed_multiplier: f32,
 	pub attached_to_hmd: bool
 }
 
@@ -59,7 +59,7 @@ impl Camera {
 			fov: 90.0,
 			fov_delta: 0.0,
 			speed: 2.0,
-			sprinting: false,
+			speed_multiplier: 1.0,
 			attached_to_hmd: true
 		}
 	}

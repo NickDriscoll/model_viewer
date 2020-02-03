@@ -67,8 +67,8 @@ void main() {
 	//Get specular contribution (blinn-phong)
 	vec4 view_direction = normalize(view_position - f_pos);
 	vec4 half_dir = normalize(light_direction + view_direction);
-	float specular_angle = max(0.0, dot(norm, half_dir));
-	vec3 specular_light = pow(0.0, specular_coefficient) * LIGHT_COLOR * shadow;
+	float spec = max(0.0, dot(norm, half_dir));
+	vec3 specular_light = pow(spec, specular_coefficient) * LIGHT_COLOR * shadow;
 
 	//Calculate distance attenuation
 	//float attenuation = clamp(ATTENUATION_CONSTANT / length(light_position - f_pos), 0.0, 1.0);

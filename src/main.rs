@@ -299,7 +299,7 @@ fn main() {
 				load_texture("textures/grass.jpg", &tex_params)
 			};
 			let mut mesh = Mesh::new(vao, model_matrix, tex, vec![0, indices.len() as GLsizei], None);
-			mesh.specular_coefficient = 100.0;
+			mesh.specular_coefficient = 0.001;
 			meshes.insert(mesh)
 		};
 	
@@ -564,7 +564,8 @@ fn main() {
 						Key::A => { camera.velocity += glm::vec4(-camera.speed, 0.0, 0.0, 0.0); }
 						Key::D => { camera.velocity += glm::vec4(camera.speed, 0.0, 0.0, 0.0); }
 						Key::I => { camera.fov = 90.0; }
-						Key::LeftShift => { camera.sprinting = true; }
+						Key::LeftShift => { camera.speed_multiplier = 15.0; }
+						Key::LeftControl => { camera.speed_multiplier = 0.1; }
 						_ => {  }
 					}
 				}
@@ -574,7 +575,7 @@ fn main() {
 						Key::S => { camera.velocity.z -= camera.speed; }
 						Key::A => { camera.velocity.x -= -camera.speed; }
 						Key::D => { camera.velocity.x -= camera.speed; }
-						Key::LeftShift => { camera.sprinting = false; }
+						Key::LeftShift | Key::LeftControl => { camera.speed_multiplier = 1.0; }
 						Key::F1 => { taking_screenshot = true; }
 						_ => {}
 					}
@@ -732,13 +733,8 @@ fn main() {
 			None => { [glm::identity(), glm::identity(), p_mat] }
 		};
 
-		//Update the camera's position		
-		let modifier = if camera.sprinting {
-			15.0
-		} else {
-			1.0
-		};
-		camera.position += time_delta * glm::affine_inverse(v_matrices[2]) * modifier * camera.velocity; //The process here is, for the camera's velocity vector: View Space -> World Space -> scale by seconds_elapsed
+		//Update the camera's position
+		camera.position += time_delta * glm::affine_inverse(v_matrices[2]) * camera.speed_multiplier * camera.velocity; //The process here is, for the camera's velocity vector: View Space -> World Space -> scale by seconds_elapsed
 		
 		//Update the OpenVR meshes
 		if let Some(poses) = render_poses {
@@ -762,7 +758,7 @@ fn main() {
 		}
 
 		//Debug menu data
-		let menu_items = ["WIREFRAME", "LIGHTING", "MUTE", "SWAP BGM", "CAMERA MODE", "SPAWN MODEL"];
+		let menu_items = ["WIREFRAME", "LIGHTING", "MUTE", "SWAP BGM", "CAMERA MODE", "Spawn model"];
 		let menu_commands = [Command::ToggleWireframe, Command::ToggleLighting, Command::ToggleMusic, Command::SwitchMusic, Command::ToggleFreecam, Command::SpawnModel];
 		let y_buffer = 32.0;
 		let x_buffer = 32.0;
@@ -885,7 +881,6 @@ fn main() {
 				]
 			}) {
 				Ok(BrushAction::Draw(verts)) => {
-					println!("Glyph cache update");
 					if verts.len() > 0 {
 						let mut buffer = Vec::with_capacity(verts.len() * 32);
 						for vert in &verts {
