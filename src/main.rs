@@ -463,7 +463,7 @@ fn main() {
 	}
 
 	//Set up menu rendering
-	let mut pixel_projection = pixel_matrix(window_size);
+	let mut pixel_projection = pixel_matrix(window_size);				//Matrix that transforms ([0, window_width], [0, window_height]) -> ([-1, 1], [-1, 1])
 	let constantia: &[u8] = include_bytes!("../fonts/Constantia.ttf");
 	let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(constantia).build();
 	let mut glyph_context = unsafe { GlyphContext::new(glyph_shader, glyph_brush.texture_dimensions()) };
