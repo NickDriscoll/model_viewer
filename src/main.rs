@@ -30,7 +30,7 @@ mod prims;
 
 //The distances of the near and far clipping planes from the origin
 const NEAR_Z: f32 = 0.1;
-const FAR_Z: f32 = 200.0;
+const FAR_Z: f32 = 400.0;
 
 //Left eye, Right eye, Companion window
 const RENDER_PASSES: usize = 3;
