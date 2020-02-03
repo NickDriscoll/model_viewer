@@ -396,7 +396,7 @@ fn main() {
 	let mut last_frame_instant = Instant::now();
 
 	//Tracking space position information
-	let mut tracking_to_world: glm::TMat4<f32> = glm::identity();
+	let mut world_from_tracking: glm::TMat4<f32> = glm::identity();
 	let mut tracking_position: glm::TVec4<f32> = glm::zero();
 
 	//Play background music
@@ -469,7 +469,7 @@ fn main() {
 	let mut glyph_context = unsafe { GlyphContext::new(glyph_shader, glyph_brush.texture_dimensions()) };
 	let mut menu_vaos = OptionVec::new();
 
-	//Main loop
+	//Main loop - one iteration = one frame
 	while !window.should_close() {
 		//Calculate time since the last frame started in seconds
 		let time_delta = {
@@ -489,7 +489,7 @@ fn main() {
 			}
 		}
 
-		//Find controllers if we haven't already
+		//If we haven't found the controllers, check for their presence
 		if let Some(ref sys) = openvr_system {
 			for i in 0..controllers.device_indices.len() {
 				if let None = controllers.device_indices[i] {
@@ -499,7 +499,7 @@ fn main() {
 			}
 		}
 
-		//Load controller meshes if we haven't already
+		//Load controller meshes if necessary
 		if None == controllers.mesh_indices[0] || None == controllers.mesh_indices[1] {
 			if let Some(index) = controllers.device_indices[0] {
 				if let Some(mesh) = load_openvr_mesh(&openvr_system, &openvr_rendermodels, index) {
@@ -518,7 +518,7 @@ fn main() {
 			}
 		}
 
-		//Get VR pose data
+		//Get VR orientation and position data - OpenVR really does all the work here
 		let render_poses = match &openvr_compositor {
 			Some(comp) => {	Some(comp.wait_get_poses().unwrap().render)	}
 			None => { None }
@@ -531,13 +531,13 @@ fn main() {
 			}
 		}
 
-		//Check if the worker thread has new results for us
-		if let Ok(work_result) = result_rx.try_recv() {
+		//Check if the worker thread has new results to consume
+		while let Ok(work_result) = result_rx.try_recv() {
 			match work_result {
 				WorkResult::Model(option_mesh) => {
-					if let Some(package) = option_mesh {
-						let vao = unsafe { create_vertex_array_object(&package.vertices, &package.indices, &[3, 3, 2]) };
-						let mesh = Mesh::new(vao, uniform_scale(0.3), model_texture, package.geo_boundaries, Some(package.materials));
+					if let Some(mesh_data) = option_mesh {
+						let vao = unsafe { create_vertex_array_object(&mesh_data.vertices, &mesh_data.indices, &[3, 3, 2]) };
+						let mesh = Mesh::new(vao, uniform_scale(0.3), model_texture, mesh_data.geo_boundaries, Some(mesh_data.materials));
 						model_indices.push(Some(meshes.insert(mesh)));
 						bound_controller_indices.push(None);
 						model_to_controller_matrices.push(glm::identity());
@@ -546,7 +546,7 @@ fn main() {
 			}
 		}
 
-		//Handle window and keyboard events
+		//Handle window events and keyboard inputs
 		for (_, event) in glfw::flush_messages(&events) {
 			match event {
 				WindowEvent::Close => {	window.set_should_close(true); }
@@ -622,7 +622,7 @@ fn main() {
 					Some(mesh_index),
 					Some(state),
 					Some(_sys),
-					Some(poses)) = (  controllers.device_indices[i],
+					Some(poses)) =   (controllers.device_indices[i],
 									  controllers.mesh_indices[i],
 									  controllers.states[i],
 									  &openvr_system,
@@ -630,7 +630,6 @@ fn main() {
 
 				controllers.collided_with[i].clear();
 				for j in 0..model_indices.len() {
-					//If the trigger was pulled this frame, grab the object the controller is currently touching, if there is one
 					if let Some(loaded_index) = model_indices[j] {
 						let is_colliding = glm::distance(&get_mesh_origin(&meshes[mesh_index as usize]), &get_mesh_origin(&meshes[loaded_index])) < model_bounding_sphere_radius;
 
@@ -668,11 +667,11 @@ fn main() {
 				//Handle left-hand controls
 				let mut sprint_multiplier = 1.0;
 				if i == 0 {
-					let controller_to_tracking = openvr_to_mat4(*poses[device_index as usize].device_to_absolute_tracking());
+					let tracking_from_controller = openvr_to_mat4(*poses[device_index as usize].device_to_absolute_tracking());
 
 					//We check to make sure at least one axis isn't zero in order to ensure no division by zero
 					if state.axis[0].x != 0.0 || state.axis[0].y != 0.0 {
-						let mut temp = tracking_to_world * controller_to_tracking * glm::vec4(state.axis[0].x, 0.0, -state.axis[0].y, 0.0);
+						let mut temp = world_from_tracking * tracking_from_controller * glm::vec4(state.axis[0].x, 0.0, -state.axis[0].y, 0.0);
 						let len = glm::length(&temp);
 						temp.y = 0.0;
 						temp *= len / glm::length(&temp);
@@ -689,13 +688,14 @@ fn main() {
 					is_flying = !is_flying;
 				}
 				
+				//Update the position of tracking space
 				tracking_position += movement_vector * sprint_multiplier * time_delta;
 
 				if !is_flying {
 					tracking_position.y = get_terrain_height(tracking_position.x, tracking_position.z, &terrain);
 				}
 			}
-			tracking_to_world = glm::translation(&glm::vec4_to_vec3(&tracking_position));
+			world_from_tracking = glm::translation(&glm::vec4_to_vec3(&tracking_position));
 
 			//Clear collided_with and move all of the elements from colliding_with into it
 			controllers.collided_with[i].clear();
@@ -705,7 +705,7 @@ fn main() {
 		}
 		controllers.previous_states = controllers.states;
 
-		//Get view matrices
+		//Get view matrices (Left eye, Right eye, Companion window)
 		let v_matrices = match (&openvr_system, &render_poses) {
 			(Some(sys), Some(poses)) => {
 					let hmd_to_tracking = openvr_to_mat4(*poses[0].device_to_absolute_tracking());
@@ -713,14 +713,14 @@ fn main() {
 					let right_eye_to_hmd = openvr_to_mat4(sys.eye_to_head_transform(Eye::Right));
 
 					let companion_v_mat = if camera.attached_to_hmd { 
-						glm::affine_inverse(tracking_to_world * hmd_to_tracking)
+						glm::affine_inverse(world_from_tracking * hmd_to_tracking)
 					} else {
 						camera.view_matrix()
 					};
 
-					//Need to return inverse(tracking_to_world * hmd_to_tracking * eye_to_hmd)
-					[glm::affine_inverse(tracking_to_world * hmd_to_tracking * left_eye_to_hmd),
-					 glm::affine_inverse(tracking_to_world * hmd_to_tracking * right_eye_to_hmd),
+					//Need to return inverse(world_from_tracking * hmd_to_tracking * eye_to_hmd)
+					[glm::affine_inverse(world_from_tracking * hmd_to_tracking * left_eye_to_hmd),
+					 glm::affine_inverse(world_from_tracking * hmd_to_tracking * right_eye_to_hmd),
 					 companion_v_mat]
 			}
 			_ => { [glm::identity(), glm::identity(), camera.view_matrix()] }
@@ -738,10 +738,10 @@ fn main() {
 		
 		//Update the OpenVR meshes
 		if let Some(poses) = render_poses {
-			update_openvr_mesh(&mut meshes, &poses, &tracking_to_world, 0, hmd_mesh_index);
+			update_openvr_mesh(&mut meshes, &poses, &world_from_tracking, 0, hmd_mesh_index);
 			for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
 				if let Some(index) = &controllers.device_indices[i] {
-					update_openvr_mesh(&mut meshes, &poses, &tracking_to_world, *index as usize, controllers.mesh_indices[i]);
+					update_openvr_mesh(&mut meshes, &poses, &world_from_tracking, *index as usize, controllers.mesh_indices[i]);
 				}
 			}
 		}
@@ -769,6 +769,7 @@ fn main() {
 		//Debug menu simulation
 		if debug_menu {
 			for i in 0..menu_items.len() {
+				//Create a section, positioning it based on the text scale and the number of buttons already created
 				let section = Section {
 					text: menu_items[i],
 					screen_position: (x_buffer, window_size.1 as f32 - scale - border - y_offset),
@@ -789,7 +790,10 @@ fn main() {
 				let top = bounding_box.min.y - border;
 				let bottom = bounding_box.max.y + border;
 
-				let color = if (cursor_pos.0 as f32) > left && (cursor_pos.0 as f32) < right && (window_size.1 as f32 - cursor_pos.1 as f32) < bottom && (window_size.1 as f32 - cursor_pos.1 as f32) > top {
+				let color = if (cursor_pos.0 as f32) > left &&
+							   (cursor_pos.0 as f32) < right && 
+							   (window_size.1 as f32 - cursor_pos.1 as f32) < bottom &&
+							   (window_size.1 as f32 - cursor_pos.1 as f32) > top {
 					if lbutton_state == Action::Press {
 						[0.0, 0.5, 0.0]
 					} else {
@@ -803,7 +807,7 @@ fn main() {
 										is_muted = !is_muted;
 									}
 								}
-								Command::ToggleFreecam => {								
+								Command::ToggleFreecam => {
 									camera.attached_to_hmd = !camera.attached_to_hmd;
 									if let Some(mesh) = meshes.get_element(hmd_mesh_index) {
 										mesh.render_pass_visibilities[2] = !camera.attached_to_hmd;
@@ -843,6 +847,7 @@ fn main() {
 					0u16, 1, 2,
 					3, 2, 1
 				];
+				//TODO: Avoid recreating the vaos every frame
 				menu_vaos.insert(unsafe { create_vertex_array_object(&vertices, &indices, &[2, 3])} );
 			}
 		}
@@ -912,7 +917,7 @@ fn main() {
 			}
 		}
 
-		//Rendering code
+		//----------------Rendering code----------------
 
 		//Set up data for each render pass
 		let framebuffers = [vr_render_target, vr_render_target, 0];
@@ -920,6 +925,7 @@ fn main() {
 		let sizes = [render_target_size, render_target_size, window_size];
 		
 		//Calculate the shadow projection volume
+		//TODO: This is the most crude shadowing solution possible; I need to implement cascaded shadow maps
 		let shadow_view = glm::look_at(&glm::vec4_to_vec3(&light_direction), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 		let shadow_viewprojection = {
 			let size = 50.0;
@@ -929,7 +935,7 @@ fn main() {
 		let render_context = RenderContext::new(&p_matrices, &v_matrices, &light_direction, shadow_map, &shadow_viewprojection, is_lighting);
 		unsafe {
 			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
-			gl::DepthFunc(gl::LEQUAL);	//Pass the fragment with the smallest z-value
+			gl::DepthFunc(gl::LEQUAL);	//Pass the fragment with the smallest z-value. Needs to be <= instead of < because for all skybox pixels z = 1.0
 
 			//Set polygon mode
 			if is_wireframe {
@@ -938,7 +944,7 @@ fn main() {
 				gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
 			}
 
-			//Set clear color
+			//Set clear color. A pleasant blue
 			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
 			//Render the shadow map
