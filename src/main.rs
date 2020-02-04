@@ -90,6 +90,13 @@ fn main() {
 	//Load all OpenGL function pointers
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
+	//Enable various features
+	unsafe {
+		gl::Enable(gl::FRAMEBUFFER_SRGB); //Enable automatic linear->SRGB space conversion
+		gl::Enable(gl::BLEND);	//Enable alpha blending
+		gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);	//Set blend func to (Cs * alpha + Cd * (1.0 - alpha))
+	}
+
 	//Compile shaders
 	let model_shader = unsafe { compile_program_from_files("model_vertex.glsl", "model_fragment.glsl") };
 	let instanced_model_shader = unsafe { compile_program_from_files("instanced_vertex.glsl", "model_fragment.glsl") };
@@ -425,9 +432,9 @@ fn main() {
 	let mut taking_screenshot = false;
 
 	//Unit vector pointing towards the sun
-	let light_direction = glm::normalize(&glm::vec4(0.8, 1.0, 1.0, 0.0));
+	let sun_direction = glm::normalize(&glm::vec4(0.8, 1.0, 1.0, 0.0));
 
-	//Shadow map data
+	//Create a framebuffer for the shadow map, and bind a two-dimensional texture to its depth buffer
 	let shadow_map_resolution = 4096;
 	let (shadow_buffer, shadow_map) = unsafe {
 		let mut framebuffer = 0;
@@ -456,18 +463,12 @@ fn main() {
 	//Time in seconds since the start of the process
 	let mut elapsed_time = 0.0;
 
-	unsafe {
-		gl::Enable(gl::FRAMEBUFFER_SRGB); //Enable automatic linear->SRGB space conversion
-		gl::Enable(gl::BLEND);	//Enable alpha blending
-		gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);	//Set blend func to (Cs * alpha + Cd * (1.0 - alpha))
-	}
-
 	//Set up menu rendering
 	let mut pixel_projection = pixel_matrix(window_size);				//Matrix that transforms ([0, window_width], [0, window_height]) -> ([-1, 1], [-1, 1])
-	let constantia: &[u8] = include_bytes!("../fonts/Constantia.ttf");
+	let constantia: &[u8] = include_bytes!("../fonts/Constantia.ttf");			//Binary font data
 	let mut glyph_brush = GlyphBrushBuilder::using_font_bytes(constantia).build();
-	let mut glyph_context = unsafe { GlyphContext::new(glyph_shader, glyph_brush.texture_dimensions()) };
-	let mut menu_vaos = OptionVec::new();
+	let mut glyph_context = unsafe { GlyphContext::new(glyph_shader, glyph_brush.texture_dimensions()) };		//State for all text rendering
+	let mut menu_vaos = OptionVec::new();	//TODO: For some reason I decided to give each glyph a vao instead of making them all share a single one
 
 	//Main loop - one iteration = one frame
 	while !window.should_close() {
@@ -758,7 +759,7 @@ fn main() {
 		}
 
 		//Debug menu data
-		let menu_items = ["WIREFRAME", "LIGHTING", "MUTE", "SWAP BGM", "CAMERA MODE", "Spawn model"];
+		let menu_items = ["WIREFRAME", "LIGHTING", "MUTE", "SWAP BGM", "POV/FREECAM", "Spawn model"];
 		let menu_commands = [Command::ToggleWireframe, Command::ToggleLighting, Command::ToggleMusic, Command::SwitchMusic, Command::ToggleFreecam, Command::SpawnModel];
 		let y_buffer = 32.0;
 		let x_buffer = 32.0;
@@ -766,7 +767,7 @@ fn main() {
 		let scale = 36.0;
 		let border = 10.0;
 
-		//Debug menu simulation
+		//Debug menu update
 		if debug_menu {
 			for i in 0..menu_items.len() {
 				//Create a section, positioning it based on the text scale and the number of buttons already created
@@ -926,13 +927,13 @@ fn main() {
 		
 		//Calculate the shadow projection volume
 		//TODO: This is the most crude shadowing solution possible; I need to implement cascaded shadow maps
-		let shadow_view = glm::look_at(&glm::vec4_to_vec3(&light_direction), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
+		let shadow_view = glm::look_at(&glm::vec4_to_vec3(&sun_direction), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 		let shadow_viewprojection = {
 			let size = 50.0;
 			glm::ortho(-size, size, -size, size, -size*10.0, size*10.0) * shadow_view
 		};
 
-		let render_context = RenderContext::new(&p_matrices, &v_matrices, &light_direction, shadow_map, &shadow_viewprojection, is_lighting);
+		let render_context = RenderContext::new(&p_matrices, &v_matrices, &sun_direction, shadow_map, &shadow_viewprojection, is_lighting);
 		unsafe {
 			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
 			gl::DepthFunc(gl::LEQUAL);	//Pass the fragment with the smallest z-value. Needs to be <= instead of < because for all skybox pixels z = 1.0
@@ -1013,7 +1014,7 @@ fn main() {
 							  &["view_projection", "shadow_vp"],
 							  &[&(p_matrices[i] * v_matrices[i]), &shadow_viewprojection],
 							  &["view_position", "light_direction"],
-							  &[&render_context.view_positions[i], &light_direction],
+							  &[&render_context.view_positions[i], &sun_direction],
 							  &["using_material", "lighting", "shadow_map", "tex", "shadow_map"],
 							  &[1, is_lighting as GLint, 0, 0, 1]);
 
