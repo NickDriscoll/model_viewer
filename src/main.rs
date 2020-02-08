@@ -92,6 +92,7 @@ fn main() {
 
 	//Enable various features
 	unsafe {
+		gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
 		gl::Enable(gl::FRAMEBUFFER_SRGB); //Enable automatic linear->SRGB space conversion
 		gl::Enable(gl::BLEND);	//Enable alpha blending
 		gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);	//Set blend func to (Cs * alpha + Cd * (1.0 - alpha))
@@ -146,12 +147,13 @@ fn main() {
 	//Create the skybox cubemap
 	let skybox_cubemap = unsafe {		
 		let name = "siege";
-		let paths = [&format!("textures/skybox/{}_rt.tga", name),
-					 &format!("textures/skybox/{}_lf.tga", name),
-					 &format!("textures/skybox/{}_up.tga", name),
-					 &format!("textures/skybox/{}_dn.tga", name),
-					 &format!("textures/skybox/{}_bk.tga", name),
-					 &format!("textures/skybox/{}_ft.tga", name)];
+		let paths = [&format!("textures/skybox/{}_rt.tga", name),		//Right side
+					 &format!("textures/skybox/{}_lf.tga", name),		//Left side
+					 &format!("textures/skybox/{}_up.tga", name),		//Up side
+					 &format!("textures/skybox/{}_dn.tga", name),		//Down side
+					 &format!("textures/skybox/{}_bk.tga", name),		//Back side
+					 &format!("textures/skybox/{}_ft.tga", name)		//Front side
+		];
 
 		let mut cubemap = 0;
 		gl::GenTextures(1, &mut cubemap);
@@ -246,23 +248,22 @@ fn main() {
 				vertex_surface_map.push(Vec::new());
 			}
 	
-			//Calculate surface normals
+			//Calculate a normal vector for each triangle
 			surface_normals = {
-				const INDICES_PER_TRIANGLE: usize = 3;
-				let mut norms = Vec::with_capacity(indices.len() / INDICES_PER_TRIANGLE);
+				let mut norms = Vec::with_capacity(indices.len() / 3);
 	
 				//This loop executes once per triangle in the mesh
-				for i in (0..indices.len()).step_by(INDICES_PER_TRIANGLE) {
-					let mut tri_verts = [glm::zero(); INDICES_PER_TRIANGLE];
+				for i in (0..indices.len()).step_by(3) {
+					let mut tri_verts = [glm::zero(); 3];
 	
-					for j in 0..INDICES_PER_TRIANGLE {
+					for j in 0..3 {
 						let index = indices[i + j];
 						tri_verts[j] = glm::vec4(vertices[index as usize * ELEMENT_STRIDE],
 												 vertices[index as usize * ELEMENT_STRIDE + 1],
 												 vertices[index as usize * ELEMENT_STRIDE + 2],
 												 1.0);
 	
-						vertex_surface_map[index as usize].push(i / INDICES_PER_TRIANGLE);
+						vertex_surface_map[index as usize].push(i / 3);
 					}
 	
 					//Vectors representing two edges of the triangle
@@ -397,7 +398,6 @@ fn main() {
 	//Mouse state
 	let mut last_lbutton_state = window.get_mouse_button(MouseButton::Button1);
 	let mut last_rbutton_state = window.get_mouse_button(MouseButton::Button2);
-	let mut stored_position = (0.0, 0.0);
 
 	//The instant recorded at the beginning of last frame
 	let mut last_frame_instant = Instant::now();
@@ -436,6 +436,7 @@ fn main() {
 
 	//Create a framebuffer for the shadow map, and bind a two-dimensional texture to its depth buffer
 	let shadow_map_resolution = 4096;
+	let shadow_map_cascades = 3;
 	let (shadow_buffer, shadow_map) = unsafe {
 		let mut framebuffer = 0;
 		gl::GenFramebuffers(1, &mut framebuffer);
@@ -609,11 +610,9 @@ fn main() {
 		if last_rbutton_state == Action::Press && rbutton_state == Action::Release {
 			if window.get_cursor_mode() == CursorMode::Normal {
 				window.set_cursor_mode(CursorMode::Disabled);
-				stored_position = cursor_pos;
 				window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
 			} else {
 				window.set_cursor_mode(CursorMode::Normal);
-				window.set_cursor_pos(stored_position.0, stored_position.1);
 			}
 		}
 
@@ -759,10 +758,10 @@ fn main() {
 		}
 
 		//Debug menu data
-		let menu_items = ["WIREFRAME", "LIGHTING", "MUTE", "SWAP BGM", "POV/FREECAM", "Spawn model"];
+		let menu_items = ["Wireframe", "Lighting", "Mute", "Swap bgm", "POV/Freecam", "Spawn model"];
 		let menu_commands = [Command::ToggleWireframe, Command::ToggleLighting, Command::ToggleMusic, Command::SwitchMusic, Command::ToggleFreecam, Command::SpawnModel];
-		let y_buffer = 32.0;
 		let x_buffer = 32.0;
+		let y_buffer = 32.0;
 		let mut y_offset = 18.0;
 		let scale = 36.0;
 		let border = 10.0;
@@ -773,7 +772,7 @@ fn main() {
 				//Create a section, positioning it based on the text scale and the number of buttons already created
 				let section = Section {
 					text: menu_items[i],
-					screen_position: (x_buffer, window_size.1 as f32 - scale - border - y_offset),
+					screen_position: (x_buffer, border + y_offset),
 					scale: Scale::uniform(scale),
 					color: [1.0, 1.0, 1.0, 1.0],
 					..Section::default()
@@ -788,13 +787,19 @@ fn main() {
 
 				let left = bounding_box.min.x - border;
 				let right = bounding_box.max.x + border;
-				let top = bounding_box.min.y - border;
-				let bottom = bounding_box.max.y + border;
+
+				let t = bounding_box.min.y - border;
+				let b = bounding_box.max.y + border;
+				let (top, bottom) = {
+					let top = mirror_across_x(t, window_size.1);
+					let bottom = mirror_across_x(b, window_size.1);
+					(top, bottom)
+				};
 
 				let color = if (cursor_pos.0 as f32) > left &&
 							   (cursor_pos.0 as f32) < right && 
-							   (window_size.1 as f32 - cursor_pos.1 as f32) < bottom &&
-							   (window_size.1 as f32 - cursor_pos.1 as f32) > top {
+							   (window_size.1 as f32 - cursor_pos.1 as f32) > bottom &&
+							   (window_size.1 as f32 - cursor_pos.1 as f32) < top {
 					if lbutton_state == Action::Press {
 						[0.0, 0.5, 0.0]
 					} else {
@@ -868,8 +873,8 @@ fn main() {
 			}, |vertex| {
 				let left = vertex.pixel_coords.min.x as f32;
 				let right = vertex.pixel_coords.max.x as f32;
-				let top = vertex.pixel_coords.min.y as f32;
-				let bottom = vertex.pixel_coords.max.y as f32;
+				let t = vertex.pixel_coords.min.y as f32;
+				let b = vertex.pixel_coords.max.y as f32;
 				let texleft = vertex.tex_coords.min.x;
 				let texright = vertex.tex_coords.max.x;
 				let textop = vertex.tex_coords.min.y;
@@ -877,13 +882,20 @@ fn main() {
 				let z = vertex.z;
 				let color = vertex.color;
 
+				
+				let (top, bottom) = {
+					let top = mirror_across_x(t, window_size.1);
+					let bottom = mirror_across_x(b, window_size.1);
+					(top, bottom)
+				};
+
 				//We need to return four vertices
 				//We flip the y coordinate of the uvs because for some reason the glyph_texture is rendered upside-down
 				[
-					left, bottom, z, color[0], color[1], color[2], texleft, textop,
-					right, bottom, z, color[0], color[1], color[2], texright, textop,
-					left, top, z, color[0], color[1], color[2], texleft, texbottom,
-					right, top, z, color[0], color[1], color[2], texright, texbottom
+					left, bottom, z, color[0], color[1], color[2], texleft, texbottom,
+					right, bottom, z, color[0], color[1], color[2], texright, texbottom,
+					left, top, z, color[0], color[1], color[2], texleft, textop,
+					right, top, z, color[0], color[1], color[2], texright, textop
 				]
 			}) {
 				Ok(BrushAction::Draw(verts)) => {
@@ -935,7 +947,6 @@ fn main() {
 
 		let render_context = RenderContext::new(&p_matrices, &v_matrices, &sun_direction, shadow_map, &shadow_viewprojection, is_lighting);
 		unsafe {
-			gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
 			gl::DepthFunc(gl::LEQUAL);	//Pass the fragment with the smallest z-value. Needs to be <= instead of < because for all skybox pixels z = 1.0
 
 			//Set polygon mode

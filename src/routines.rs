@@ -344,6 +344,11 @@ pub fn pixel_matrix(window_size: (u32, u32)) -> glm::TMat4<f32> {
 	)
 }
 
+//Takes a value from [0, window_height] and returns it flipped across the x-axis
+pub fn mirror_across_x(number: f32, window_height: u32) -> f32 {
+	((number * 2.0 / window_height as f32 - 1.0) * -1.0 + 1.0) * (window_height as f32 / 2.0)
+}
+
 //Invoke file selection dialogue, and return the resulting filepath as a String
 pub fn file_select() -> Option<String> {
 	let mut dialog = nfd::open_file_dialog(None, None);
