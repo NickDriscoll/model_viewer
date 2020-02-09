@@ -787,19 +787,13 @@ fn main() {
 
 				let left = bounding_box.min.x - border;
 				let right = bounding_box.max.x + border;
-
-				let t = bounding_box.min.y - border;
-				let b = bounding_box.max.y + border;
-				let (top, bottom) = {
-					let top = mirror_across_x(t, window_size.1);
-					let bottom = mirror_across_x(b, window_size.1);
-					(top, bottom)
-				};
+				let top = bounding_box.min.y - border;
+				let bottom = bounding_box.max.y + border;
 
 				let color = if (cursor_pos.0 as f32) > left &&
 							   (cursor_pos.0 as f32) < right && 
-							   (window_size.1 as f32 - cursor_pos.1 as f32) > bottom &&
-							   (window_size.1 as f32 - cursor_pos.1 as f32) < top {
+							   (cursor_pos.1 as f32) < bottom &&
+							   (cursor_pos.1 as f32) > top {
 					if lbutton_state == Action::Press {
 						[0.0, 0.5, 0.0]
 					} else {
@@ -828,6 +822,7 @@ fn main() {
 											println!("Playing {}", filename);
 											//sink.stop();
 											sink.pause();
+											sink.stop();
 											add_source_from_file(sink, &filename);
 											sink.play();
 											println!("{}, {}", sink.empty(), sink.is_paused());
@@ -873,21 +868,14 @@ fn main() {
 			}, |vertex| {
 				let left = vertex.pixel_coords.min.x as f32;
 				let right = vertex.pixel_coords.max.x as f32;
-				let t = vertex.pixel_coords.min.y as f32;
-				let b = vertex.pixel_coords.max.y as f32;
+				let top = vertex.pixel_coords.min.y as f32;
+				let bottom = vertex.pixel_coords.max.y as f32;
 				let texleft = vertex.tex_coords.min.x;
 				let texright = vertex.tex_coords.max.x;
 				let textop = vertex.tex_coords.min.y;
 				let texbottom = vertex.tex_coords.max.y;
 				let z = vertex.z;
 				let color = vertex.color;
-
-				
-				let (top, bottom) = {
-					let top = mirror_across_x(t, window_size.1);
-					let bottom = mirror_across_x(b, window_size.1);
-					(top, bottom)
-				};
 
 				//We need to return four vertices
 				//We flip the y coordinate of the uvs because for some reason the glyph_texture is rendered upside-down

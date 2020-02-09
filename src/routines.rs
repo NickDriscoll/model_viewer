@@ -335,18 +335,14 @@ pub unsafe fn instanced_prop_vao(vertex_array: &VertexArray, terrain: &Terrain, 
 	vao
 }
 
+//Maps x from [0, window_width] to [-1.0, 1.0] and maps y from [0, window_height] to [1.0, -1.0]
 pub fn pixel_matrix(window_size: (u32, u32)) -> glm::TMat4<f32> {
 	glm::mat4(
 		2.0 / window_size.0 as f32, 0.0, 0.0, -1.0,
-		0.0, 2.0 / window_size.1 as f32, 0.0, -1.0,
+		0.0, -2.0 / window_size.1 as f32, 0.0, 1.0,
 		0.0, 0.0, 1.0, 0.0,
 		0.0, 0.0, 0.0, 1.0
 	)
-}
-
-//Takes a value from [0, window_height] and returns it flipped across the x-axis
-pub fn mirror_across_x(number: f32, window_height: u32) -> f32 {
-	((number * 2.0 / window_height as f32 - 1.0) * -1.0 + 1.0) * (window_height as f32 / 2.0)
 }
 
 //Invoke file selection dialogue, and return the resulting filepath as a String
