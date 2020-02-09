@@ -280,7 +280,7 @@ pub struct InstancedProp {
 }
 
 impl InstancedProp {
-	pub fn new(path: &str, terrain: &Terrain, instances: usize, halton_counter: &mut usize) -> Self {		
+	pub fn new(path: &str, terrain: &Terrain, instances: usize, halton_counter: &mut usize, scale: f32) -> Self {		
 		let model_data = load_wavefront_obj(path).unwrap();
 
 		let v = VertexArray {
@@ -288,7 +288,7 @@ impl InstancedProp {
 			indices: model_data.indices,
 			attribute_offsets: vec![3, 3, 2]
 		};
-		let vao = unsafe { instanced_prop_vao(&v, terrain, instances, halton_counter) };
+		let vao = unsafe { instanced_prop_vao(&v, terrain, instances, halton_counter, scale) };
 		
 		InstancedProp {
 			instances,
@@ -330,6 +330,7 @@ impl GlyphContext {
 		gl::BindVertexArray(self.vao);
 		gl::UseProgram(self.shader);
 		bind_matrix4(self.shader, "projection", p_mat);
+		gl::ActiveTexture(gl::TEXTURE0);
 		gl::BindTexture(gl::TEXTURE_2D, self.texture);
 		gl::DrawElements(gl::TRIANGLES, (self.count * 6) as GLint, gl::UNSIGNED_SHORT, ptr::null());
 	}
@@ -341,6 +342,5 @@ pub enum Command {
 	ToggleMusic,
 	SwitchMusic,
 	ToggleFreecam,
-	SpawnModel,
-	ScreenShot
+	SpawnModel
 }

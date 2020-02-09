@@ -70,7 +70,10 @@ fn main() {
 	};
 
 	//Init glfw
-	let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
+	let mut glfw = match glfw::init(glfw::FAIL_ON_ERRORS) {
+		Ok(g) => { g }
+		Err(e) => {	panic!("GLFW init error: {}", e); }
+	};
 
 	//Using OpenGL 3.3 core, but that could change
 	glfw.window_hint(glfw::WindowHint::ContextVersion(3, 3));
@@ -83,11 +86,13 @@ fn main() {
 	//Calculate window's aspect ratio
 	let mut aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
 
-	//Configure what kinds of events the window will emit
+	//Configure what kinds of events GLFW will listen for
 	window.set_key_polling(true);
 	window.set_framebuffer_size_polling(true);
+	window.set_mouse_button_polling(true);
+	window.set_scroll_polling(true);
 
-	//Load all OpenGL function pointers
+	//Load all OpenGL function pointers, GLFW does all the work here
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
 	//Enable various features
@@ -327,12 +332,12 @@ fn main() {
 
 	//Plant trees	
 	let mut instanced_props = Vec::with_capacity(3);
-	instanced_props.push(InstancedProp::new("models/tree1.obj", &terrain, 200, &mut halton_counter));
-	instanced_props.push(InstancedProp::new("models/tree2.obj", &terrain, 200, &mut halton_counter));
-	instanced_props.push(InstancedProp::new("models/tree3.obj", &terrain, 200, &mut halton_counter));
+	instanced_props.push(InstancedProp::new("models/tree1.obj", &terrain, 200, &mut halton_counter, 1.0));
+	instanced_props.push(InstancedProp::new("models/tree2.obj", &terrain, 200, &mut halton_counter, 1.0));
+	instanced_props.push(InstancedProp::new("models/tree3.obj", &terrain, 200, &mut halton_counter, 2.0));
 
 	//Plant grass
-	const GRASS_COUNT: usize = 50000;
+	const GRASS_COUNT: usize = 60000;
 	let grass_texture = {
 		let tex_params = [
 			(gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE),
@@ -367,7 +372,7 @@ fn main() {
 			indices,
 			attribute_offsets: vec![3, 3, 2]
 		};
-		let vao = instanced_prop_vao(&v, &terrain, GRASS_COUNT, &mut halton_counter);
+		let vao = instanced_prop_vao(&v, &terrain, GRASS_COUNT, &mut halton_counter, 0.85);
 		(vao, indices_len as i32)
 	};
 
@@ -397,7 +402,6 @@ fn main() {
 
 	//Mouse state
 	let mut last_lbutton_state = window.get_mouse_button(MouseButton::Button1);
-	let mut last_rbutton_state = window.get_mouse_button(MouseButton::Button2);
 
 	//The instant recorded at the beginning of last frame
 	let mut last_frame_instant = Instant::now();
@@ -406,17 +410,15 @@ fn main() {
 	let mut world_from_tracking: glm::TMat4<f32> = glm::identity();
 	let mut tracking_position: glm::TVec4<f32> = glm::zero();
 
+	let audio_device = rodio::default_output_device();
+
 	//Play background music
 	let mut is_muted = false;
-	let bgm_path = "audio/dark_ruins.mp3";
+	let mut bgm_path = String::from("audio/dark_ruins.mp3");
 	let bgm_volume = 0.25;
-	let mut bgm_sink = match rodio::default_output_device() {
+	let mut bgm_sink = match &audio_device {
 		Some(device) => {
-			let sink = rodio::Sink::new(&device);
-			add_source_from_file(&sink, bgm_path);
-			sink.set_volume(bgm_volume);
-			sink.play();
-			Some(sink)
+			Some(play_bgm(device, &bgm_path, bgm_volume))
 		}
 		None => {
 			println!("Unable to find audio device. Music and sound effects will not play.");
@@ -487,7 +489,7 @@ fn main() {
 		//Restart music if it stopped
 		if let Some(sink) = &bgm_sink {
 			if sink.empty() {
-				add_source_from_file(&sink, bgm_path);
+				add_source_from_file(&sink, &bgm_path);
 			}
 		}
 
@@ -582,13 +584,20 @@ fn main() {
 						_ => {}
 					}
 				}
+				WindowEvent::MouseButton(MouseButton::Button2, Action::Release, _) => {					
+					if window.get_cursor_mode() == CursorMode::Normal {
+						window.set_cursor_mode(CursorMode::Disabled);
+						window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
+					} else {
+						window.set_cursor_mode(CursorMode::Normal);
+					}
+				}
 				_ => {}
 			}
 		}
 
 		//Handle mouse input
 		let lbutton_state = window.get_mouse_button(MouseButton::Button1);
-		let rbutton_state = window.get_mouse_button(MouseButton::Button2);
 		let cursor_pos = window.get_cursor_pos();
 		let cursor_delta = [cursor_pos.0 - window_size.0 as f64 / 2.0, cursor_pos.1 - window_size.1 as f64 / 2.0];
 
@@ -604,16 +613,6 @@ fn main() {
 
 			//Reset cursor to center of screen
 			window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
-		}
-
-		//Check if the right mouse button has been clicked
-		if last_rbutton_state == Action::Press && rbutton_state == Action::Release {
-			if window.get_cursor_mode() == CursorMode::Normal {
-				window.set_cursor_mode(CursorMode::Disabled);
-				window.set_cursor_pos(window_size.0 as f64 / 2.0, window_size.1 as f64 / 2.0);
-			} else {
-				window.set_cursor_mode(CursorMode::Normal);
-			}
 		}
 
 		//Handle controller input
@@ -758,7 +757,7 @@ fn main() {
 		}
 
 		//Debug menu data
-		let menu_items = ["Wireframe", "Lighting", "Mute", "Swap bgm", "POV/Freecam", "Spawn model"];
+		let menu_items = ["Wireframe", "Lighting", "Mute", "Swap bgm", "Toggle camera mode", "Spawn model"];
 		let menu_commands = [Command::ToggleWireframe, Command::ToggleLighting, Command::ToggleMusic, Command::SwitchMusic, Command::ToggleFreecam, Command::SpawnModel];
 		let x_buffer = 32.0;
 		let y_buffer = 32.0;
@@ -819,17 +818,15 @@ fn main() {
 								Command::SwitchMusic => {
 									if let Some(sink) = &mut bgm_sink {
 										if let Some(filename) = file_select() {
-											println!("Playing {}", filename);
-											//sink.stop();
-											sink.pause();
-											sink.stop();
-											add_source_from_file(sink, &filename);
-											sink.play();
-											println!("{}, {}", sink.empty(), sink.is_paused());
+											println!("Playing new background music: {}", filename);
+											bgm_path = filename;
+											drop(sink);
+											if let Some(device) = &audio_device {
+												bgm_sink = Some(play_bgm(device, &bgm_path, bgm_volume));
+											}
 										}
 									}
 								}
-								Command::ScreenShot => { taking_screenshot = true; }
 							}
 						}
 						[0.0, 0.1, 0.0]
@@ -878,7 +875,6 @@ fn main() {
 				let color = vertex.color;
 
 				//We need to return four vertices
-				//We flip the y coordinate of the uvs because for some reason the glyph_texture is rendered upside-down
 				[
 					left, bottom, z, color[0], color[1], color[2], texleft, texbottom,
 					right, bottom, z, color[0], color[1], color[2], texright, texbottom,
@@ -1080,7 +1076,10 @@ fn main() {
 
 						let dynamic_image = match ImageBuffer::from_raw(window_size.0, window_size.1, buffer) {
 							Some(im) => { Some(DynamicImage::ImageRgba8(im).flipv()) }
-							None => { None }
+							None => { 
+								println!("");
+								None
+							}
 						};
 
 						if let Some(dyn_image) = dynamic_image {
@@ -1092,7 +1091,7 @@ fn main() {
 								}
 							}
 
-							if let Err(e) = dyn_image.save(format!("screenshots/{}.png", Local::now().format("%F_%H%M%S"))) {
+							if let Err(e) = dyn_image.save(format!("{}/{}.png", screenshot_dir, Local::now().format("%F_%H%M%S"))) {
 								println!("Error taking screenshot: {}", e);
 							}
 						}
@@ -1107,7 +1106,6 @@ fn main() {
 		}
 		
 		last_lbutton_state = lbutton_state;
-		last_rbutton_state = rbutton_state;
 
 		window.render_context().swap_buffers();
 		glfw.poll_events();

@@ -281,7 +281,7 @@ pub fn handle_result<T, E: std::fmt::Display>(result: Result<T, E>) {
 }
 
 //Returns an array of n 4x4 matrices tightly packed in a Vec in column-major format
-pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain: &Terrain) -> Vec<f32> {
+pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain: &Terrain, scale: f32) -> Vec<f32> {
 	let mut model_matrices = vec![0.0; n * 16];
 
 	//Populate the buffer
@@ -310,7 +310,7 @@ pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain
 		let rotation_magnitude = 0.2 * f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &terrain.surface_normals[normal_index]));
 
 		//Note: Multiplying rotation angle by 0.2 because that looks good enough and I can't tell how my math is wrong
-		let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(rotation_magnitude, &rotation_vector) * glm::rotation(rand::random::<f32>() * glm::half_pi::<f32>(), &glm::vec3(0.0, 1.0, 0.0));
+		let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(rotation_magnitude, &rotation_vector) * glm::rotation(rand::random::<f32>() * glm::half_pi::<f32>(), &glm::vec3(0.0, 1.0, 0.0)) * uniform_scale(scale);
 
 		//Write this matrix to the buffer
 		let mut count = 0;
@@ -328,9 +328,17 @@ pub fn add_source_from_file(sink: &Sink, bgm_path: &str) {
 	sink.append(source);
 }
 
-pub unsafe fn instanced_prop_vao(vertex_array: &VertexArray, terrain: &Terrain, instances: usize, halton_counter: &mut usize) -> GLuint {
+pub fn play_bgm(device: &rodio::Device, filename: &str, volume: f32) -> rodio::Sink {	
+	let sink = rodio::Sink::new(device);
+	add_source_from_file(&sink, &filename);
+	sink.set_volume(volume);
+	sink.play();
+	sink
+}
+
+pub unsafe fn instanced_prop_vao(vertex_array: &VertexArray, terrain: &Terrain, instances: usize, halton_counter: &mut usize, scale: f32) -> GLuint {
 	let vao = create_vertex_array_object(&vertex_array.vertices, &vertex_array.indices, &vertex_array.attribute_offsets);
-	let model_matrices = model_matrices_from_terrain(instances, halton_counter, &terrain);
+	let model_matrices = model_matrices_from_terrain(instances, halton_counter, &terrain, scale);
 	bind_instanced_matrices(vao, &vertex_array.attribute_offsets, &model_matrices, instances);
 	vao
 }
