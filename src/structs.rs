@@ -4,9 +4,14 @@ use std::slice::{Iter, IterMut};
 use std::ops::{Index, IndexMut};
 use crate::*;
 
-pub struct MeshData {
+pub struct VertexArray {
 	pub vertices: Vec<f32>,
 	pub indices: Vec<u16>,
+	pub attribute_offsets: Vec<i32>
+}
+
+pub struct MeshData {
+	pub vertex_array: VertexArray,
 	pub geo_boundaries: Vec<GLsizei>,
 	pub materials: Vec<Option<mtl::Material>>
 }
@@ -17,7 +22,7 @@ pub struct Mesh {
 	pub vao: GLuint, //Vertex array object
 	pub geo_boundaries: Vec<GLsizei>, //The start of each geometry in the vao
 	pub materials: Option<Vec<Option<mtl::Material>>>, //The materials associated with this mesh, in the same order as geo_boundaries
-	pub model_matrix: glm::TMat4<f32>, //Matrix that transforms points in model space to world space
+	pub model_matrix: glm::TMat4<f32>, //Matrix that transforms vertices in model space to world space
 	pub texture: GLuint, //Texture
 	pub specular_coefficient: f32,
 	pub render_pass_visibilities: [bool; RENDER_PASSES]
@@ -37,6 +42,7 @@ impl Mesh {
 	}
 }
 
+//This is a bad struct
 pub struct Camera {	
 	pub position: glm::TVec4<f32>,	//In world space
 	pub velocity: glm::TVec4<f32>,	//In view space
@@ -44,8 +50,8 @@ pub struct Camera {
 	pub pitch: f32, 				//In radians
 	pub fov: f32,					//In degrees
 	pub fov_delta: f32,
-	pub speed: f32,
-	pub speed_multiplier: f32,
+	pub speed: f32,					//Default freecam movement speed
+	pub speed_multiplier: f32,		//Value to multiply speed by
 	pub attached_to_hmd: bool
 }
 
@@ -171,6 +177,10 @@ impl<T> OptionVec<T> {
 		}
 	}
 
+	pub fn len(&self) -> usize {
+		self.optionvec.len()
+	}
+
 	pub fn get_element(&mut self, index: Option<usize>) -> Option<&mut T> {	
 		match index {
 			Some(i) => {
@@ -258,18 +268,18 @@ pub struct Terrain {
 	pub subsquare_count: usize
 }
 
+impl Terrain {
+	pub fn height_at(&self, xpos: f32, zpos: f32) -> f32 {
+		self.amplitude * self.simplex.get([xpos as f64 * self.simplex_scale / self.scale as f64, zpos as f64 * self.simplex_scale / self.scale as f64]) as f32
+	}
+}
+
 pub struct ImageData {
 	pub data: Vec<u8>,
 	pub width: i32,
 	pub height: i32,
 	pub format: GLenum,
 	pub internal_format: GLenum
-}
-
-pub struct VertexArray {
-	pub vertices: Vec<f32>,
-	pub indices: Vec<u16>,
-	pub attribute_offsets: Vec<i32>
 }
 
 pub struct InstancedProp {
@@ -282,13 +292,7 @@ pub struct InstancedProp {
 impl InstancedProp {
 	pub fn new(path: &str, terrain: &Terrain, instances: usize, halton_counter: &mut usize, scale: f32) -> Self {		
 		let model_data = load_wavefront_obj(path).unwrap();
-
-		let v = VertexArray {
-			vertices: model_data.vertices,
-			indices: model_data.indices,
-			attribute_offsets: vec![3, 3, 2]
-		};
-		let vao = unsafe { instanced_prop_vao(&v, terrain, instances, halton_counter, scale) };
+		let vao = unsafe { instanced_prop_vao(&model_data.vertex_array, terrain, instances, halton_counter, scale) };
 		
 		InstancedProp {
 			instances,

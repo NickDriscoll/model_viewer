@@ -388,7 +388,7 @@ fn main() {
 	};
 	let model_bounding_sphere_radius = 0.20;
 	let mut bound_controller_indices = Vec::new();
-	let mut model_indices = Vec::new();
+	let mut model_indices = OptionVec::new();
 	let mut model_to_controller_matrices = Vec::new();
 
 	//Initialize the struct of arrays containing controller related state
@@ -439,6 +439,7 @@ fn main() {
 	//Create a framebuffer for the shadow map, and bind a two-dimensional texture to its depth buffer
 	let shadow_map_resolution = 4096;
 	let shadow_map_cascades = 3;
+	let shadow_map_cascade_cutoffs = [0.0, 10.0, 50.0];
 	let (shadow_buffer, shadow_map) = unsafe {
 		let mut framebuffer = 0;
 		gl::GenFramebuffers(1, &mut framebuffer);
@@ -446,7 +447,7 @@ fn main() {
 		let mut depth_texture = 0;
 		gl::GenTextures(1, &mut depth_texture);
 		gl::BindTexture(gl::TEXTURE_2D, depth_texture);
-		gl::TexImage2D(gl::TEXTURE_2D, 0, gl::DEPTH_COMPONENT as i32, shadow_map_resolution, shadow_map_resolution, 0, gl::DEPTH_COMPONENT, gl::FLOAT, ptr::null());
+		gl::TexImage2D(gl::TEXTURE_2D, 0, gl::DEPTH_COMPONENT as i32, shadow_map_resolution * shadow_map_cascades, shadow_map_resolution, 0, gl::DEPTH_COMPONENT, gl::FLOAT, ptr::null());
 		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
 		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
 		gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
@@ -539,10 +540,10 @@ fn main() {
 		while let Ok(work_result) = result_rx.try_recv() {
 			match work_result {
 				WorkResult::Model(option_mesh) => {
-					if let Some(mesh_data) = option_mesh {
-						let vao = unsafe { create_vertex_array_object(&mesh_data.vertices, &mesh_data.indices, &[3, 3, 2]) };
+					if let Some(mesh_data) = option_mesh {						
+						let vao = unsafe { create_vertex_array_object(&mesh_data.vertex_array.vertices, &mesh_data.vertex_array.indices, &[3, 3, 2]) };
 						let mesh = Mesh::new(vao, uniform_scale(0.3), model_texture, mesh_data.geo_boundaries, Some(mesh_data.materials));
-						model_indices.push(Some(meshes.insert(mesh)));
+						model_indices.insert(meshes.insert(mesh));
 						bound_controller_indices.push(None);
 						model_to_controller_matrices.push(glm::identity());
 					}
@@ -555,9 +556,9 @@ fn main() {
 			match event {
 				WindowEvent::Close => {	window.set_should_close(true); }
 				WindowEvent::FramebufferSize(width, height) => {
-					window_size = (width as u32, height as u32);
-					aspect_ratio = window_size.0 as f32 / window_size.1 as f32;
-					pixel_projection = pixel_matrix(window_size);
+					window_size = (width as u32, height as u32);						//Record the window's size
+					aspect_ratio = window_size.0 as f32 / window_size.1 as f32;			//Recalculate the window's aspect ratio
+					pixel_projection = pixel_matrix(window_size);						//Recalculate the pixel projection matrix
 					println!("Window resolution updated to {}x{}", window_size.0, window_size.1);
 				}
 				WindowEvent::Key(key, _, Action::Press, ..) => {
@@ -690,8 +691,9 @@ fn main() {
 				//Update the position of tracking space
 				tracking_position += movement_vector * sprint_multiplier * time_delta;
 
+				//If the player isn't flying, their height is just the terrain height
 				if !is_flying {
-					tracking_position.y = get_terrain_height(tracking_position.x, tracking_position.z, &terrain);
+					tracking_position.y = terrain.height_at(tracking_position.x, tracking_position.z);
 				}
 			}
 			world_from_tracking = glm::translation(&glm::vec4_to_vec3(&tracking_position));
@@ -925,8 +927,8 @@ fn main() {
 		//TODO: This is the most crude shadowing solution possible; I need to implement cascaded shadow maps
 		let shadow_view = glm::look_at(&glm::vec4_to_vec3(&sun_direction), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
 		let shadow_viewprojection = {
-			let size = 50.0;
-			glm::ortho(-size, size, -size, size, -size*10.0, size*10.0) * shadow_view
+			let size = 5.0;
+			glm::ortho(-size, size, -size, size, -size*2.0, size*2.0) * shadow_view
 		};
 
 		let render_context = RenderContext::new(&p_matrices, &v_matrices, &sun_direction, shadow_map, &shadow_viewprojection, is_lighting);
@@ -1000,11 +1002,59 @@ fn main() {
 
 				//Render the regular meshes
 				gl::Enable(gl::CULL_FACE);
-				render_meshes(&meshes, model_shader, i, &render_context);
+				gl::UseProgram(model_shader);
+				gl::Uniform1i(uniform_location(model_shader, "tex"), 0);
+				gl::Uniform1i(uniform_location(model_shader, "shadow_map"), 1);
+				for option_mesh in meshes.iter() {
+					if let Some(mesh) = option_mesh {
+						if mesh.render_pass_visibilities[i] {
+							//Calculate model-view-projection for this mesh
+							let mvp = render_context.p_matrices[i] * render_context.v_matrices[i] * mesh.model_matrix;
+			
+							bind_uniforms(model_shader,
+											   &["mvp", "model_matrix", "shadow_mvp"],
+											   &[&mvp, &mesh.model_matrix, &(render_context.shadow_vp * mesh.model_matrix)],
+											   &["view_position", "light_direction"],
+											   &[&render_context.view_positions[i], render_context.light_direction],
+											   &["lighting"],
+											   &[render_context.is_lighting as GLint]);
+			
+							//Bind the textures
+							gl::ActiveTexture(gl::TEXTURE0);
+							gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
+							gl::ActiveTexture(gl::TEXTURE1);
+							gl::BindTexture(gl::TEXTURE_2D, render_context.shadow_map);
+			
+							//Bind the mesh's vertex array object
+							gl::BindVertexArray(mesh.vao);
+			
+							//Check if we're using a material or just a texture
+							match &mesh.materials {
+								Some(mats) => {
+									gl::Uniform1i(uniform_location(model_shader, "using_material"), true as i32);
+			
+									//Draw calls
+									for i in 0..mesh.geo_boundaries.len()-1 {
+										bind_material(model_shader, &mats[i]);
+										gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
+									}
+								}
+								None => {
+									gl::Uniform1i(uniform_location(model_shader, "using_material"), false as i32);
+									gl::Uniform1f(uniform_location(model_shader, "specular_coefficient"), mesh.specular_coefficient);
+			
+									//Draw call
+									for i in 0..mesh.geo_boundaries.len()-1 {
+										gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
+									}
+								}
+							}
+						}
+					}
+				}
 
 				//Render the trees with instanced rendering
-				gl::UseProgram(instanced_model_shader);
-				
+				gl::UseProgram(instanced_model_shader);				
 				bind_uniforms(instanced_model_shader,
 							  &["view_projection", "shadow_vp"],
 							  &[&(p_matrices[i] * v_matrices[i]), &shadow_viewprojection],
@@ -1012,7 +1062,6 @@ fn main() {
 							  &[&render_context.view_positions[i], &sun_direction],
 							  &["using_material", "lighting", "shadow_map", "tex", "shadow_map"],
 							  &[1, is_lighting as GLint, 0, 0, 1]);
-
 				gl::ActiveTexture(gl::TEXTURE1);
 				gl::BindTexture(gl::TEXTURE_2D, shadow_map);
 

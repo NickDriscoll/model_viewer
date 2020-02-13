@@ -286,68 +286,15 @@ pub unsafe fn bind_material(program: GLuint, material: &Option<mtl::Material>) {
 	gl::Uniform1f(uniform_location(program, "specular_coefficient"), specular_coefficient);
 }
 
-pub unsafe fn render_meshes(meshes: &OptionVec<Mesh>, program: GLuint, render_pass: usize, context: &RenderContext) {
-	gl::UseProgram(program);
-	gl::Uniform1i(uniform_location(program, "tex"), 0);
-	gl::Uniform1i(uniform_location(program, "shadow_map"), 1);
-	for option_mesh in meshes.iter() {
-		if let Some(mesh) = option_mesh {
-			if mesh.render_pass_visibilities[render_pass] {
-				//Calculate model-view-projection for this mesh
-				let mvp = context.p_matrices[render_pass] * context.v_matrices[render_pass] * mesh.model_matrix;
-
-				bind_uniforms(program,
-								   &["mvp", "model_matrix", "shadow_mvp"],
-								   &[&mvp, &mesh.model_matrix, &(context.shadow_vp * mesh.model_matrix)],
-								   &["view_position", "light_direction"],
-								   &[&context.view_positions[render_pass], context.light_direction],
-								   &["lighting"],
-								   &[context.is_lighting as GLint]);
-
-				//Bind the textures
-				gl::ActiveTexture(gl::TEXTURE0);
-				gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
-				gl::ActiveTexture(gl::TEXTURE1);
-				gl::BindTexture(gl::TEXTURE_2D, context.shadow_map);
-
-				//Bind the mesh's vertex array object
-				gl::BindVertexArray(mesh.vao);
-
-				//Check if we're using a material or just a texture
-				match &mesh.materials {
-					Some(mats) => {
-						gl::Uniform1i(uniform_location(program, "using_material"), true as i32);
-
-						//Draw calls
-						for i in 0..mesh.geo_boundaries.len()-1 {
-							bind_material(program, &mats[i]);
-							gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
-						}
-					}
-					None => {
-						gl::Uniform1i(uniform_location(program, "using_material"), false as i32);
-						gl::Uniform1f(uniform_location(program, "specular_coefficient"), mesh.specular_coefficient);
-
-						//Draw call
-						for i in 0..mesh.geo_boundaries.len()-1 {
-							gl::DrawElements(gl::TRIANGLES, mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i], gl::UNSIGNED_SHORT, (2 * mesh.geo_boundaries[i]) as *const c_void);
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
 //Binds "buffer" to the next available attribute of vao as an array of mat4
-pub unsafe fn bind_instanced_matrices(vao: GLuint, attribute_offsets: &[i32], buffer: &[f32], count: usize) {
+pub unsafe fn bind_instanced_matrices(vao: GLuint, attribute_count: usize, buffer: &[f32], count: usize) {
 	let matrices_buffer = gl_gen_buffer();
 	gl::BindBuffer(gl::ARRAY_BUFFER, matrices_buffer);
 	gl::BufferData(gl::ARRAY_BUFFER, (count * 16 * mem::size_of::<GLfloat>()) as GLsizeiptr, &buffer[0] as *const GLfloat as *const c_void, gl::STATIC_DRAW);
 	gl::BindVertexArray(vao);
 
 	for i in 0..4 {
-		let current_attribute = (attribute_offsets.len() + i) as GLuint;
+		let current_attribute = (attribute_count + i) as GLuint;
 		gl::VertexAttribPointer(current_attribute, 4, gl::FLOAT, gl::FALSE, 16 * mem::size_of::<GLfloat>() as GLsizei, (4 * i * mem::size_of::<GLfloat>()) as *const c_void);
 		gl::VertexAttribDivisor(current_attribute, 1);
 		gl::EnableVertexAttribArray(current_attribute);

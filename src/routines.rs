@@ -229,7 +229,7 @@ pub fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 						}
 					}
 					_ => {
-						println!("Only triangle meshes are supported.");
+						println!("load_wavefront_obj(): Only triangle meshes are supported.");
 						return None;
 					}
 				}
@@ -238,9 +238,15 @@ pub fn load_wavefront_obj(path: &str) -> Option<MeshData> {
 		index_offset += current_index as usize;
 	}
 	geometry_boundaries.push(indices.len() as GLsizei);
-	Some(MeshData {
+
+	let vertex_array = VertexArray {
 		vertices,
 		indices,
+		attribute_offsets: vec![3, 3, 2]
+	};
+
+	Some(MeshData {
+		vertex_array,
 		geo_boundaries: geometry_boundaries,
 		materials: materials_in_order
 	})
@@ -254,10 +260,6 @@ pub fn update_openvr_mesh(meshes: &mut OptionVec<Mesh>, poses: &[TrackedDevicePo
 	if let Some(mesh) = meshes.get_element(mesh_index) {
 		mesh.model_matrix = tracking_to_world * openvr_to_mat4(*poses[device_index].device_to_absolute_tracking());
 	}
-}
-
-pub fn get_terrain_height(xpos: f32, zpos: f32, terrain: &Terrain) -> f32 {
-	terrain.amplitude * terrain.simplex.get([xpos as f64 * terrain.simplex_scale / terrain.scale as f64, zpos as f64 * terrain.simplex_scale / terrain.scale as f64]) as f32
 }
 
 pub fn halton_sequence(index: f32, base: f32) -> f32 {
@@ -282,6 +284,7 @@ pub fn handle_result<T, E: std::fmt::Display>(result: Result<T, E>) {
 
 //Returns an array of n 4x4 matrices tightly packed in a Vec in column-major format
 pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain: &Terrain, scale: f32) -> Vec<f32> {
+	//Allocate the buffer
 	let mut model_matrices = vec![0.0; n * 16];
 
 	//Populate the buffer
@@ -290,8 +293,8 @@ pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain
 		let zpos = terrain.scale * (halton_sequence(*halton_counter as f32, 3.0) - 0.5);
 		*halton_counter += 1;
 			
-		//Get height from simplex noise generator
-		let ypos = get_terrain_height(xpos, zpos, terrain);
+		//Height is simply the terrain height at position (x, z)
+		let ypos = terrain.height_at(xpos, zpos);
 
 		//Determine which floor triangle this tree is on
 		let (moved_xpos, moved_zpos) = (xpos + (terrain.scale / 2.0), zpos + (terrain.scale / 2.0));
@@ -299,7 +302,9 @@ pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain
 										  f32::floor(moved_zpos * ((terrain.width - 1) as f32 / terrain.scale)) as usize);
 		let subsquare_index = subsquare_x + subsquare_z * (terrain.width - 1);
 		let (norm_x, norm_z) = (moved_xpos / (terrain.width - 1) as f32 + subsquare_x as f32 * terrain.scale / (terrain.width - 1) as f32,
-					  			moved_zpos / (terrain.width - 1) as f32 + subsquare_z as f32 * terrain.scale / (terrain.width - 1) as f32);
+								  moved_zpos / (terrain.width - 1) as f32 + subsquare_z as f32 * terrain.scale / (terrain.width - 1) as f32);
+								  
+		//Compute which triangle's normal to use
 		let normal_index = if norm_x + norm_z <= 1.0 {
 			subsquare_index * 2
 		} else {
@@ -307,16 +312,17 @@ pub fn model_matrices_from_terrain(n: usize, halton_counter: &mut usize, terrain
 		};
 
 		let rotation_vector = glm::cross::<f32, glm::U3>(&glm::vec3(0.0, 1.0, 0.0), &terrain.surface_normals[normal_index]);
-		let rotation_magnitude = 0.2 * f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &terrain.surface_normals[normal_index]));
+		let rotation_magnitude = 0.2 * f32::acos(glm::dot(&glm::vec3(0.0, 1.0, 0.0), &terrain.surface_normals[normal_index])); //Note: Multiplying rotation angle by 0.2 because that looks good enough and I can't tell how my math is wrong
 
-		//Note: Multiplying rotation angle by 0.2 because that looks good enough and I can't tell how my math is wrong
-		let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) * glm::rotation(rotation_magnitude, &rotation_vector) * glm::rotation(rand::random::<f32>() * glm::half_pi::<f32>(), &glm::vec3(0.0, 1.0, 0.0)) * uniform_scale(scale);
+		//Contruct the matrix itself
+		let matrix = glm::translation(&glm::vec3(xpos, ypos, zpos)) *														//4: Translate the object to its proper position
+					 glm::rotation(rotation_magnitude, &rotation_vector) *													//3: Rotate the object so its flush(ish) with the terrain
+					 glm::rotation(rand::random::<f32>() * glm::half_pi::<f32>(), &glm::vec3(0.0, 1.0, 0.0)) *				//2: Rotate the object a random amount around it's y-axis
+					 uniform_scale(scale);																					//1: Scale the object
 
 		//Write this matrix to the buffer
-		let mut count = 0;
-		for j in glm::value_ptr(&matrix) {
-			model_matrices[i * 16 + count] = *j;
-			count += 1;
+		for j in 0..16 {
+			model_matrices[i * 16 + j] = matrix[j];
 		}
 	}
 
@@ -339,7 +345,7 @@ pub fn play_bgm(device: &rodio::Device, filename: &str, volume: f32) -> rodio::S
 pub unsafe fn instanced_prop_vao(vertex_array: &VertexArray, terrain: &Terrain, instances: usize, halton_counter: &mut usize, scale: f32) -> GLuint {
 	let vao = create_vertex_array_object(&vertex_array.vertices, &vertex_array.indices, &vertex_array.attribute_offsets);
 	let model_matrices = model_matrices_from_terrain(instances, halton_counter, &terrain, scale);
-	bind_instanced_matrices(vao, &vertex_array.attribute_offsets, &model_matrices, instances);
+	bind_instanced_matrices(vao, vertex_array.attribute_offsets.len(), &model_matrices, instances);
 	vao
 }
 
