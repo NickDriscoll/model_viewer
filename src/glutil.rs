@@ -178,7 +178,7 @@ pub fn image_data_from_path(path: &str) -> ImageData {
 			panic!("{:?} is of unsupported image type", path);
 		}
 		Err(e) => {
-			panic!("Unable to open {:?}: {}", path, e);
+			panic!("Unable to open {}: {}", path, e);
 		}
 	}
 }

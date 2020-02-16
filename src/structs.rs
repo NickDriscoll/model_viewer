@@ -82,9 +82,7 @@ pub struct Controllers {
 	pub device_indices: [Option<u32>; Self::NUMBER_OF_CONTROLLERS],
 	pub mesh_indices: [Option<usize>; Self::NUMBER_OF_CONTROLLERS],
 	pub states: [Option<ControllerState>; Self::NUMBER_OF_CONTROLLERS],
-	pub previous_states: [Option<ControllerState>; Self::NUMBER_OF_CONTROLLERS],
-	pub colliding_with: [Vec<usize>; Self::NUMBER_OF_CONTROLLERS],
-	pub collided_with: [Vec<usize>; Self::NUMBER_OF_CONTROLLERS]
+	pub previous_states: [Option<ControllerState>; Self::NUMBER_OF_CONTROLLERS]
 }
 
 impl Controllers {
@@ -95,9 +93,7 @@ impl Controllers {
 			device_indices: [None; Self::NUMBER_OF_CONTROLLERS],
 			mesh_indices: [None; Self::NUMBER_OF_CONTROLLERS],
 			states: [None; Self::NUMBER_OF_CONTROLLERS],
-			previous_states: [None; Self::NUMBER_OF_CONTROLLERS],
-			colliding_with: [Vec::new(), Vec::new()],
-			collided_with: [Vec::new(), Vec::new()]
+			previous_states: [None; Self::NUMBER_OF_CONTROLLERS]
 		}
 	}
 

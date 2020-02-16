@@ -95,12 +95,14 @@ fn main() {
 	//Load all OpenGL function pointers, GLFW does all the work here
 	gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
-	//Enable various features
+	//These OpenGL settings are only set once, so we just do it here
 	unsafe {
-		gl::Enable(gl::DEPTH_TEST);	//Enable depth testing
-		gl::Enable(gl::FRAMEBUFFER_SRGB); //Enable automatic linear->SRGB space conversion
-		gl::Enable(gl::BLEND);	//Enable alpha blending
-		gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);	//Set blend func to (Cs * alpha + Cd * (1.0 - alpha))
+		gl::Enable(gl::DEPTH_TEST);										//Enable depth testing
+		gl::DepthFunc(gl::LEQUAL);										//Pass the fragment with the smallest z-value. Needs to be <= instead of < because for all skybox pixels z = 1.0
+		gl::Enable(gl::FRAMEBUFFER_SRGB); 								//Enable automatic linear->SRGB space conversion
+		gl::Enable(gl::BLEND);											//Enable alpha blending
+		gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);			//Set blend func to (Cs * alpha + Cd * (1.0 - alpha))		
+		gl::ClearColor(0.53, 0.81, 0.92, 1.0);							//Set clear color. A pleasant blue
 	}
 
 	//Compile shaders
@@ -152,12 +154,13 @@ fn main() {
 	//Create the skybox cubemap
 	let skybox_cubemap = unsafe {		
 		let name = "siege";
-		let paths = [&format!("textures/skybox/{}_rt.tga", name),		//Right side
-					 &format!("textures/skybox/{}_lf.tga", name),		//Left side
-					 &format!("textures/skybox/{}_up.tga", name),		//Up side
-					 &format!("textures/skybox/{}_dn.tga", name),		//Down side
-					 &format!("textures/skybox/{}_bk.tga", name),		//Back side
-					 &format!("textures/skybox/{}_ft.tga", name)		//Front side
+		let paths = [
+			&format!("textures/skybox/{}_rt.tga", name),		//Right side
+			&format!("textures/skybox/{}_lf.tga", name),		//Left side
+			&format!("textures/skybox/{}_up.tga", name),		//Up side
+			&format!("textures/skybox/{}_dn.tga", name),		//Down side
+			&format!("textures/skybox/{}_bk.tga", name),		//Back side
+			&format!("textures/skybox/{}_ft.tga", name)			//Front side
 		];
 
 		let mut cubemap = 0;
@@ -628,15 +631,9 @@ fn main() {
 									  &openvr_system,
 									  render_poses) {
 
-				controllers.collided_with[i].clear();
 				for j in 0..model_indices.len() {
 					if let Some(loaded_index) = model_indices[j] {
 						let is_colliding = glm::distance(&get_mesh_origin(&meshes[mesh_index as usize]), &get_mesh_origin(&meshes[loaded_index])) < model_bounding_sphere_radius;
-
-						if is_colliding {
-							controllers.colliding_with[i].push(loaded_index);
-						}
-
 						if controllers.pressed_this_frame(i, button_id::GRIP) && is_colliding {
 							//Set the controller's mesh as the mesh the cube mesh is "bound" to
 							bound_controller_indices[j] = Some(i);
@@ -683,7 +680,7 @@ fn main() {
 					}
 				}
 
-				//Check if the user toggled flying controls
+				//Check if the user toggled flight
 				if i == 1 && controllers.released_this_frame(i, button_id::APPLICATION_MENU) {
 					is_flying = !is_flying;
 				}
@@ -697,12 +694,6 @@ fn main() {
 				}
 			}
 			world_from_tracking = glm::translation(&glm::vec4_to_vec3(&tracking_position));
-
-			//Clear collided_with and move all of the elements from colliding_with into it
-			controllers.collided_with[i].clear();
-			for index in controllers.colliding_with[i].drain(0..controllers.colliding_with[i].len()) {
-				controllers.collided_with[i].push(index);
-			}
 		}
 		controllers.previous_states = controllers.states;
 
@@ -933,17 +924,12 @@ fn main() {
 
 		let render_context = RenderContext::new(&p_matrices, &v_matrices, &sun_direction, shadow_map, &shadow_viewprojection, is_lighting);
 		unsafe {
-			gl::DepthFunc(gl::LEQUAL);	//Pass the fragment with the smallest z-value. Needs to be <= instead of < because for all skybox pixels z = 1.0
-
 			//Set polygon mode
 			if is_wireframe {
 				gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
 			} else {
 				gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
 			}
-
-			//Set clear color. A pleasant blue
-			gl::ClearColor(0.53, 0.81, 0.92, 1.0);
 
 			//Render the shadow map
 			gl::BindFramebuffer(gl::FRAMEBUFFER, shadow_buffer);
@@ -1126,7 +1112,7 @@ fn main() {
 						let dynamic_image = match ImageBuffer::from_raw(window_size.0, window_size.1, buffer) {
 							Some(im) => { Some(DynamicImage::ImageRgba8(im).flipv()) }
 							None => { 
-								println!("");
+								println!("Unable to convert raw to image::DynamicImage");
 								None
 							}
 						};
