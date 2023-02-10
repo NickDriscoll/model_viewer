@@ -226,20 +226,21 @@ fn main() {
         );
 
         //Place each piece of the skybox on the correct face
-        for i in 0..6 {
-            let image_data = image_data_from_path(paths[i]);
+        paths.iter().enumerate().for_each(|(i, path)| {
+            let image_data = image_data_from_path(path);
             gl::TexImage2D(
                 gl::TEXTURE_CUBE_MAP_POSITIVE_X + i as u32,
                 0,
                 image_data.internal_format as i32,
-                image_data.width as i32,
-                image_data.height as i32,
+                image_data.width,
+                image_data.height,
                 0,
                 image_data.format,
                 gl::UNSIGNED_BYTE,
                 &image_data.data[0] as *const u8 as *const c_void,
             );
-        }
+        });
+
         cubemap
     };
 
@@ -280,8 +281,8 @@ fn main() {
                 let zpos: usize = (i / ELEMENT_STRIDE) / WIDTH;
 
                 //Calculate vertex position
-                vertices[i] = (xpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
-                vertices[i + 2] = (zpos as f32 / (WIDTH - 1) as f32) as f32 - 0.5;
+                vertices[i] = (xpos as f32 / (WIDTH - 1) as f32) - 0.5;
+                vertices[i + 2] = (zpos as f32 / (WIDTH - 1) as f32) - 0.5;
 
                 //Retrieve the height from the simplex noise generator
                 vertices[i + 1] = simplex_generator.get([
@@ -290,8 +291,8 @@ fn main() {
                 ]) as f32;
 
                 //Calculate texture coordinates
-                vertices[i + 6] = SCALE * (xpos as f32 / (WIDTH - 1) as f32) as f32;
-                vertices[i + 7] = SCALE * (zpos as f32 / (WIDTH - 1) as f32) as f32;
+                vertices[i + 6] = SCALE * (xpos as f32 / (WIDTH - 1) as f32);
+                vertices[i + 7] = SCALE * (zpos as f32 / (WIDTH - 1) as f32);
             }
 
             //This loop executes once per subsquare on the plane, and pushes the indices of the two triangles that comprise said subsquare into the indices Vec
@@ -808,10 +809,10 @@ fn main() {
                     }
 
                     //If the trigger was released this frame
-                    if controllers.released_this_frame(i, button_id::GRIP) {
-                        if Some(i) == bound_controller_indices[j] {
-                            bound_controller_indices[j] = None;
-                        }
+                    if controllers.released_this_frame(i, button_id::GRIP)
+                        && Some(i) == bound_controller_indices[j]
+                    {
+                        bound_controller_indices[j] = None;
                     }
                 }
 

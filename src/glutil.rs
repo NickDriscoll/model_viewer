@@ -92,7 +92,7 @@ pub fn shader_compilation_error(infolog: &[u8]) {
         Ok(message) => message,
         Err(e) => {
             let sized_log = &infolog[0..e.valid_up_to()];
-            str::from_utf8(&sized_log).unwrap()
+            str::from_utf8(sized_log).unwrap()
         }
     };
     panic!(
@@ -161,20 +161,37 @@ pub unsafe fn create_vertex_array_object(
     };
 
     //Configure and enable the vertex attributes
-    let mut cumulative_size = 0;
-    for i in 0..attribute_strides.len() {
-        gl::VertexAttribPointer(
-            i as GLuint,
-            attribute_strides[i],
-            gl::FLOAT,
-            gl::FALSE,
-            byte_stride,
-            (cumulative_size * mem::size_of::<GLfloat>() as GLuint) as *const c_void,
-        );
+    // let mut cumulative_size = 0;
+    // for i in 0..attribute_strides.len() {
+    //     gl::VertexAttribPointer(
+    //         i as GLuint,
+    //         attribute_strides[i],
+    //         gl::FLOAT,
+    //         gl::FALSE,
+    //         byte_stride,
+    //         (cumulative_size * mem::size_of::<GLfloat>() as GLuint) as *const c_void,
+    //     );
 
-        gl::EnableVertexAttribArray(i as GLuint);
-        cumulative_size += attribute_strides[i] as u32;
-    }
+    //     gl::EnableVertexAttribArray(i as GLuint);
+    //     cumulative_size += attribute_strides[i] as u32;
+    // }
+
+    let _cumulatorize_size = attribute_strides
+        .iter()
+        .enumerate()
+        .fold(0, |acc, (i, stride)| {
+            gl::VertexAttribPointer(
+                i as GLuint,
+                *stride,
+                gl::FLOAT,
+                gl::FALSE,
+                byte_stride,
+                (acc * mem::size_of::<GLfloat>() as GLuint) as *const c_void,
+            );
+            gl::EnableVertexAttribArray(i as GLuint);
+
+            acc + *stride as u32
+        });
 
     vao
 }
@@ -262,7 +279,7 @@ pub unsafe fn create_vr_render_target(render_target_size: &(u32, u32)) -> GLuint
         0,
         gl::RGBA,
         gl::UNSIGNED_BYTE,
-        0 as *const c_void,
+        std::ptr::null::<c_void>(),
     );
     gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
     gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);

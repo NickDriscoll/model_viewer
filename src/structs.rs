@@ -109,8 +109,7 @@ impl Controllers {
             self.states[controller_index],
             self.previous_states[controller_index],
         ) {
-            state.button_pressed & (1 as u64) << flag != 0
-                && p_state.button_pressed & (1 as u64) << flag == 0
+            state.button_pressed & 1_u64 << flag != 0 && p_state.button_pressed & 1_u64 << flag == 0
         } else {
             false
         }
@@ -119,7 +118,7 @@ impl Controllers {
     //Flag should be one of the constants defined in openvr::button_id
     pub fn holding_button(&self, controller_index: usize, flag: u32) -> bool {
         if let Some(state) = self.states[controller_index] {
-            state.button_pressed & (1 as u64) << flag != 0
+            state.button_pressed & 1_u64 << flag != 0
         } else {
             false
         }
@@ -131,8 +130,7 @@ impl Controllers {
             self.states[controller_index],
             self.previous_states[controller_index],
         ) {
-            state.button_pressed & (1 as u64) << flag == 0
-                && p_state.button_pressed & (1 as u64) << flag != 0
+            state.button_pressed & 1_u64 << flag == 0 && p_state.button_pressed & 1_u64 << flag != 0
         } else {
             false
         }
@@ -157,28 +155,48 @@ impl<T> OptionVec<T> {
         }
     }
 
+    // pub fn insert(&mut self, element: T) -> usize {
+    //     let mut index = None;
+
+    //     //Search for an empty space
+    //     for i in 0..self.optionvec.len() {
+    //         if self.optionvec[i].is_none() {
+    //             index = Some(i);
+    //             break;
+    //         }
+    //     }
+
+    //     self.optionvec.into_iter().
+
+    //     //Fill the empty space if one was found, push onto the end otherwise
+    //     match index {
+    //         Some(i) => {
+    //             self.optionvec[i] = Some(element);
+    //             i
+    //         }
+    //         None => {
+    //             self.optionvec.push(Some(element));
+    //             self.optionvec.len() - 1
+    //         }
+    //     }
+    // }
+
     pub fn insert(&mut self, element: T) -> usize {
-        let mut index = None;
+        // Fill the first empty space if one exists,
+        if let Some((i, site)) = self
+            .optionvec
+            .iter_mut()
+            .enumerate()
+            .find(|(_, site)| site.is_none())
+        {
+            *site = Some(element);
+            return i;
+        };
 
-        //Search for an empty space
-        for i in 0..self.optionvec.len() {
-            if let None = self.optionvec[i] {
-                index = Some(i);
-                break;
-            }
-        }
+        // Otherwise, push onto the end
+        self.optionvec.push(Some(element));
 
-        //Fill the empty space if one was found, push onto the end otherwise
-        match index {
-            Some(i) => {
-                self.optionvec[i] = Some(element);
-                i
-            }
-            None => {
-                self.optionvec.push(Some(element));
-                self.optionvec.len() - 1
-            }
-        }
+        self.optionvec.len() - 1
     }
 
     pub fn clear(&mut self) {
