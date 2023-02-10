@@ -4,8 +4,6 @@ mod prims;
 mod routines;
 mod structs;
 
-pub use nalgebra_glm as glm;
-
 use crate::{glutil::*, prims::*, routines::*, structs::*};
 use chrono::offset::Local;
 use gl::types::*;
@@ -14,6 +12,7 @@ use glyph_brush::{
     rusttype::Scale, BrushAction, BrushError, GlyphBrushBuilder, GlyphCruncher, Section,
 };
 use image::{DynamicImage, ImageBuffer};
+use nalgebra_glm as glm;
 use nfd::Response;
 use noise::{NoiseFn, OpenSimplex, Seedable};
 use openvr::{
@@ -405,29 +404,41 @@ fn main() {
     //This counter is used for both trees and grass
     let mut halton_counter = 1;
 
+    macro_rules! instanced_props {
+        ($(($path:expr, $scale:expr)),*) => {
+            vec![$(InstancedProp::new($path, &terrain, 200, &mut halton_counter, $scale)),*]
+        };
+    }
+
+    let instanced_props = instanced_props![
+        ("models/tree1.obj", 1.0),
+        ("models/tree3.obj", 1.0),
+        ("models/tree2.obj", 2.0)
+    ];
+
     //Plant trees
-    let mut instanced_props = Vec::with_capacity(3);
-    instanced_props.push(InstancedProp::new(
-        "models/tree1.obj",
-        &terrain,
-        200,
-        &mut halton_counter,
-        1.0,
-    ));
-    instanced_props.push(InstancedProp::new(
-        "models/tree2.obj",
-        &terrain,
-        200,
-        &mut halton_counter,
-        1.0,
-    ));
-    instanced_props.push(InstancedProp::new(
-        "models/tree3.obj",
-        &terrain,
-        200,
-        &mut halton_counter,
-        2.0,
-    ));
+    // let mut instanced_props = Vec::with_capacity(3);
+    // instanced_props.push(InstancedProp::new(
+    //     "models/tree1.obj",
+    //     &terrain,
+    //     200,
+    //     &mut halton_counter,
+    //     1.0,
+    // ));
+    // instanced_props.push(InstancedProp::new(
+    //     "models/tree2.obj",
+    //     &terrain,
+    //     200,
+    //     &mut halton_counter,
+    //     1.0,
+    // ));
+    // instanced_props.push(InstancedProp::new(
+    //     "models/tree3.obj",
+    //     &terrain,
+    //     200,
+    //     &mut halton_counter,
+    //     2.0,
+    // ));
 
     //Plant grass
     const GRASS_COUNT: usize = 60000;
@@ -587,28 +598,31 @@ fn main() {
         _elapsed_time += time_delta;
 
         //Restart music if it stopped
-        if let Some(sink) = &bgm_sink {
+        if let Some(ref sink) = &bgm_sink {
             if sink.empty() {
-                add_source_from_file(&sink, &bgm_path);
+                add_source_from_file(sink, &bgm_path);
             }
         }
 
-        //If we haven't found the controllers, check for their presence
+        // If we haven't found the controllers, check for their presence and insert them
         if let Some(ref sys) = openvr_system {
-            for i in 0..controllers.device_indices.len() {
-                if let None = controllers.device_indices[i] {
-                    const ROLES: [TrackedControllerRole; 2] = [
-                        TrackedControllerRole::LeftHand,
-                        TrackedControllerRole::RightHand,
-                    ];
+            [
+                TrackedControllerRole::LeftHand,
+                TrackedControllerRole::RightHand,
+            ]
+            .iter()
+            .enumerate()
+            .take(controllers.device_indices.len())
+            .for_each(|(i, role)| {
+                if controllers.device_indices[i].is_none() {
                     controllers.device_indices[i] =
-                        sys.tracked_device_index_for_controller_role(ROLES[i]);
+                        sys.tracked_device_index_for_controller_role(*role);
                 }
-            }
+            });
         }
 
         //Load controller meshes if necessary
-        if None == controllers.mesh_indices[0] || None == controllers.mesh_indices[1] {
+        if controllers.mesh_indices[0].is_none() || controllers.mesh_indices[1].is_none() {
             if let Some(index) = controllers.device_indices[0] {
                 if let Some(mesh) = load_openvr_mesh(&openvr_system, &openvr_rendermodels, index) {
                     controllers.mesh_indices[0] = Some(meshes.insert(mesh.clone()));
@@ -618,7 +632,7 @@ fn main() {
         }
 
         //Load HMD mesh if we haven't already
-        if let None = hmd_mesh_index {
+        if hmd_mesh_index.is_none() {
             if let Some(mut mesh) = load_openvr_mesh(&openvr_system, &openvr_rendermodels, 0) {
                 mesh.render_pass_visibilities = [false, false, !camera.attached_to_hmd];
                 mesh.specular_coefficient = 128.0;
@@ -627,10 +641,9 @@ fn main() {
         }
 
         //Get VR orientation and position data - OpenVR really does all the work here
-        let render_poses = match &openvr_compositor {
-            Some(comp) => Some(comp.wait_get_poses().unwrap().render),
-            None => None,
-        };
+        let render_poses = openvr_compositor
+            .as_ref()
+            .map(|comp| comp.wait_get_poses().unwrap().render);
 
         //Get controller state structs
         for i in 0..Controllers::NUMBER_OF_CONTROLLERS {
@@ -776,7 +789,7 @@ fn main() {
                 for j in 0..model_indices.len() {
                     if let Some(loaded_index) = model_indices[j] {
                         let is_colliding = glm::distance(
-                            &get_mesh_origin(&meshes[mesh_index as usize]),
+                            &get_mesh_origin(&meshes[mesh_index]),
                             &get_mesh_origin(&meshes[loaded_index]),
                         ) < model_bounding_sphere_radius;
                         if controllers.pressed_this_frame(i, button_id::GRIP) && is_colliding {
@@ -1083,7 +1096,7 @@ fn main() {
                 },
             ) {
                 Ok(BrushAction::Draw(verts)) => {
-                    if verts.len() > 0 {
+                    if !verts.is_empty() {
                         let mut buffer = Vec::with_capacity(verts.len() * 32);
                         for vert in &verts {
                             for v in vert {
@@ -1163,27 +1176,25 @@ fn main() {
             gl::Enable(gl::CULL_FACE);
             gl::UseProgram(shadow_map_shader);
             gl::Uniform1i(uniform_location(shadow_map_shader, "using_texture"), 0);
-            for option_mesh in meshes.iter() {
-                if let Some(mesh) = option_mesh {
-                    let mvp = shadow_viewprojection * mesh.model_matrix;
-                    gl::UniformMatrix4fv(
-                        uniform_location(shadow_map_shader, "shadowMVP"),
-                        1,
-                        gl::FALSE,
-                        &flatten_glm(&mvp) as *const GLfloat,
+            meshes.iter().flatten().for_each(|mesh| {
+                let mvp = shadow_viewprojection * mesh.model_matrix;
+                gl::UniformMatrix4fv(
+                    uniform_location(shadow_map_shader, "shadowMVP"),
+                    1,
+                    gl::FALSE,
+                    &flatten_glm(&mvp) as *const GLfloat,
+                );
+                gl::BindVertexArray(mesh.vao);
+                for i in 0..mesh.geo_boundaries.len() - 1 {
+                    gl::DrawElements(
+                        gl::TRIANGLES,
+                        mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i],
+                        gl::UNSIGNED_SHORT,
+                        (mem::size_of::<GLshort>() as i32 * mesh.geo_boundaries[i])
+                            as *const c_void,
                     );
-                    gl::BindVertexArray(mesh.vao);
-                    for i in 0..mesh.geo_boundaries.len() - 1 {
-                        gl::DrawElements(
-                            gl::TRIANGLES,
-                            mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i],
-                            gl::UNSIGNED_SHORT,
-                            (mem::size_of::<GLshort>() as i32 * mesh.geo_boundaries[i])
-                                as *const c_void,
-                        );
-                    }
                 }
-            }
+            });
 
             //Rendering instanced meshes
             gl::UseProgram(instanced_shadow_map_shader);
@@ -1247,83 +1258,84 @@ fn main() {
                 gl::UseProgram(model_shader);
                 gl::Uniform1i(uniform_location(model_shader, "tex"), 0);
                 gl::Uniform1i(uniform_location(model_shader, "shadow_map"), 1);
-                for option_mesh in meshes.iter() {
-                    if let Some(mesh) = option_mesh {
-                        if mesh.render_pass_visibilities[i] {
-                            //Calculate model-view-projection for this mesh
-                            let mvp = render_context.p_matrices[i]
-                                * render_context.v_matrices[i]
-                                * mesh.model_matrix;
+                meshes.iter().flatten().for_each(|mesh| {
+                    if mesh.render_pass_visibilities[i] {
+                        //Calculate model-view-projection for this mesh
+                        let mvp = render_context.p_matrices[i]
+                            * render_context.v_matrices[i]
+                            * mesh.model_matrix;
 
-                            bind_uniforms(
-                                model_shader,
-                                &["mvp", "model_matrix", "shadow_mvp"],
-                                &[
-                                    &mvp,
-                                    &mesh.model_matrix,
-                                    &(render_context.shadow_vp * mesh.model_matrix),
-                                ],
-                                &["view_position", "light_direction"],
-                                &[
-                                    &render_context.view_positions[i],
-                                    render_context.light_direction,
-                                ],
-                                &["lighting"],
-                                &[render_context.is_lighting as GLint],
-                            );
+                        bind_uniforms(
+                            model_shader,
+                            &["mvp", "model_matrix", "shadow_mvp"],
+                            &[
+                                &mvp,
+                                &mesh.model_matrix,
+                                &(render_context.shadow_vp * mesh.model_matrix),
+                            ],
+                            &["view_position", "light_direction"],
+                            &[
+                                &render_context.view_positions[i],
+                                render_context.light_direction,
+                            ],
+                            &["lighting"],
+                            &[render_context.is_lighting as GLint],
+                        );
 
-                            //Bind the textures
-                            gl::ActiveTexture(gl::TEXTURE0);
-                            gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
-                            gl::ActiveTexture(gl::TEXTURE1);
-                            gl::BindTexture(gl::TEXTURE_2D, render_context.shadow_map);
+                        //Bind the textures
+                        gl::ActiveTexture(gl::TEXTURE0);
+                        gl::BindTexture(gl::TEXTURE_2D, mesh.texture);
+                        gl::ActiveTexture(gl::TEXTURE1);
+                        gl::BindTexture(gl::TEXTURE_2D, render_context.shadow_map);
 
-                            //Bind the mesh's vertex array object
-                            gl::BindVertexArray(mesh.vao);
+                        //Bind the mesh's vertex array object
+                        gl::BindVertexArray(mesh.vao);
 
-                            //Check if we're using a material or just a texture
-                            match &mesh.materials {
-                                Some(mats) => {
-                                    gl::Uniform1i(
-                                        uniform_location(model_shader, "using_material"),
-                                        true as i32,
-                                    );
+                        //Check if we're using a material or just a texture
+                        match &mesh.materials {
+                            Some(mats) => {
+                                gl::Uniform1i(
+                                    uniform_location(model_shader, "using_material"),
+                                    true as i32,
+                                );
 
-                                    //Draw calls
-                                    for i in 0..mesh.geo_boundaries.len() - 1 {
-                                        bind_material(model_shader, &mats[i]);
+                                //Draw calls
+                                mats.iter()
+                                    .enumerate()
+                                    .take(mesh.geo_boundaries.len() - 1)
+                                    .for_each(|(i, mat)| {
+                                        bind_material(model_shader, mat);
                                         gl::DrawElements(
                                             gl::TRIANGLES,
                                             mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i],
                                             gl::UNSIGNED_SHORT,
                                             (2 * mesh.geo_boundaries[i]) as *const c_void,
                                         );
-                                    }
-                                }
-                                None => {
-                                    gl::Uniform1i(
-                                        uniform_location(model_shader, "using_material"),
-                                        false as i32,
-                                    );
-                                    gl::Uniform1f(
-                                        uniform_location(model_shader, "specular_coefficient"),
-                                        mesh.specular_coefficient,
-                                    );
+                                    });
+                            }
+                            None => {
+                                gl::Uniform1i(
+                                    uniform_location(model_shader, "using_material"),
+                                    false as i32,
+                                );
+                                gl::Uniform1f(
+                                    uniform_location(model_shader, "specular_coefficient"),
+                                    mesh.specular_coefficient,
+                                );
 
-                                    //Draw call
-                                    for i in 0..mesh.geo_boundaries.len() - 1 {
-                                        gl::DrawElements(
-                                            gl::TRIANGLES,
-                                            mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i],
-                                            gl::UNSIGNED_SHORT,
-                                            (2 * mesh.geo_boundaries[i]) as *const c_void,
-                                        );
-                                    }
+                                //Draw call
+                                for i in 0..mesh.geo_boundaries.len() - 1 {
+                                    gl::DrawElements(
+                                        gl::TRIANGLES,
+                                        mesh.geo_boundaries[i + 1] - mesh.geo_boundaries[i],
+                                        gl::UNSIGNED_SHORT,
+                                        (2 * mesh.geo_boundaries[i]) as *const c_void,
+                                    );
                                 }
                             }
                         }
                     }
-                }
+                });
 
                 //Render the trees with instanced rendering
                 gl::UseProgram(instanced_model_shader);
@@ -1414,13 +1426,11 @@ fn main() {
                     gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL);
                     gl::UseProgram(ui_shader);
                     bind_matrix4(ui_shader, "projection", &pixel_projection);
-                    for option_vao in menu_vaos.iter() {
-                        if let Some(vao) = option_vao {
-                            gl::BindVertexArray(*vao);
-                            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
-                            gl::DeleteVertexArrays(1, vao);
-                        }
-                    }
+                    menu_vaos.iter().flatten().for_each(|vao| {
+                        gl::BindVertexArray(*vao);
+                        gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
+                        gl::DeleteVertexArrays(1, vao);
+                    });
                     menu_vaos.clear();
 
                     //Draw the glyphs
