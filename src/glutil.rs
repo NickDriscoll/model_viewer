@@ -22,7 +22,9 @@ pub unsafe fn compile_shader(shadertype: GLenum, source: &str) -> GLuint {
     //Check for errors
     let mut success = gl::FALSE as GLint;
     let mut infolog = Vec::with_capacity(INFO_LOG_SIZE);
+    let _remaining = infolog.spare_capacity_mut();
     infolog.set_len(INFO_LOG_SIZE - 1);
+
     gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut success);
     if success != gl::TRUE as GLint {
         gl::GetShaderInfoLog(
@@ -161,21 +163,6 @@ pub unsafe fn create_vertex_array_object(
     };
 
     //Configure and enable the vertex attributes
-    // let mut cumulative_size = 0;
-    // for i in 0..attribute_strides.len() {
-    //     gl::VertexAttribPointer(
-    //         i as GLuint,
-    //         attribute_strides[i],
-    //         gl::FLOAT,
-    //         gl::FALSE,
-    //         byte_stride,
-    //         (cumulative_size * mem::size_of::<GLfloat>() as GLuint) as *const c_void,
-    //     );
-
-    //     gl::EnableVertexAttribArray(i as GLuint);
-    //     cumulative_size += attribute_strides[i] as u32;
-    // }
-
     let _cumulatorize_size = attribute_strides
         .iter()
         .enumerate()

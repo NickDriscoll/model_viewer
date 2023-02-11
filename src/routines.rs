@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use crate::*;
 use openvr::{Eye, RenderModels, System, TrackedDevicePose};
 use rodio::Sink;
@@ -9,13 +11,9 @@ pub fn openvr_to_mat4(mat: [[f32; 4]; 3]) -> glm::TMat4<f32> {
     )
 }
 
+// UNWRAP-SAFETY: the initial matrix and flattened slice contain 16 elements, so we can safely coerce into a fixed array of 16
 pub fn flatten_glm(mat: &glm::TMat4<f32>) -> [f32; 16] {
-    let slice = glm::value_ptr(mat);
-
-    let mut result = [0.0; 16];
-    result[..16].copy_from_slice(&slice[..16]);
-
-    result
+    glm::value_ptr(mat).try_into().unwrap()
 }
 
 pub fn get_projection_matrix(sys: &System, eye: Eye) -> glm::TMat4<f32> {

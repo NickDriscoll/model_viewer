@@ -1026,19 +1026,21 @@ fn main() {
                                 Command::SpawnModel => {
                                     handle_result(order_tx.send(WorkOrder::Model));
                                 }
-                                Command::SwitchMusic => {
-                                    if let Some(sink) = &mut bgm_sink {
-                                        if let Some(filename) = file_select() {
-                                            println!("Playing new background music: {}", filename);
-                                            bgm_path = filename;
-                                            drop(sink);
-                                            if let Some(device) = &audio_device {
-                                                bgm_sink =
-                                                    Some(play_bgm(device, &bgm_path, bgm_volume));
+                                Command::SwitchMusic => match audio_device {
+                                    Some(ref device) => {
+                                        if let Some(ref mut sink) = bgm_sink {
+                                            if let Some(filename) = file_select() {
+                                                bgm_path = filename;
+
+                                                println!(
+                                                    "Playing new background music: {bgm_path}"
+                                                );
+                                                *sink = play_bgm(device, &bgm_path, bgm_volume);
                                             }
                                         }
                                     }
-                                }
+                                    None => println!("No audio device has been initialized"),
+                                },
                             }
                         }
                         [0.0, 0.1, 0.0]
